@@ -6,7 +6,7 @@ import (
 
 	// 内部引用
 	db "github.com/scienceol/opensdl/service/pkg/middleware/db"
-	migrate "github.com/scienceol/opensdl/service/pkg/repo/migrate"
+	migrate "github.com/scienceol/opensdl/service/pkg/model/migrate"
 )
 
 func NewMigrate() *cobra.Command {
