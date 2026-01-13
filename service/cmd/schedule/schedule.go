@@ -13,6 +13,7 @@ import (
 	cobra "github.com/spf13/cobra"
 
 	// 内部引用
+	config "github.com/scienceol/opensdl/service/internal/config"
 )
 
 func New() *cobra.Command {
@@ -88,7 +89,6 @@ func initSchedule(cmd *cobra.Command, _ []string) error {
 
 	return nil
 }
-
 
 func newRouter(cmd *cobra.Command, _ []string) error {
 	router := gin.Default()
