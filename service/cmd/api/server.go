@@ -23,6 +23,7 @@ import (
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
 	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
 	web "github.com/scienceol/opensdl/service/pkg/web"
+	events "github.com/scienceol/opensdl/service/pkg/core/notify/events"
 )
 
 func NewWeb() *cobra.Command {
