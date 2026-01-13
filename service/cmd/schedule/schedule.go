@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"context"
 	"net/http"
+	"crypto/tls"
 	"os"
 	"strconv"
 	"time"
@@ -20,6 +21,8 @@ import (
 	db "github.com/scienceol/opensdl/service/pkg/middleware/db"
 	trace "github.com/scienceol/opensdl/service/pkg/middleware/trace"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
+	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
+	web "github.com/scienceol/opensdl/service/pkg/web"
 )
 
 func New() *cobra.Command {
