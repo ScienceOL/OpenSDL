@@ -3,16 +3,6 @@ package web
 import (
 	// 外部依赖
 	"context"
-
-	_ "github.com/scienceol/studio/service/docs" // 导入自动生成的 docs 包
-	"github.com/scienceol/studio/service/pkg/middleware/auth"
-	"github.com/scienceol/studio/service/pkg/web/views/schedule"
-	swaggerfiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
-
-	"github.com/gin-gonic/gin"
-
-	"github.com/scienceol/studio/service/pkg/web/views"
 )
 
 func NewSchedule(ctx context.Context, g *gin.Engine) context.CancelFunc {
