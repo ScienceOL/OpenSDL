@@ -1,0 +1,3152 @@
+basePath: /api
+definitions:
+  code.ErrCode:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 1000
+    - 1001
+    - 1002
+    - 1003
+    - 5000
+    - 5001
+    - 5002
+    - 5003
+    - 5004
+    - 5005
+    - 5006
+    - 5007
+    - 5008
+    - 5009
+    - 5010
+    - 5011
+    - 5012
+    - 10000
+    - 10001
+    - 10002
+    - 10003
+    - 10004
+    - 10005
+    - 10006
+    - 10007
+    - 10008
+    - 10009
+    - 10010
+    - 20000
+    - 20001
+    - 20002
+    - 20003
+    - 20004
+    - 20005
+    - 20006
+    - 20007
+    - 20008
+    - 20009
+    - 20010
+    - 22000
+    - 22001
+    - 22002
+    - 22003
+    - 22004
+    - 22005
+    - 22006
+    - 22007
+    - 22008
+    - 22009
+    - 22010
+    - 22011
+    - 22012
+    - 22013
+    - 22014
+    - 22015
+    - 22016
+    - 22017
+    - 22018
+    - 22019
+    - 24000
+    - 24001
+    - 24002
+    - 26000
+    - 26001
+    - 26002
+    - 26003
+    - 26004
+    - 26005
+    - 28000
+    - 28001
+    - 28002
+    - 28003
+    - 28004
+    - 28005
+    - 28006
+    - 28007
+    - 28008
+    - 30000
+    - 30001
+    - 30002
+    - 30003
+    - 30004
+    - 30005
+    - 30006
+    - 30007
+    - 30008
+    - 30009
+    - 30010
+    - 30011
+    - 30012
+    - 30013
+    - 30014
+    - 30015
+    - 30016
+    - 30017
+    - 30018
+    - 30019
+    - 30020
+    - 30021
+    - 30022
+    - 30023
+    - 30024
+    - 30025
+    - 30026
+    - 30027
+    - 30028
+    - 30029
+    - 30030
+    - 30031
+    - 30032
+    type: integer
+    x-enum-comments:
+      BohrBatchQueryErr: bhor batch query user error
+      CallbackJobStatusKeyNotExistErr: callback job status key note exists error
+      CallbackJobStatusTimeoutErr: callback job status timeout error
+      CallbackParamErr: callback parameter error
+      CanNotFoundEdgeSession: can not found edge session
+      CanNotFoundMaterialNodeErr: can not found material node error
+      CanNotFoundTargetNode: can not found target node error
+      CanNotFoundWorkflowHandleErr: can not found workflow handle error
+      CanNotGetLabIDErr: cannot get lab id error
+      CanNotGetParentJobErr: can not found parent node job error
+      CanNotGetWorkflowTaskErr: can not get workflow task error
+      CanNotGetWorkflowUUIDErr: can not get workflow uuid
+      CanNotGetworkflowErr: workflow not found error
+      CasDoorCreateLabUserErr: create lab user error
+      CasDoorQueryLabUserErr: query lab user error
+      CreateDataErr: database create data error
+      DataNotMapAnyTypeErr: data not map any type error
+      DeleteDataErr: database delete error
+      EdgeConnectClosedErr: connect closed when node running error
+      EdgeHandleNotExistErr: node handle not exist
+      EdgeNodeNotExistErr: edge node not exist
+      ExchangeTokenErr: exchange token failed
+      ExecWorkflowNodeScriptErr: exec workflow script error
+      FormatCSVTaskErr: format csv data error
+      InvalidDagErr: invalid dag error
+      InvalidToken: invalid token
+      InvalidateJWT: invalidate jwt
+      InvalidateThirdID: invalidate third id error
+      InviteExpiredErr: invite expired error
+      JobCanceled: job is canceled
+      JobRetryTimeout: job retry timeout error
+      JobRunFailErr: job run fail error
+      JobTimeoutErr: job timeout error
+      LabAlreadyDeletedErr: lab already deleted error
+      LabIDIsEmptyErr: lab id is empty error
+      LabInviteNotFoundErr: can not found laboratory invite link error
+      LabNotFound: laboratory not found error
+      LoginCallbackErr: login process user info failed
+      LoginConfigErr: login configuration error
+      LoginFormatErr: login verification format error
+      LoginGetUserInfoErr: get user info failed
+      LoginSetStateErr: set login state error
+      LoginStateErr: state verification failed
+      MachineAlreadyExistErr: machine already exist error
+      MachineNodeStoppingErr: machine is stopping
+      MachineNotExistErr: machine not exist error
+      MachineReachMaxNumCountErr: machine reach max number error
+      MachineStartUnknownErr: start machine unknown error
+      MarshalTargetDataErr: marshal target data error
+      MaxTplNodeDeepErr: max template node deep error
+      ModelNotImplementTablerErr: model not implement schema.Tabler
+      NoPermission: no permission
+      NodeDataMarshalErr: marshal node data error
+      NotBaseDBTypeErr: not base db type error
+      NotPointerErr: not pointer err
+      NotSlicePointerErr: must be a pointer to a slice
+      NotifyActionAlreadyRegistryErr: notify action already registry
+      NotifySendMsgErr: notify send message error
+      NotifySubscribeChannelErr: notify subscribe channel fail
+      ParamDataKeyInvalidateErr: param data key invalidate error
+      ParamDataValueInvalidateErr: param data value invalidate error
+      ParamErr: parse parameter error
+      ParentNodeNotFoundErr: parent node not found error
+      ParseLoginRedirectURLErr: redirect login url error
+      PathHasEmptyName: path has empty name error
+      PermissionDenied: permission denied
+      PointerIsNilErr: pointer is nil error
+      QueryJobStatusKeyNotExistErr: query job status key note exists error
+      QueryMachineStatusFailErr: query machine status error
+      QueryRecordErr: database query error
+      RPCHttpCodeErr: rpc request http code error
+      RPCHttpCodeRespErr: rpc request http code resp error
+      RPCHttpErr: rpc request http error
+      RecordNotFound: database record not found
+      RedisAddSetErr: redis add user set error
+      RedisLuaRetErr: redis lua return type error
+      RedisLuaScriptErr: redis lua script error
+      RedisRemoveSetErr: redis remove user set error
+      RefreshTokenErr: refresh token failed
+      RefreshTokenParamErr: refresh token parameter error
+      RegActionNameEmptyErr: reg action name empty
+      ResNotExistErr: resource not exist
+      ResourceIsEmptyErr: resource is empty
+      ResourceNotExistErr: resource not exist
+      SaveWorkflowEdgeErr: batch save workflow edge error
+      SaveWorkflowNodeErr: batch save nodes error
+      Success: success
+      TargetDataNotMapAnyTypeErr: target data not map any type error
+      TargetParamInvalidateErr: target param invalidate error
+      TemplateNodeNotFoundErr: template node not found error
+      UnDefineErr: undefined
+      UnLogin: not logged in
+      UnknownWSActionErr: unknown material websocket action
+      UnknownWorkflowNodeTypeErr: unknown workflow node type error
+      UnmarshalWSDataErr: unmarshal material websocket data error
+      UpdateDataErr: database update data error
+      UpdateNodeErr: update material node error
+      UpsertWorkflowEdgeErr: upsert workflow edge error
+      UserIDIsEmptyErr: user id is empty
+      ValueNotExistErr: value not exist error
+      ValueSliceOutIndexErr: value slice out index error
+      WorkflowHasCircularErr: workflow has circular error
+      WorkflowNodeNoActionName: workflow node no action name error
+      WorkflowNodeNoActionType: workflow node no action type error
+      WorkflowNodeNoDeviceName: workflow node no device name error
+      WorkflowNodeNotFoundErr: workflow node not found error
+      WorkflowNodeScriptEmtpyErr: workflow script empty error
+      WorkflowNotExistErr: workflow not exist
+      WorkflowTaskAlreadyExistErr: workflow task already exist error
+      WorkflowTaskFinished: workflow task finished
+      WorkflowTaskNotFoundErr: can not found workflow task error
+      WorkflowTaskStatusErr: workflow task status error
+      WorkflowTaskStatusNotPendingErr: workflow task not in pending status
+      WorkflowTemplateNotFoundErr: can not found workflow template error
+    x-enum-descriptions:
+    - success
+    - undefined
+    - no permission
+    - invalidate jwt
+    - parse parameter error
+    - not pointer err
+    - must be a pointer to a slice
+    - pointer is nil error
+    - login configuration error
+    - set login state error
+    - refresh token failed
+    - state verification failed
+    - exchange token failed
+    - callback parameter error
+    - get user info failed
+    - login process user info failed
+    - not logged in
+    - login verification format error
+    - invalid token
+    - refresh token parameter error
+    - redirect login url error
+    - database create data error
+    - database update data error
+    - database record not found
+    - database query error
+    - database delete error
+    - not base db type error
+    - model not implement schema.Tabler
+    - redis lua script error
+    - redis lua return type error
+    - redis add user set error
+    - redis remove user set error
+    - reg action name empty
+    - resource is empty
+    - resource not exist
+    - can not found workflow template error
+    - user id is empty
+    - lab id is empty error
+    - laboratory not found error
+    - can not found laboratory invite link error
+    - invite expired error
+    - invalidate third id error
+    - lab already deleted error
+    - resource not exist
+    - edge node not exist
+    - node handle not exist
+    - unknown material websocket action
+    - unmarshal material websocket data error
+    - cannot get lab id error
+    - update material node error
+    - parent node not found error
+    - template node not found error
+    - invalid dag error
+    - max template node deep error
+    - can not found material node error
+    - machine already exist error
+    - query machine status error
+    - machine not exist error
+    - machine reach max number error
+    - machine is stopping
+    - start machine unknown error
+    - can not found target node error
+    - path has empty name error
+    - notify action already registry
+    - notify subscribe channel fail
+    - notify send message error
+    - rpc request http error
+    - rpc request http code error
+    - rpc request http code resp error
+    - create lab user error
+    - query lab user error
+    - bhor batch query user error
+    - can not get workflow uuid
+    - workflow not exist
+    - upsert workflow edge error
+    - permission denied
+    - batch save nodes error
+    - batch save workflow edge error
+    - workflow node not found error
+    - workflow not found error
+    - format csv data error
+    - workflow task already exist error
+    - can not found edge session
+    - workflow has circular error
+    - connect closed when node running error
+    - marshal node data error
+    - job run fail error
+    - can not found workflow task error
+    - workflow task status error
+    - workflow task finished
+    - workflow node no device name error
+    - workflow node no action name error
+    - workflow node no action type error
+    - query job status key note exists error
+    - callback job status key note exists error
+    - job timeout error
+    - job retry timeout error
+    - callback job status timeout error
+    - job is canceled
+    - can not get workflow task error
+    - workflow task not in pending status
+    - can not found workflow handle error
+    - can not found parent node job error
+    - param data key invalidate error
+    - param data value invalidate error
+    - data not map any type error
+    - value slice out index error
+    - value not exist error
+    - target data not map any type error
+    - marshal target data error
+    - target param invalidate error
+    - workflow script empty error
+    - unknown workflow node type error
+    - exec workflow script error
+    x-enum-varnames:
+    - Success
+    - UnDefineErr
+    - NoPermission
+    - InvalidateJWT
+    - ParamErr
+    - NotPointerErr
+    - NotSlicePointerErr
+    - PointerIsNilErr
+    - LoginConfigErr
+    - LoginSetStateErr
+    - RefreshTokenErr
+    - LoginStateErr
+    - ExchangeTokenErr
+    - CallbackParamErr
+    - LoginGetUserInfoErr
+    - LoginCallbackErr
+    - UnLogin
+    - LoginFormatErr
+    - InvalidToken
+    - RefreshTokenParamErr
+    - ParseLoginRedirectURLErr
+    - CreateDataErr
+    - UpdateDataErr
+    - RecordNotFound
+    - QueryRecordErr
+    - DeleteDataErr
+    - NotBaseDBTypeErr
+    - ModelNotImplementTablerErr
+    - RedisLuaScriptErr
+    - RedisLuaRetErr
+    - RedisAddSetErr
+    - RedisRemoveSetErr
+    - RegActionNameEmptyErr
+    - ResourceIsEmptyErr
+    - ResourceNotExistErr
+    - WorkflowTemplateNotFoundErr
+    - UserIDIsEmptyErr
+    - LabIDIsEmptyErr
+    - LabNotFound
+    - LabInviteNotFoundErr
+    - InviteExpiredErr
+    - InvalidateThirdID
+    - LabAlreadyDeletedErr
+    - ResNotExistErr
+    - EdgeNodeNotExistErr
+    - EdgeHandleNotExistErr
+    - UnknownWSActionErr
+    - UnmarshalWSDataErr
+    - CanNotGetLabIDErr
+    - UpdateNodeErr
+    - ParentNodeNotFoundErr
+    - TemplateNodeNotFoundErr
+    - InvalidDagErr
+    - MaxTplNodeDeepErr
+    - CanNotFoundMaterialNodeErr
+    - MachineAlreadyExistErr
+    - QueryMachineStatusFailErr
+    - MachineNotExistErr
+    - MachineReachMaxNumCountErr
+    - MachineNodeStoppingErr
+    - MachineStartUnknownErr
+    - CanNotFoundTargetNode
+    - PathHasEmptyName
+    - NotifyActionAlreadyRegistryErr
+    - NotifySubscribeChannelErr
+    - NotifySendMsgErr
+    - RPCHttpErr
+    - RPCHttpCodeErr
+    - RPCHttpCodeRespErr
+    - CasDoorCreateLabUserErr
+    - CasDoorQueryLabUserErr
+    - BohrBatchQueryErr
+    - CanNotGetWorkflowUUIDErr
+    - WorkflowNotExistErr
+    - UpsertWorkflowEdgeErr
+    - PermissionDenied
+    - SaveWorkflowNodeErr
+    - SaveWorkflowEdgeErr
+    - WorkflowNodeNotFoundErr
+    - CanNotGetworkflowErr
+    - FormatCSVTaskErr
+    - WorkflowTaskAlreadyExistErr
+    - CanNotFoundEdgeSession
+    - WorkflowHasCircularErr
+    - EdgeConnectClosedErr
+    - NodeDataMarshalErr
+    - JobRunFailErr
+    - WorkflowTaskNotFoundErr
+    - WorkflowTaskStatusErr
+    - WorkflowTaskFinished
+    - WorkflowNodeNoDeviceName
+    - WorkflowNodeNoActionName
+    - WorkflowNodeNoActionType
+    - QueryJobStatusKeyNotExistErr
+    - CallbackJobStatusKeyNotExistErr
+    - JobTimeoutErr
+    - JobRetryTimeout
+    - CallbackJobStatusTimeoutErr
+    - JobCanceled
+    - CanNotGetWorkflowTaskErr
+    - WorkflowTaskStatusNotPendingErr
+    - CanNotFoundWorkflowHandleErr
+    - CanNotGetParentJobErr
+    - ParamDataKeyInvalidateErr
+    - ParamDataValueInvalidateErr
+    - DataNotMapAnyTypeErr
+    - ValueSliceOutIndexErr
+    - ValueNotExistErr
+    - TargetDataNotMapAnyTypeErr
+    - MarshalTargetDataErr
+    - TargetParamInvalidateErr
+    - WorkflowNodeScriptEmtpyErr
+    - UnknownWorkflowNodeTypeErr
+    - ExecWorkflowNodeScriptErr
+  common.Error:
+    properties:
+      info:
+        items:
+          type: string
+        type: array
+      msg:
+        type: string
+    type: object
+  common.Resp:
+    properties:
+      code:
+        $ref: '#/definitions/code.ErrCode'
+      data: {}
+      error:
+        $ref: '#/definitions/common.Error'
+      timestamp:
+        type: integer
+    type: object
+  environment.DelLabReq:
+    properties:
+      uuid:
+        type: string
+    required:
+    - uuid
+    type: object
+  environment.InviteResp:
+    properties:
+      url:
+        type: string
+    type: object
+  environment.LabInfoResp:
+    properties:
+      access_key:
+        type: string
+      access_secret:
+        type: string
+      created_at:
+        type: string
+      is_admin:
+        type: boolean
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/model.EnvironmentStatus'
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  environment.LabMemberListResp:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/environment.LabMemberResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  environment.LabMemberResp:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      is_admin:
+        type: boolean
+      lab_id:
+        type: integer
+      name:
+        type: string
+      phone:
+        type: string
+      role:
+        $ref: '#/definitions/model.LaboratoryMemberRole'
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  environment.LaboratoryEnvReq:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  environment.LaboratoryEnvResp:
+    properties:
+      access_key:
+        type: string
+      access_secret:
+        type: string
+      name:
+        type: string
+      uuid:
+        type: string
+    type: object
+  environment.LaboratoryListResp:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/environment.LaboratoryResp'
+        type: array
+      has_more:
+        type: boolean
+      page:
+        type: integer
+      page_size:
+        type: integer
+    type: object
+  environment.LaboratoryResp:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      is_admin:
+        type: boolean
+      member_count:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  environment.RegAction:
+    properties:
+      feedback:
+        type: object
+      goal:
+        type: object
+      goal_default:
+        type: object
+      handles:
+        type: object
+      result:
+        type: object
+      schema:
+        type: object
+      type:
+        type: string
+    type: object
+  environment.RegClass:
+    properties:
+      action_value_mappings:
+        additionalProperties:
+          $ref: '#/definitions/environment.RegAction'
+        type: object
+      module:
+        type: string
+      status_types:
+        type: object
+      type:
+        type: string
+    type: object
+  environment.RegHandle:
+    properties:
+      data_key:
+        type: string
+      data_source:
+        type: string
+      data_type:
+        type: string
+      description:
+        type: string
+      handler_key:
+        type: string
+      io_type:
+        type: string
+      label:
+        type: string
+      side:
+        type: string
+    type: object
+  environment.RegInitParamSchema:
+    properties:
+      config:
+        $ref: '#/definitions/environment.RegSchema'
+      data:
+        $ref: '#/definitions/environment.RegSchema'
+    type: object
+  environment.RegSchema:
+    properties:
+      properties:
+        type: object
+      required:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+    type: object
+  environment.ResourceReq:
+    type: object
+  environment.UpdateEnvReq:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      uuid:
+        type: string
+    required:
+    - uuid
+    type: object
+  login.RefreshTokenReq:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  login.RefreshTokenResp:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        type: integer
+      refresh_token:
+        type: string
+      token_type:
+        type: string
+    type: object
+  material.CreateMaterialEdgeReq:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/material.MaterialEdge'
+        type: array
+    type: object
+  material.CreateMaterialReq:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/material.Material'
+        type: array
+    type: object
+  material.CreateMaterialResp:
+    properties:
+      cloud_uuid:
+        type: string
+      id:
+        description: 实际是数据库的 name
+        type: string
+      name:
+        description: 实际是数据库的 display name
+        type: string
+      uuid:
+        type: string
+    required:
+    - id
+    - name
+    type: object
+  material.DeviceAction:
+    properties:
+      action:
+        type: string
+      action_type:
+        type: string
+      schema:
+        type: object
+    type: object
+  material.DeviceActionResp:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/material.DeviceAction'
+        type: array
+      name:
+        type: string
+    type: object
+  material.DownloadMaterialResp:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/material.Node'
+        type: array
+    type: object
+  material.Edge:
+    properties:
+      source:
+        type: string
+      source_uuid:
+        type: string
+      sourceHandle:
+        description: 'FIXME: 下面两个字段命令 unilab 需要修改命名称'
+        type: string
+      target:
+        type: string
+      target_uuid:
+        type: string
+      targetHandle:
+        type: string
+      type:
+        type: string
+    type: object
+  material.EdgeNode:
+    properties:
+      class:
+        type: string
+      config:
+        type: object
+      data:
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      extra:
+        type: object
+      icon:
+        type: string
+      model:
+        type: object
+      name:
+        type: string
+      parent_uuid:
+        type: string
+      pose:
+        $ref: '#/definitions/model.Pose'
+      schema:
+        type: object
+      status:
+        type: string
+      type:
+        $ref: '#/definitions/model.DEVICETYPE'
+      uuid:
+        type: string
+    type: object
+  material.GraphEdge:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/material.Edge'
+        type: array
+    type: object
+  material.GraphNodeReq:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/material.Edge'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/material.Node'
+        type: array
+    type: object
+  material.Material:
+    properties:
+      children:
+        items:
+          type: string
+        type: array
+      class:
+        type: string
+      config:
+        type: object
+      data:
+        type: object
+      description:
+        type: string
+      icon:
+        type: string
+      id:
+        description: 实际是数据库的 name
+        type: string
+      model:
+        type: object
+      name:
+        description: 实际是数据库的 display name
+        type: string
+      parent:
+        type: string
+      parent_uuid:
+        type: string
+      pose:
+        type: object
+      position:
+        $ref: '#/definitions/model.Position'
+      position_3d:
+        $ref: '#/definitions/model.Position'
+      schema:
+        description: 'FIXME: 这块后续要优化掉，从 reg 获取'
+        type: object
+      type:
+        $ref: '#/definitions/model.DEVICETYPE'
+      uuid:
+        description: 有可能是 edge 编造 || 云端的
+        type: string
+    required:
+    - class
+    - id
+    - name
+    - type
+    - uuid
+    type: object
+  material.MaterialEdge:
+    properties:
+      source_uuid:
+        type: string
+      sourceHandle:
+        type: string
+      target_uuid:
+        type: string
+      targetHandle:
+        type: string
+      type:
+        type: string
+    type: object
+  material.MaterialQueryReq:
+    properties:
+      uuids:
+        items:
+          type: string
+        type: array
+    type: object
+  material.MaterialQueryResp:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/material.EdgeNode'
+        type: array
+    type: object
+  material.MaterialResp:
+    properties:
+      child_nodes_uuid:
+        items:
+          type: string
+        type: array
+      children:
+        items:
+          type: string
+        type: array
+      class:
+        type: string
+      cloud_uuid:
+        type: string
+      collapsed:
+        type: boolean
+      config:
+        type: object
+      data:
+        type: object
+      description:
+        type: string
+      device_id:
+        type: string
+      dirs:
+        items:
+          type: string
+        type: array
+      disabled:
+        type: boolean
+      dragHandle:
+        type: string
+      eq_type:
+        type: string
+      experiment_env:
+        type: integer
+      height:
+        type: number
+      id:
+        type: string
+      minimized:
+        type: boolean
+      name:
+        type: string
+      parent:
+        type: string
+      parent_node_uuid:
+        type: string
+      position:
+        $ref: '#/definitions/model.Position'
+      status:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+      width:
+        type: number
+    type: object
+  material.Node:
+    properties:
+      children:
+        items:
+          type: string
+        type: array
+      class:
+        type: string
+      config:
+        type: object
+      data:
+        type: object
+      description:
+        type: string
+      extra:
+        type: object
+      id:
+        description: 实际是数据库的 name
+        type: string
+      model:
+        type: object
+      name:
+        description: 实际是数据库的 display name
+        type: string
+      parent:
+        type: string
+      parent_uuid:
+        type: string
+      pose:
+        type: object
+      position:
+        $ref: '#/definitions/model.Position'
+      position_3d:
+        $ref: '#/definitions/model.Position'
+      schema:
+        description: 'FIXME: 这块后续要优化掉，从 reg 获取'
+        type: object
+      type:
+        $ref: '#/definitions/model.DEVICETYPE'
+      uuid:
+        type: string
+    required:
+    - class
+    - id
+    - name
+    - type
+    type: object
+  material.ResourceHandleTemplate:
+    properties:
+      display_name:
+        type: string
+      io_type:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      side:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+    type: object
+  material.ResourceInfo:
+    properties:
+      name:
+        type: string
+      parent_uuid:
+        type: string
+      uuid:
+        type: string
+    type: object
+  material.ResourceResp:
+    properties:
+      resource_name_list:
+        items:
+          $ref: '#/definitions/material.ResourceInfo'
+        type: array
+    type: object
+  material.SaveGrapReq:
+    properties:
+      graph:
+        $ref: '#/definitions/material.WSGraph'
+      lab_uuid:
+        type: string
+    type: object
+  material.TemplateResp:
+    properties:
+      config_infos:
+        items:
+          type: object
+        type: array
+      config_schema:
+        type: object
+      data_schema:
+        type: object
+      description:
+        type: string
+      footer:
+        type: string
+      handles:
+        items:
+          $ref: '#/definitions/material.ResourceHandleTemplate'
+        type: array
+      header:
+        type: string
+      icon:
+        type: string
+      language:
+        type: string
+      model:
+        type: object
+      module:
+        type: string
+      name:
+        type: string
+      parent_uuid:
+        type: string
+      pose:
+        type: object
+      resource_type:
+        type: string
+      status_types:
+        type: object
+      tags:
+        items:
+          type: string
+        type: array
+      user_id:
+        type: string
+      uuid:
+        type: string
+      version:
+        type: string
+    type: object
+  material.UpdateMaterialReq:
+    properties:
+      nodes:
+        items:
+          $ref: '#/definitions/material.Node'
+        type: array
+    type: object
+  material.UpsertMaterialReq:
+    properties:
+      mount_uuid:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/material.Material'
+        type: array
+    type: object
+  material.UpsertMaterialResp:
+    properties:
+      cloud_uuid:
+        type: string
+      display_name:
+        type: string
+      name:
+        type: string
+      uuid:
+        type: string
+    required:
+    - name
+    type: object
+  material.WSEdge:
+    properties:
+      source_handle_uuid:
+        type: string
+      source_node_uuid:
+        type: string
+      target_handle_uuid:
+        type: string
+      target_node_uuid:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+    type: object
+  material.WSGraph:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/material.WSEdge'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/material.WSNode'
+        type: array
+    type: object
+  material.WSHandle:
+    properties:
+      display_name:
+        type: string
+      io_type:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      side:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
+      uuid:
+        description: NodeUUID    uuid.UUID `json:"node_uuid"`
+        type: string
+    type: object
+  material.WSNode:
+    properties:
+      data:
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      handles:
+        items:
+          $ref: '#/definitions/material.WSHandle'
+        type: array
+      header:
+        type: string
+      icon:
+        type: string
+      init_param_data:
+        type: object
+      model:
+        type: object
+      name:
+        type: string
+      parent_uuid:
+        type: string
+      plate_well_datas:
+        type: object
+      pose:
+        type: object
+      res_template_name:
+        type: string
+      res_template_uuid:
+        type: string
+      schema:
+        type: object
+      status:
+        type: string
+      type:
+        $ref: '#/definitions/model.DEVICETYPE'
+      uuid:
+        type: string
+    type: object
+  model.DEVICETYPE:
+    enum:
+    - repository
+    - plate
+    - container
+    - resource
+    - device
+    - well
+    - tip
+    - tip_rack
+    - tip_spot
+    - deck
+    - workstation
+    type: string
+    x-enum-varnames:
+    - MATERIALREPO
+    - MATERIALPLATE
+    - MATERIALCONTAINER
+    - MATERIALRESOURCE
+    - MATERIALDEVICE
+    - MATERIALWELL
+    - MATERIALTIP
+    - MATERIALTIPRACK
+    - MATERIALTIPSPOT
+    - MATERIALDECK
+    - MATERIALWORKSTATION
+  model.EnvironmentStatus:
+    enum:
+    - INIT
+    - DELETED
+    type: string
+    x-enum-varnames:
+    - INIT
+    - DELETED
+  model.LaboratoryMemberRole:
+    enum:
+    - admin
+    - normal
+    type: string
+    x-enum-varnames:
+    - LaboratoryMemberAdmin
+    - LaboratoryMemberNormal
+  model.Pose:
+    properties:
+      cross_section_type:
+        type: string
+      extra: {}
+      layout:
+        type: string
+      position:
+        $ref: '#/definitions/model.Position'
+      position_3d:
+        $ref: '#/definitions/model.Position'
+      rotation:
+        $ref: '#/definitions/model.Rotation'
+      scale:
+        $ref: '#/definitions/model.Scale'
+      size:
+        $ref: '#/definitions/model.Size'
+    type: object
+  model.Position:
+    properties:
+      x:
+        type: number
+      "y":
+        type: number
+      z:
+        type: number
+    type: object
+  model.Rotation:
+    properties:
+      x:
+        type: number
+      "y":
+        type: number
+      z:
+        type: number
+    type: object
+  model.Scale:
+    properties:
+      x:
+        type: number
+      "y":
+        type: number
+      z:
+        type: number
+    type: object
+  model.Size:
+    properties:
+      depth:
+        type: number
+      height:
+        type: number
+      width:
+        type: number
+    type: object
+  model.UserData:
+    properties:
+      accessKey:
+        description: 只有实验室用户才会有这个值
+        type: string
+      accessSecret:
+        type: string
+      accessToken:
+        type: string
+      avatar:
+        type: string
+      displayName:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      org_id:
+        type: string
+      owner:
+        type: string
+      phone:
+        type: string
+      signupApplication:
+        type: string
+      status:
+        type: integer
+      type:
+        type: string
+      user_no:
+        type: string
+    type: object
+  model.WorkflowNodeType:
+    enum:
+    - Group
+    - ILab
+    - py_script
+    type: string
+    x-enum-varnames:
+    - WorkflowNodeGroup
+    - WorkflowNodeILab
+    - WorkflowPyScript
+  model.WorkflowTaskStatus:
+    enum:
+    - pending
+    - running
+    - canceled
+    - failed
+    - successed
+    - timeout
+    type: string
+    x-enum-varnames:
+    - WorkflowTaskStatusPending
+    - WorkflowTaskStatusRunnig
+    - WorkflowTaskStatusCanceled
+    - WorkflowTaskStatusFailed
+    - WorkflowTaskStatusSuccessed
+    - WorkflowTaskStatusTimeout
+  workflow.CreateReq:
+    properties:
+      description:
+        type: string
+      lab_uuid:
+        type: string
+      name:
+        type: string
+    required:
+    - lab_uuid
+    type: object
+  workflow.CreateResp:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      uuid:
+        type: string
+    type: object
+  workflow.DetailResp:
+    properties:
+      description:
+        type: string
+      edges:
+        items:
+          $ref: '#/definitions/workflow.WSEdge'
+        type: array
+      name:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/workflow.WSNode'
+        type: array
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.DuplicateError:
+    properties:
+      reason:
+        type: string
+      source_template_name:
+        type: string
+      target_template_name:
+        type: string
+    type: object
+  workflow.DuplicateReq:
+    properties:
+      name:
+        type: string
+      source_uuid:
+        type: string
+      target_lab_uuid:
+        type: string
+    type: object
+  workflow.DuplicateRes:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/workflow.DuplicateError'
+        type: array
+      name:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.ExportData:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/workflow.ExportEdge'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/workflow.ExportNode'
+        type: array
+      published:
+        type: boolean
+      tags:
+        items:
+          type: string
+        type: array
+      workflow_name:
+        type: string
+      workflow_uuid:
+        type: string
+    type: object
+  workflow.ExportEdge:
+    properties:
+      source_handle_io:
+        type: string
+      source_handle_key:
+        description: 句柄以可匹配字段导出（导入时用 handle_key + io_type 匹配目标模板的句柄）
+        type: string
+      source_node_uuid:
+        type: string
+      target_handle_io:
+        type: string
+      target_handle_key:
+        type: string
+      target_node_uuid:
+        type: string
+    type: object
+  workflow.ExportNode:
+    properties:
+      device_name:
+        type: string
+      disabled:
+        type: boolean
+      footer:
+        type: string
+      icon:
+        type: string
+      lab_node_type:
+        type: string
+      minimized:
+        type: boolean
+      name:
+        type: string
+      param:
+        type: object
+      parent_uuid:
+        type: string
+      pose:
+        type: object
+      resource_name:
+        type: string
+      template_name:
+        type: string
+      template_uuid:
+        type: string
+      type:
+        $ref: '#/definitions/model.WorkflowNodeType'
+      uuid:
+        type: string
+    type: object
+  workflow.ImportReq:
+    properties:
+      data:
+        $ref: '#/definitions/workflow.ExportData'
+      target_lab_uuid:
+        type: string
+    required:
+    - data
+    - target_lab_uuid
+    type: object
+  workflow.ListResp:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      published:
+        type: boolean
+      tags:
+        items:
+          type: string
+        type: array
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.ListResult:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/workflow.ListResp'
+        type: array
+      has_more:
+        type: boolean
+    type: object
+  workflow.NodeHandle:
+    properties:
+      data_key:
+        description: 数据键
+        type: string
+      data_source:
+        description: 数据源
+        type: string
+      display_name:
+        description: 显示名称
+        type: string
+      handle_key:
+        description: handle键
+        type: string
+      io_type:
+        description: 输入输出类型
+        type: string
+      type:
+        description: 数据类型
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.NodeTemplateDetailResp:
+    properties:
+      class:
+        description: 类名
+        type: string
+      created_at:
+        description: 创建时间
+        type: string
+      feedback:
+        description: 反馈参数
+        type: object
+      footer:
+        type: string
+      goal:
+        description: 目标参数
+        type: object
+      goal_default:
+        description: 默认目标参数
+        type: object
+      handles:
+        description: handle列表
+        items:
+          $ref: '#/definitions/workflow.NodeHandle'
+        type: array
+      header:
+        type: string
+      icon:
+        description: 图标
+        type: string
+      lab_name:
+        description: 实验室名称
+        type: string
+      name:
+        description: 模板名称
+        type: string
+      result:
+        description: 结果参数
+        type: object
+      schema:
+        description: 数据模式
+        type: object
+      type:
+        description: 类型
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.RunReq:
+    properties:
+      workflow_uuid:
+        type: string
+    required:
+    - workflow_uuid
+    type: object
+  workflow.TaskPageMore:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/workflow.TaskResp'
+        type: array
+      has_more:
+        type: boolean
+      page:
+        type: integer
+      page_size:
+        type: integer
+    type: object
+  workflow.TaskResp:
+    properties:
+      created_at:
+        type: string
+      finished_at:
+        type: string
+      status:
+        $ref: '#/definitions/model.WorkflowTaskStatus'
+      uuid:
+        type: string
+    type: object
+  workflow.TemplateHandleResp:
+    properties:
+      display_name:
+        type: string
+      handle_key:
+        type: string
+      io_type:
+        type: string
+      type:
+        type: string
+    type: object
+  workflow.TemplateListPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/workflow.TemplateListResp'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  workflow.TemplateListRes:
+    properties:
+      created_at:
+        type: string
+      name:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.TemplateListResp:
+    properties:
+      created_at:
+        description: 创建时间
+        type: string
+      footer:
+        description: 底部信息
+        type: string
+      handles:
+        description: handle名字列表
+        items:
+          $ref: '#/definitions/workflow.TemplateHandleResp'
+        type: array
+      header:
+        description: 头部信息
+        type: string
+      lab_name:
+        description: 实验室名字
+        type: string
+      name:
+        description: 模板名称（从device_action name字段取）
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.UpdateReq:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      published:
+        type: boolean
+      uuid:
+        type: string
+    required:
+    - uuid
+    type: object
+  workflow.WSEdge:
+    properties:
+      source_handle_uuid:
+        type: string
+      source_node_uuid:
+        type: string
+      target_handle_uuid:
+        type: string
+      target_node_uuid:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.WSNode:
+    properties:
+      device_name:
+        type: string
+      disabled:
+        type: boolean
+      footer:
+        type: string
+      handles:
+        items:
+          $ref: '#/definitions/workflow.WSNodeHandle'
+        type: array
+      icon:
+        type: string
+      lab_node_type:
+        type: string
+      minimized:
+        type: boolean
+      name:
+        type: string
+      param:
+        type: object
+      parent_uuid:
+        type: string
+      pose:
+        type: object
+      schema:
+        type: object
+      status:
+        type: string
+      template_uuid:
+        type: string
+      type:
+        $ref: '#/definitions/model.WorkflowNodeType'
+      user_id:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.WSNodeHandle:
+    properties:
+      data_key:
+        type: string
+      data_source:
+        type: string
+      display_name:
+        type: string
+      handle_key:
+        type: string
+      io_type:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+    type: object
+  workflow.WorkflowTemplateListPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/workflow.TemplateListRes'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+host: localhost:48197
+info:
+  contact:
+    email: harveyque@outlook.com
+    name: API Support
+    url: http://www.swagger.io/support
+  description: Studio 实验室管理系统 API
+  license:
+    name: GNU Affero General Public License v3.0
+    url: http://www.gnu.org/licenses/agpl-3.0.en.html
+  termsOfService: http://swagger.io/terms/
+  title: ScienceOL Studio API
+  version: "1.0"
+paths:
+  /auth/callback/casdoor:
+    get:
+      consumes:
+      - application/json
+      description: 处理OAuth2授权回调
+      parameters:
+      - description: 授权码
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: 防CSRF攻击的状态码
+        in: query
+        name: state
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "302":
+          description: 重定向到前端错误页面
+          schema:
+            type: string
+      summary: OAuth2回调
+      tags:
+      - Authentication
+  /auth/login:
+    get:
+      consumes:
+      - application/json
+      description: 检查服务运行状态
+      parameters:
+      - description: 前端回调地址
+        in: query
+        name: frontend_callback_url
+        type: string
+      produces:
+      - application/json
+      responses:
+        "302":
+          description: 重定向到OAuth2授权页面
+          headers:
+            Location:
+              description: 重定向的授权URL地址
+              type: string
+          schema:
+            type: string
+      summary: 登录
+      tags:
+      - Authentication
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: 刷新OAuth2令牌
+      parameters:
+      - description: 刷新令牌请求
+        in: body
+        name: refresh_token
+        required: true
+        schema:
+          $ref: '#/definitions/login.RefreshTokenReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 刷新 token 失败 code = 1002
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 刷新令牌
+      tags:
+      - Authentication
+  /foo:
+    get:
+      consumes:
+      - application/json
+      description: A simple test endpoint that does not require authentication
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Anonymous Test Endpoint
+      tags:
+      - Test
+  /foo/auth:
+    get:
+      consumes:
+      - application/json
+      description: A simple hello world endpoint that requires Bearer token authentication
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Authenticated Test Endpoint
+      tags:
+      - Test
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: 检查服务运行状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回成功状态
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 健康检查
+      tags:
+      - Health
+  /v1/edge/material:
+    post:
+      consumes:
+      - application/json
+      description: 从边缘端创建物料（带 UUID 的节点）
+      parameters:
+      - description: 边缘端创建物料请求
+        in: body
+        name: material
+        required: true
+        schema:
+          $ref: '#/definitions/material.CreateMaterialReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 边缘端创建物料
+      tags:
+      - Material
+    put:
+      consumes:
+      - application/json
+      description: 边缘端批量更新或插入物料
+      parameters:
+      - description: 边缘端更新/插入物料请求
+        in: body
+        name: material
+        required: true
+        schema:
+          $ref: '#/definitions/material.UpsertMaterialReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 边缘端更新/插入物料
+      tags:
+      - Material
+  /v1/edge/material/download:
+    get:
+      description: 边缘端下载物料图
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 边缘端下载物料
+      tags:
+      - Material
+  /v1/edge/material/edge:
+    post:
+      consumes:
+      - application/json
+      description: 从边缘端创建物料之间的连线
+      parameters:
+      - description: 创建连线请求
+        in: body
+        name: edges
+        required: true
+        schema:
+          $ref: '#/definitions/material.CreateMaterialEdgeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 边缘端创建物料连线
+      tags:
+      - Material
+  /v1/edge/material/query:
+    post:
+      consumes:
+      - application/json
+      description: 通过 UUID 列表查询物料信息
+      parameters:
+      - description: 物料 UUID 列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/material.MaterialQueryReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 按 UUID 查询物料
+      tags:
+      - Material
+  /v1/lab:
+    delete:
+      consumes:
+      - application/json
+      description: 删除一个实验室环境
+      parameters:
+      - description: 删除实验室请求
+        in: body
+        name: lab
+        required: true
+        schema:
+          $ref: '#/definitions/environment.DelLabReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 删除实验室环境
+      tags:
+      - Laboratory
+    patch:
+      consumes:
+      - application/json
+      description: 更新一个已存在的实验室环境
+      parameters:
+      - description: 实验室环境更新请求
+        in: body
+        name: lab
+        required: true
+        schema:
+          $ref: '#/definitions/environment.UpdateEnvReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 更新实验室环境
+      tags:
+      - Laboratory
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的实验室环境
+      parameters:
+      - description: 实验室环境创建请求
+        in: body
+        name: lab
+        required: true
+        schema:
+          $ref: '#/definitions/environment.LaboratoryEnvReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建实验室环境
+      tags:
+      - Laboratory
+  /v1/lab/{lab_uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取单个实验室的详细信息
+      parameters:
+      - description: 实验室UUID
+        in: path
+        name: lab_uuid
+        required: true
+        type: string
+      - description: 是否包含成员列表
+        in: query
+        name: with_member
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实验室信息
+      tags:
+      - Laboratory
+  /v1/lab/invite/{lab_uuid}:
+    post:
+      consumes:
+      - application/json
+      description: 为实验室创建邀请链接
+      parameters:
+      - description: 实验室UUID
+        in: path
+        name: lab_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建邀请链接
+      tags:
+      - Laboratory
+  /v1/lab/invite/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 通过邀请链接加入实验室
+      parameters:
+      - description: 邀请链接UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 接受邀请
+      tags:
+      - Laboratory
+  /v1/lab/list:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户的所有实验室
+      parameters:
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实验室列表
+      tags:
+      - Laboratory
+  /v1/lab/material:
+    get:
+      consumes:
+      - application/json
+      description: 查询实验室物料
+      parameters:
+      - in: query
+        name: id
+        type: string
+      - in: query
+        name: with_children
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 查询物料
+      tags:
+      - Material
+    post:
+      consumes:
+      - application/json
+      description: 在实验室中创建物料图（节点与边）
+      parameters:
+      - description: 物料图创建请求
+        in: body
+        name: material
+        required: true
+        schema:
+          $ref: '#/definitions/material.GraphNodeReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建物料图
+      tags:
+      - Material
+    put:
+      consumes:
+      - application/json
+      description: 批量更新物料的唯一名称
+      parameters:
+      - description: 批量更新物料请求
+        in: body
+        name: material
+        required: true
+        schema:
+          $ref: '#/definitions/material.UpdateMaterialReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 批量更新物料
+      tags:
+      - Material
+  /v1/lab/material/device/actions:
+    get:
+      consumes:
+      - application/json
+      description: 获取设备对应的可用动作列表
+      parameters:
+      - description: 实验室UUID
+        in: query
+        name: lab_uuid
+        required: true
+        type: string
+      - description: 设备名称
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 设备可用动作
+      tags:
+      - Material
+  /v1/lab/material/edge:
+    post:
+      consumes:
+      - application/json
+      description: 创建两个物料节点之间的连线
+      parameters:
+      - description: 物料连线请求
+        in: body
+        name: edges
+        required: true
+        schema:
+          $ref: '#/definitions/material.GraphEdge'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建物料连线
+      tags:
+      - Material
+  /v1/lab/material/resource:
+    get:
+      consumes:
+      - application/json
+      description: 获取实验室的所有资源（设备）列表
+      parameters:
+      - description: 实验室UUID
+        in: query
+        name: lab_uuid
+        required: true
+        type: string
+      - description: 资源类型
+        in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资源列表
+      tags:
+      - Material
+  /v1/lab/material/save:
+    post:
+      consumes:
+      - application/json
+      description: 保存当前实验室的物料图
+      parameters:
+      - description: 保存物料图请求
+        in: body
+        name: material
+        required: true
+        schema:
+          $ref: '#/definitions/material.SaveGrapReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 保存物料图
+      tags:
+      - Material
+  /v1/lab/material/template/{template_uuid}:
+    get:
+      description: 获取物料模板详情
+      parameters:
+      - description: 模板UUID
+        in: path
+        name: template_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取模板详情
+      tags:
+      - Material
+  /v1/lab/member/{lab_uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定实验室的成员列表
+      parameters:
+      - description: 实验室UUID
+        in: path
+        name: lab_uuid
+        required: true
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取实验室成员
+      tags:
+      - Laboratory
+  /v1/lab/member/{lab_uuid}/{member_uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: 从实验室中删除一个成员
+      parameters:
+      - description: 实验室UUID
+        in: path
+        name: lab_uuid
+        required: true
+        type: string
+      - description: 成员UUID
+        in: path
+        name: member_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 删除实验室成员
+      tags:
+      - Laboratory
+  /v1/lab/resource:
+    post:
+      consumes:
+      - application/json
+      description: 从边缘端创建实验室资源
+      parameters:
+      - description: 资源请求
+        in: body
+        name: resource
+        required: true
+        schema:
+          $ref: '#/definitions/environment.ResourceReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 创建实验室资源
+      tags:
+      - Laboratory
+  /v1/lab/run/workflow:
+    put:
+      consumes:
+      - application/json
+      description: 通过 HTTP 启动工作流任务，返回任务 UUID
+      parameters:
+      - description: 启动请求
+        in: body
+        name: workflow
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.RunReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 启动工作流（无鉴权）
+      tags:
+      - Workflow
+  /v1/lab/user:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: 获取用户信息
+      tags:
+      - Laboratory
+  /v1/lab/workflow/node/template/detail/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取节点模板的详细信息
+      parameters:
+      - description: 模板UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 节点模板详情
+      tags:
+      - Workflow
+  /v1/lab/workflow/node/template/list:
+    get:
+      consumes:
+      - application/json
+      description: 获取实验室下的节点模板列表，支持按名称、标签和分页过滤
+      parameters:
+      - in: query
+        name: lab_uuid
+        required: true
+        type: string
+      - in: query
+        name: name
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: tags
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 节点模板列表
+      tags:
+      - Workflow
+  /v1/lab/workflow/node/template/tags/{lab_uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定实验室的节点模板标签列表
+      parameters:
+      - description: 实验室UUID
+        in: path
+        name: lab_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 节点模板标签
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner:
+    patch:
+      consumes:
+      - application/json
+      description: 更新我创建的工作流（名称、发布状态、描述等）
+      parameters:
+      - description: 工作流更新请求
+        in: body
+        name: workflow
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.UpdateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 更新工作流
+      tags:
+      - Workflow
+    post:
+      consumes:
+      - application/json
+      description: 在指定实验室创建新的工作流
+      parameters:
+      - description: 工作流创建请求
+        in: body
+        name: workflow
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.CreateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 创建工作流
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除我创建的工作流
+      parameters:
+      - description: 工作流UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 删除工作流
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner/duplicate:
+    put:
+      consumes:
+      - application/json
+      description: 在目标实验室中复制现有工作流（自动匹配节点模板）
+      parameters:
+      - description: 复制请求
+        in: body
+        name: workflow
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.DuplicateReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 复制工作流
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出工作流为可跨实验室导入的 JSON 数据
+      parameters:
+      - in: query
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 导出工作流
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner/import:
+    post:
+      consumes:
+      - application/json
+      description: 将导出的工作流 JSON 导入到目标实验室
+      parameters:
+      - description: 导入请求
+        in: body
+        name: workflow
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.ImportReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 导入工作流
+      tags:
+      - Workflow
+  /v1/lab/workflow/owner/list:
+    get:
+      consumes:
+      - application/json
+      description: 获取我创建的工作流列表（滚动加载）
+      parameters:
+      - in: query
+        name: lab_uuid
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流列表
+      tags:
+      - Workflow
+  /v1/lab/workflow/task/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定工作流的任务列表（滚动分页）
+      parameters:
+      - description: 工作流UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流任务列表
+      tags:
+      - Workflow
+  /v1/lab/workflow/task/download/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 下载指定工作流的任务列表为 CSV 文件
+      parameters:
+      - description: 工作流UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 下载工作流任务
+      tags:
+      - Workflow
+  /v1/lab/workflow/template/detail/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 获取工作流的节点与边详情
+      parameters:
+      - description: 工作流UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流详情
+      tags:
+      - Workflow
+  /v1/lab/workflow/template/fork:
+    put:
+      consumes:
+      - application/json
+      description: 将已有工作流模板 Fork 到目标实验室
+      parameters:
+      - in: query
+        name: source_workflow_uuid
+        required: true
+        type: string
+      - in: query
+        name: target_lab_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: Fork 工作流模板
+      tags:
+      - Workflow
+  /v1/lab/workflow/template/list:
+    get:
+      consumes:
+      - application/json
+      description: 获取工作流模板列表，支持按标签与分页过滤
+      parameters:
+      - in: query
+        name: lab_uuid
+        required: true
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: tags
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流模板列表
+      tags:
+      - Workflow
+  /v1/lab/workflow/template/tags:
+    get:
+      consumes:
+      - application/json
+      description: 获取全局工作流模板标签列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流模板标签
+      tags:
+      - Workflow
+  /v1/lab/workflow/ws/workflow/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: 连接到指定工作流的 WebSocket 会话，用于实时编辑与运行
+      parameters:
+      - description: 工作流UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 请求参数错误
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Resp'
+            - properties:
+                code:
+                  $ref: '#/definitions/code.ErrCode'
+              type: object
+      summary: 工作流 WebSocket
+      tags:
+      - Workflow
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
