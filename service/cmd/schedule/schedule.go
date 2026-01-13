@@ -11,9 +11,15 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	cobra "github.com/spf13/cobra"
+	yaml "gopkg.in/yaml.v2"
 
 	// 内部引用
 	config "github.com/scienceol/opensdl/service/internal/config"
+	nacos "github.com/scienceol/opensdl/service/pkg/middleware/nacos"
+	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
+	db "github.com/scienceol/opensdl/service/pkg/middleware/db"
+	trace "github.com/scienceol/opensdl/service/pkg/middleware/trace"
+	utils "github.com/scienceol/opensdl/service/pkg/utils"
 )
 
 func New() *cobra.Command {
