@@ -10,7 +10,7 @@ import (
 	storage "github.com/scienceol/opensdl/service/pkg/core/storage"
 	st "github.com/scienceol/opensdl/service/pkg/core/storage/storage"
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
-	repo "github.com/scienceol/opensdl/service/pkg/repo/model"
+	repo "github.com/scienceol/opensdl/service/pkg/repo"
 )
 
 // StorageHandle 提供 Storage 相关接口
