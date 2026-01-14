@@ -8,7 +8,7 @@ import (
 	inner "github.com/scienceol/opensdl/service/pkg/core/inner"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
 	eStore "github.com/scienceol/opensdl/service/pkg/repo/environment"
-	model "github.com/scienceol/opensdl/service/pkg/repo/model"
+	model "github.com/scienceol/opensdl/service/pkg/model"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
 )
 

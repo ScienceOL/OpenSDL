@@ -18,7 +18,7 @@ import (
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
 	model "github.com/scienceol/opensdl/service/pkg/model"
-	// storageTokenRepo "github.com/scienceol/opensdl/service/pkg/repo/storage_token"
+	storageTokenRepo "github.com/scienceol/opensdl/service/pkg/repo/storage_token"
 )
 
 type StorageService struct {
