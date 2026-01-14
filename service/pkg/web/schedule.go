@@ -10,7 +10,9 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	// 内部引用
+	auth "github.com/scienceol/opensdl/service/pkg/middleware/auth"
 	views "github.com/scienceol/opensdl/service/pkg/web/views"
+	schedule "github.com/scienceol/opensdl/service/pkg/web/views/schedule"
 )
 
 func NewSchedule(ctx context.Context, g *gin.Engine) context.CancelFunc {
