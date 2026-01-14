@@ -18,7 +18,7 @@ import (
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	constant "github.com/scienceol/opensdl/service/pkg/common/constant"
 	uuid "github.com/scienceol/opensdl/service/pkg/common/uuid"
-	material "github.com/scienceol/studio/service/pkg/core/material"
+	material "github.com/scienceol/opensdl/service/pkg/core/material"
 	impl "github.com/scienceol/opensdl/service/pkg/core/material/material"
 	auth "github.com/scienceol/opensdl/service/pkg/middleware/auth"
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
