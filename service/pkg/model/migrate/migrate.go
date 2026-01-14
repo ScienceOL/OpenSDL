@@ -29,14 +29,13 @@ func Table(_ context.Context) error {
 			&model.LaboratoryMember{},       // 实验室成员
 			&model.LaboratoryInvitation{},   // 实验室邀请记录
 			&model.MaterialMachine{},        // 开发机器
-			// TODO: 后续添加
-			// &model.Notebook{},               // 记录本表
-			// &model.NotebookGroup{},          // 记录本行记录表
-			// &model.NotebookParam{},          // 记录本节点参数表
+			&model.Notebook{},               // 记录本表
+			&model.NotebookGroup{},          // 记录本行记录表
+			&model.NotebookParam{},          // 记录本节点参数表
 			// &model.Sample{},                 // 样品记录表
-			// &model.WorkflowNodeJobSample{},  // 节点运行结果对应样品子结果
-			// &model.Reagent{},                // 试剂表
-			// &model.StorageToken{},           // 存储token表
+			&model.WorkflowNodeJobSample{},  // 节点运行结果对应样品子结果
+			&model.Reagent{},                // 试剂表
+			&model.StorageToken{},           // 存储token表
 			// &model.CustomRole{},             // 自定义角色
 			// &model.CustomRolePerm{},         // 自定义角色权限
 			// &model.PolicyResource{},         // 权限资源
