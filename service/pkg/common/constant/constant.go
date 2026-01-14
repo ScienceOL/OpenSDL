@@ -19,9 +19,9 @@ const (
 )
 
 // SortOrder 定义排序方向
-// type SortOrder string
+type SortOrder string
 
-// const (
-// 	SortOrderAsc  SortOrder = "asc"  // 升序
-// 	SortOrderDesc SortOrder = "desc" // 降序
-// )
+const (
+	SortOrderAsc  SortOrder = "asc"  // 升序
+	SortOrderDesc SortOrder = "desc" // 降序
+)

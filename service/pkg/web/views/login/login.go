@@ -6,6 +6,8 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	oauth2 "golang.org/x/oauth2"
+
+	// 内部引用
 	common "github.com/scienceol/opensdl/service/pkg/common"
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	ls "github.com/scienceol/opensdl/service/pkg/core/login"
