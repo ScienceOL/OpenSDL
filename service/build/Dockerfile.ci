@@ -1,0 +1,41 @@
+ARG BUILD_ENV=production
+ARG GO_VERSION=1.24.6
+
+FROM golang:${GO_VERSION}-alpine AS base
+
+FROM base AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Install swag
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# 使用国际通用 GOPROXY，适用于 Github CI
+ENV GOPROXY=https://proxy.golang.org,direct
+
+COPY go.mod go.sum ./
+COPY . .
+
+RUN go mod download
+
+ARG BUILD_ENV
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s" \
+    -o backend \
+    main.go
+
+FROM base AS production
+
+RUN apk --no-cache add ca-certificates tzdata make
+WORKDIR /app
+
+# Copy the swag binary from the builder stage to the final image
+COPY --from=builder /go/bin/swag /usr/local/bin/swag
+
+COPY --from=builder /app/backend .
+
+EXPOSE 48197
+
+CMD ["./backend", "apiserver"]

@@ -1,0 +1,124 @@
+name: sciol-studio
+services:
+  network-service:
+    image: registry.sciol.ac.cn/library/alpine:3.22
+    container_name: studio-network
+    ports:
+      - '${WEB_PORT:-32234}:32234'
+      - '${SERVICE_PORT:-48197}:48197'
+      - '${SCHEDULE_PORT:-48198}:48198'
+      - '${POSTGRES_PORT:-5433}:5432'
+      # - '${REDIS_PORT:-6379}:6379'
+    command: tail -f /dev/null
+    networks:
+      - studio-network
+
+  postgresql:
+    image: registry.sciol.ac.cn/library/postgres:16.8-alpine
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-postgres}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    attach: false
+
+  redis:
+    image: registry.sciol.ac.cn/library/redis:7.4.2-alpine
+    network_mode: 'service:network-service'
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      replicas: ${REDIS_REPLICAS:-1}
+    attach: false
+
+  service:
+    image: registry.sciol.ac.cn/sciol/studio-service
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: unless-stopped
+    working_dir: /app
+    build:
+      context: ../service
+      dockerfile: build/Dockerfile
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --quiet --tries=1 --timeout=3 --spider http://localhost:48197/api/health',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      replicas: 1
+
+  schedule:
+    image: registry.sciol.ac.cn/sciol/studio-service
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: unless-stopped
+    working_dir: /app
+    build:
+      context: ../service
+      dockerfile: build/Dockerfile
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --quiet --tries=1 --timeout=3 --spider http://localhost:48198/api/health',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    command: ['./backend', 'schedule']
+    deploy:
+      replicas: 1
+
+  # web:
+  #   image: registry.sciol.ac.cn/sciol/studio-web
+  #   pull_policy: if_not_present
+  #   network_mode: 'service:network-service'
+  #   restart: unless-stopped
+  #   depends_on:
+  #     service:
+  #       condition: service_healthy
+  #   deploy:
+  #     replicas: ${WEB_REPLICAS:-1}
+
+volumes:
+  db-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  studio-network:
+    driver: bridge
