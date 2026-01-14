@@ -68,6 +68,7 @@ require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1800 // indirect
 	github.com/aliyun/alibabacloud-dkms-gcs-go-sdk v0.5.1 // indirect
 	github.com/aliyun/alibabacloud-dkms-transfer-go-sdk v0.1.8 // indirect
+	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible // indirect
 	github.com/aliyun/aliyun-secretsmanager-client-go v1.1.5 // indirect
 	github.com/aliyun/credentials-go v1.4.3 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
@@ -102,6 +103,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -147,6 +149,9 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
