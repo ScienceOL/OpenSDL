@@ -9,6 +9,7 @@ require (
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/joho/godotenv v1.5.1
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.5
+	github.com/olahol/melody v1.4.0
 	github.com/redis/go-redis/extra/rediscmd/v9 v9.17.2
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/sethvargo/go-envconfig v1.3.0
@@ -104,6 +105,7 @@ require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
