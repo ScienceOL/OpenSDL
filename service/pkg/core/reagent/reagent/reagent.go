@@ -14,8 +14,8 @@ import (
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
 	model "github.com/scienceol/opensdl/service/pkg/model"
-	// repoPubchem "github.com/scienceol/opensdl/service/pkg/repo/pubchem"
-	// repoReagent "github.com/scienceol/opensdl/service/pkg/repo/reagent"
+	repoPubchem "github.com/scienceol/opensdl/service/pkg/repo/pubchem"
+	repoReagent "github.com/scienceol/opensdl/service/pkg/repo/reagent"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
 )
 
