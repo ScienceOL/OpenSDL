@@ -12,7 +12,7 @@ import (
 	datatypes "gorm.io/datatypes"
 
 	// 内部引用
-	// config "github.com/scienceol/opensdl/service/pkg/config"
+	config "github.com/scienceol/opensdl/service/internal/config"
 	common "github.com/scienceol/opensdl/service/pkg/common"
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	uuid "github.com/scienceol/opensdl/service/pkg/common/uuid"
@@ -24,11 +24,11 @@ import (
 	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
 	// "github.com/scienceol/studio/service/pkg/repo/bohr"
-	// casdoor "github.com/scienceol/opensdl/service/pkg/repo/casdoor"
-	// el "github.com/scienceol/opensdl/service/pkg/repo/environment"
-	// mStore "github.com/scienceol/opensdl/service/pkg/repo/material"
+	casdoor "github.com/scienceol/opensdl/service/pkg/repo/casdoor"
+	el "github.com/scienceol/opensdl/service/pkg/repo/environment"
+	mStore "github.com/scienceol/opensdl/service/pkg/repo/material"
 	model "github.com/scienceol/opensdl/service/pkg/model"
-	// nbRepo "github.com/scienceol/opensdl/service/pkg/repo/notebook"
+	nbRepo "github.com/scienceol/opensdl/service/pkg/repo/notebook"
 	wfl "github.com/scienceol/opensdl/service/pkg/repo/workflow"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
 )

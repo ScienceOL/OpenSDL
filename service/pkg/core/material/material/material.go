@@ -16,7 +16,7 @@ import (
 	datatypes "gorm.io/datatypes"
 
 	// 内部引用
-	// config "github.com/scienceol/opensdl/service/pkg/config"
+	config "github.com/scienceol/opensdl/service/internal/config"
 	common "github.com/scienceol/opensdl/service/pkg/common"
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	uuid "github.com/scienceol/opensdl/service/pkg/common/uuid"
@@ -29,12 +29,13 @@ import (
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
-	// eStore "github.com/scienceol/opensdl/service/pkg/repo/environment"
-	// machineImpl "github.com/scienceol/opensdl/service/pkg/repo/machine"
-	// mStore "github.com/scienceol/opensdl/service/pkg/repo/material"
+	eStore "github.com/scienceol/opensdl/service/pkg/repo/environment"
+	machineImpl "github.com/scienceol/opensdl/service/pkg/repo/machine"
+	mStore "github.com/scienceol/opensdl/service/pkg/repo/material"
 	model "github.com/scienceol/opensdl/service/pkg/model"
-	// rStore "github.com/scienceol/opensdl/service/pkg/repo/reagent"
+	rStore "github.com/scienceol/opensdl/service/pkg/repo/reagent"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
+	db "github.com/scienceol/opensdl/service/pkg/middleware/db"
 )
 
 type materialImpl struct {
