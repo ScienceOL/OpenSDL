@@ -15,10 +15,27 @@ import (
 
 	melody "github.com/olahol/melody"
 	r "github.com/redis/go-redis/v9"
+	datatypes "gorm.io/datatypes"
+
+	// 内部引用
 	common "github.com/scienceol/opensdl/service/pkg/common"
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	uuid "github.com/scienceol/opensdl/service/pkg/common/uuid"
 	model "github.com/scienceol/opensdl/service/pkg/model"
+	repo "github.com/scienceol/opensdl/service/pkg/repo"
+	wfl "github.com/scienceol/opensdl/service/pkg/repo/workflow"
+	el "github.com/scienceol/opensdl/service/pkg/repo/environment"
+	mStore "github.com/scienceol/opensdl/service/pkg/repo/material"
+	workflow "github.com/scienceol/opensdl/service/pkg/core/workflow"
+	tags "github.com/scienceol/opensdl/service/pkg/repo/tags"
+	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
+	events "github.com/scienceol/opensdl/service/pkg/core/notify/events"
+	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
+	auth "github.com/scienceol/opensdl/service/pkg/middleware/auth"
+	utils "github.com/scienceol/opensdl/service/pkg/utils"
+	notify "github.com/scienceol/opensdl/service/pkg/core/notify"
+	engine "github.com/scienceol/opensdl/service/pkg/core/schedule/engine"
+	lab "github.com/scienceol/opensdl/service/pkg/core/schedule/lab"
 )
 
 type workflowImpl struct {

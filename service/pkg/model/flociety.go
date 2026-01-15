@@ -66,22 +66,22 @@ func (*ResourceHandleTemplate) TableName() string {
 
 type WorkflowNodeTemplate struct {
 	BaseModel
-	LabID          int64          `gorm:"type:bigint;not null;index:idx_da_lab_id_name" json:"lab_id"`
-	ResourceNodeID int64          `gorm:"type:bigint;not null;uniqueIndex:idx_da_id_name,priority:1" json:"resource_node_id"` // 资源模板节点 id
-	Name           string         `gorm:"type:varchar(255);not null;index:idx_da_lab_id_name;uniqueIndex:idx_da_id_name,priority:2" json:"name"`
-	// DisplayName    string                           `gorm:"type:varchar(255);not null;default:''" json:"display_name"`
-	Class          string         `gorm:"type:varchar(200)" json:"class"`
-	Goal           datatypes.JSON `gorm:"type:jsonb" json:"goal"`
-	GoalDefault    datatypes.JSON `gorm:"type:jsonb" json:"goal_default"`
-	Feedback       datatypes.JSON `gorm:"type:jsonb" json:"feedback"`
-	Result         datatypes.JSON `gorm:"type:jsonb" json:"result"`
-	Schema         datatypes.JSON `gorm:"type:jsonb" json:"schema"`
-	Type           string         `gorm:"type:text;not null" json:"type"`
-	Icon           string         `gorm:"type:text" json:"icon"`
-	Header         string         `gorm:"type:text" json:"header"`
-	Footer         string         `gorm:"type:text" json:"footer"`
-
-	Handles datatypes.JSONType[ActionHandle] `gorm:"-"`
+	LabID          int64                            `gorm:"type:bigint;not null;index:idx_da_lab_id_name" json:"lab_id"`
+	ResourceNodeID int64                            `gorm:"type:bigint;not null;uniqueIndex:idx_da_id_name,priority:1" json:"resource_node_id"` // 资源模板节点 id
+	Name           string                           `gorm:"type:varchar(255);not null;index:idx_da_lab_id_name;uniqueIndex:idx_da_id_name,priority:2" json:"name"`
+	DisplayName    string                           `gorm:"type:varchar(255);not null;default:''" json:"display_name"`
+	Class          string                           `gorm:"type:varchar(200)" json:"class"`
+	Goal           datatypes.JSON                   `gorm:"type:jsonb" json:"goal"`
+	GoalDefault    datatypes.JSON                   `gorm:"type:jsonb" json:"goal_default"`
+	Feedback       datatypes.JSON                   `gorm:"type:jsonb" json:"feedback"`
+	Result         datatypes.JSON                   `gorm:"type:jsonb" json:"result"`
+	Schema         datatypes.JSON                   `gorm:"type:jsonb" json:"schema"`
+	Type           string                           `gorm:"type:text;not null" json:"type"`
+	Icon           string                           `gorm:"type:text" json:"icon"`
+	Header         string                           `gorm:"type:text" json:"header"`
+	Footer         string                           `gorm:"type:text" json:"footer"`
+	NodeType       string                           `gorm:"type:text;not null;default:'ILab'" json:"node_type"`
+	Handles        datatypes.JSONType[ActionHandle] `gorm:"-"`
 }
 
 func (*WorkflowNodeTemplate) TableName() string {
