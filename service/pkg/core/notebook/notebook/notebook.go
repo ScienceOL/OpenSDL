@@ -23,7 +23,7 @@ import (
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	redis "github.com/scienceol/opensdl/service/pkg/middleware/redis"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
-	// "github.com/scienceol/studio/service/pkg/repo/bohr"
+	bohr "github.com/scienceol/opensdl/service/pkg/repo/bohr"
 	casdoor "github.com/scienceol/opensdl/service/pkg/repo/casdoor"
 	el "github.com/scienceol/opensdl/service/pkg/repo/environment"
 	mStore "github.com/scienceol/opensdl/service/pkg/repo/material"

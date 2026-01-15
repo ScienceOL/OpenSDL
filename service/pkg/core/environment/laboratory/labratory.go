@@ -23,12 +23,12 @@ import (
 	db "github.com/scienceol/opensdl/service/pkg/middleware/db"
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
-	// "github.com/scienceol/studio/service/pkg/repo/bohr"
+	bohr "github.com/scienceol/opensdl/service/pkg/repo/bohr"
 	casdoor "github.com/scienceol/opensdl/service/pkg/repo/casdoor"
 	eStore "github.com/scienceol/opensdl/service/pkg/repo/environment"
 	invite "github.com/scienceol/opensdl/service/pkg/repo/invite"
-	model "github.com/scienceol/opensdl/service/pkg/model"
 	opa "github.com/scienceol/opensdl/service/pkg/repo/opa"
+	model "github.com/scienceol/opensdl/service/pkg/model"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
 )
 

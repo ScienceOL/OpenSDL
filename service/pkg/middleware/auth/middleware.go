@@ -19,7 +19,7 @@ import (
 	code "github.com/scienceol/opensdl/service/pkg/common/code"
 	logger "github.com/scienceol/opensdl/service/pkg/middleware/logger"
 	repo "github.com/scienceol/opensdl/service/pkg/repo"
-	// bohr "github.com/scienceol/opensdl/service/pkg/repo/bohr"
+	bohr "github.com/scienceol/opensdl/service/pkg/repo/bohr"
 	casdoor "github.com/scienceol/opensdl/service/pkg/repo/casdoor"
 	model "github.com/scienceol/opensdl/service/pkg/model"
 	utils "github.com/scienceol/opensdl/service/pkg/utils"
