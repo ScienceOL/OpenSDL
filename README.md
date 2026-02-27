@@ -527,4 +527,4 @@ make clean         # Clean build artifacts
 
 ## License
 
-[Apache License 2.0](./LICENSE)
+[AGPL-3.0](./LICENSE)

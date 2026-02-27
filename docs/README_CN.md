@@ -1,6 +1,6 @@
 # OSDL — 开放科学设备实验室
 
-**OSDL**（Open Science Device Lab）是一套解耦的、开源的科学实验室 Edge 设备通信基础设施。上层应用（如 Studio、第三方系统）通过 OSDL 提供的 gRPC / HTTP API 与 Edge 设备进行交互，Edge 端软件如 [Uni-Lab-Edge](https://github.com/Uni-Lab-Edge/unilabos)（DeepModeling 社区项目）从设备端连接到 OSDL。OSDL 负责完整的生命周期管理：WebSocket 连接、实时消息传递、任务调度（DAG / Notebook / Action）、物料拓扑管理、以及可切换的认证后端（[Casdoor](https://casdoor.org/) 或 [Bohrium](https://bohrium.dp.tech/)）。
+**OSDL**（Open Self-driven Lab）是一套解耦的、开源的科学实验室 Edge 设备通信基础设施。上层应用（如 Studio、第三方系统）通过 OSDL 提供的 gRPC / HTTP API 与 Edge 设备进行交互，Edge 端软件如 [Uni-Lab-Edge](https://github.com/Uni-Lab-Edge/unilabos)（DeepModeling 社区项目）从设备端连接到 OSDL。OSDL 负责完整的生命周期管理：WebSocket 连接、实时消息传递、任务调度（DAG / Notebook / Action）、物料拓扑管理、以及可切换的认证后端（[Casdoor](https://casdoor.org/) 或 [Bohrium](https://bohrium.dp.tech/)）。
 
 > **语言 / Language**: 中文 | [English](../README.md)
 
@@ -522,4 +522,4 @@ make clean         # 清理构建产物
 
 ## 开源协议
 
-[Apache License 2.0](../LICENSE)
+[AGPL-3.0](../LICENSE)

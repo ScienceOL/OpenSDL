@@ -65,9 +65,14 @@ build-linux: clean ## Build for Linux
 
 .PHONY: proto
 proto: ## Generate gRPC code from proto files
-	protoc --go_out=gen --go_opt=paths=source_relative \
-		--go-grpc_out=gen --go-grpc_opt=paths=source_relative \
+	@rm -rf gen/osdl/v1/*.pb.go
+	protoc --go_out=. --go_opt=paths=import \
+		--go-grpc_out=. --go-grpc_opt=paths=import \
 		proto/osdl/v1/*.proto
+	@if [ -d "github.com/scienceol/osdl/gen/osdl/v1" ]; then \
+		cp github.com/scienceol/osdl/gen/osdl/v1/*.go gen/osdl/v1/ && \
+		rm -rf github.com; \
+	fi
 
 # ===== Quality =====
 
