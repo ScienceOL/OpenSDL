@@ -1,0 +1,137 @@
+version: "3.9"
+
+services:
+  # ========== Infrastructure ==========
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: osdl
+      POSTGRES_DB: osdl
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d osdl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ========== Casdoor (Auth Provider) ==========
+  # Uncomment to run Casdoor locally:
+  # casdoor:
+  #   image: casbin/casdoor:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     RUNNING_IN_DOCKER: "true"
+
+  # ========== OSDL Services ==========
+  osdl-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_HOST: redis
+
+  osdl-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["apiserver"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      osdl-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_HOST: redis
+      ENV: prod
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  osdl-schedule:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["schedule"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      osdl-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_HOST: redis
+      ENV: prod
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+volumes:
+  pgdata:
+  redisdata:

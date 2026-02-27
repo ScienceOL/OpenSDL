@@ -1,0 +1,35 @@
+# Environment
+.env
+.env.test
+.env.local
+.env.docker
+
+# Build output
+bin/
+
+# Vendor
+vendor/
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+**/*/log/
+
+# Generated protobuf (tracked separately if needed)
+# gen/
+
+# Coverage
+coverage.out
+coverage.html
+
+# Binary
+osdl
