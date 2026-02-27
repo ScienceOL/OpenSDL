@@ -35,6 +35,22 @@ init: ## Initialize dependencies
 	$(GO) mod download
 	$(GO) mod tidy
 
+.PHONY: dev
+dev: ## Run API server with hot-reload (air)
+	@if ! command -v air > /dev/null 2>&1; then \
+		echo "Installing air (hot-reload)..."; \
+		$(GO) install github.com/air-verse/air@v1.62.0; \
+	fi
+	air -c .air.web.toml
+
+.PHONY: dev-schedule
+dev-schedule: ## Run Schedule server with hot-reload (air)
+	@if ! command -v air > /dev/null 2>&1; then \
+		echo "Installing air (hot-reload)..."; \
+		$(GO) install github.com/air-verse/air@v1.62.0; \
+	fi
+	air -c .air.schedule.toml
+
 .PHONY: apiserver
 apiserver: ## Run API server
 	$(GO) run $(CMD_DIR) apiserver
@@ -46,6 +62,14 @@ schedule: ## Run Schedule server
 .PHONY: migrate
 migrate: ## Run database migration
 	$(GO) run $(CMD_DIR) migrate
+
+.PHONY: swagger
+swagger: ## Generate Swagger documentation
+	@if ! command -v swag > /dev/null 2>&1; then \
+		echo "Installing swag..."; \
+		$(GO) install github.com/swaggo/swag/cmd/swag@latest; \
+	fi
+	swag init -g main.go
 
 # ===== Build =====
 

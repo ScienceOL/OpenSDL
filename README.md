@@ -303,11 +303,31 @@ osdl/
 ├── go.mod
 ├── Makefile                         # Build, dev, docker, lint targets
 ├── Dockerfile                       # Multi-stage build (alpine)
-├── docker-compose.yml               # Full stack: postgres + redis + osdl-api + osdl-schedule
+├── docker-compose.yml               # Full stack deploy: postgres + redis + osdl-api + osdl-schedule
 ├── .env.example                     # Environment variable template
+├── .air.web.toml                    # Air hot-reload config for API server
+├── .air.schedule.toml               # Air hot-reload config for Schedule server
+│
+├── docker/                          # Docker Compose layered configs
+│   ├── docker-compose.infra.yaml    # Infrastructure: PostgreSQL + Redis + Casdoor
+│   ├── docker-compose.base.yaml     # Base service definitions (API + Schedule)
+│   ├── docker-compose.dev.yaml      # Dev override: volume mounts, hot-reload
+│   └── .env.dev                     # Dev environment variables
+│
+├── launch/                          # Development scripts
+│   ├── dev.sh                       # One-command dev environment startup
+│   └── colors.sh                    # Terminal color definitions
+│
+├── docs/                            # Documentation + Swagger
+│   ├── docs.go                      # Swagger generated Go code
+│   ├── swagger.json                 # OpenAPI 2.0 spec (JSON)
+│   ├── swagger.yaml                 # OpenAPI 2.0 spec (YAML)
+│   ├── README_CN.md                 # Chinese documentation
+│   ├── MIGRATION_FROM_UNILAB.md     # uni-lab-backend migration guide (EN)
+│   └── MIGRATION_FROM_UNILAB_CN.md  # uni-lab-backend migration guide (CN)
 │
 ├── cmd/
-│   ├── api/server.go                # API server startup (HTTP + gRPC + graceful shutdown)
+│   ├── api/server.go                # API server startup (HTTP + gRPC + Swagger + graceful shutdown)
 │   └── schedule/server.go           # Schedule server startup (WebSocket + Redis consumer)
 │
 ├── internal/config/                 # Configuration (env vars via Viper)
@@ -328,16 +348,16 @@ osdl/
 │   │   │   ├── lab/edge/            # EdgeImpl — message routing & queue consumers
 │   │   │   └── engine/              # Task execution: DAG, Notebook, Action
 │   │   └── notify/events/           # Redis Pub/Sub broadcast system
-│   ├── grpc/                        # gRPC server bootstrap
+│   ├── grpc/                        # gRPC server + service impls + auth interceptor
 │   ├── middleware/                   # Auth, DB, Redis, Logger, OpenTelemetry
 │   ├── repo/                        # Repository interfaces + implementations
 │   │   ├── casdoor/                 # Casdoor auth backend
 │   │   └── bohr/                    # Bohrium auth backend
 │   ├── utils/                       # DAG, JWT, signal, concurrency helpers
-│   └── web/                         # Gin HTTP routes + handlers
+│   └── web/                         # Gin HTTP routes + handlers + Swagger UI
 │       └── views/                   # health, login, material, schedule, sse
 │
-└── gen/osdl/v1/                     # protoc-generated Go code (gitignored or tracked)
+└── gen/osdl/v1/                     # protoc-generated Go code
 ```
 
 ---
@@ -367,14 +387,41 @@ make init
 # 4. Run database migration
 make migrate
 
-# 5. Start API server (HTTP :8080 + gRPC :9090)
-make apiserver
+# 5. Start API server with hot-reload (HTTP :8080 + gRPC :9090)
+make dev
 
-# 6. Start Schedule server (WebSocket :8081) — in another terminal
-make schedule
+# 6. Start Schedule server with hot-reload (WebSocket :8081) — in another terminal
+make dev-schedule
 ```
 
-### Docker Compose (one command)
+### Docker Compose — Dev Environment
+
+OSDL uses a layered Docker Compose setup (following the Studio pattern):
+
+| File | Purpose |
+|------|---------|
+| `docker/docker-compose.infra.yaml` | Infrastructure: PostgreSQL + Redis (shared network) |
+| `docker/docker-compose.base.yaml` | Base service definitions for API + Schedule |
+| `docker/docker-compose.dev.yaml` | Dev overrides: source mounts, Go module cache, hot-reload |
+| `docker/.env.dev` | Dev environment variables (`host.docker.internal` for external services) |
+
+```bash
+# One-command startup (infrastructure + dev services)
+./launch/dev.sh
+
+# Or run in background
+./launch/dev.sh -d
+
+# Stop all containers
+./launch/dev.sh -s
+
+# Stop and remove all containers
+./launch/dev.sh -e
+```
+
+If infrastructure (PostgreSQL, Redis, Casdoor) is already running on the host, the dev services connect via `host.docker.internal`.
+
+### Docker Compose — Production
 
 ```bash
 # Start everything: PostgreSQL + Redis + migrate + API + Schedule
@@ -385,6 +432,20 @@ make docker-logs
 
 # Stop
 make docker-down
+```
+
+### Swagger API Docs
+
+Swagger documentation is auto-generated at API server startup using [swaggo/swag](https://github.com/swaggo/swag). Access the Swagger UI at:
+
+```
+http://localhost:8080/api/swagger/index.html
+```
+
+To regenerate manually:
+
+```bash
+make swagger
 ```
 
 ---
@@ -484,23 +545,26 @@ See [`.env.example`](./.env.example) for the complete list.
 ## Make Targets
 
 ```bash
-make help          # Show all available commands
-make init          # Download and tidy dependencies
-make apiserver     # Run API server
-make schedule      # Run Schedule server
-make migrate       # Run database migration
-make build         # Build binary
-make build-linux   # Cross-compile for Linux
-make proto         # Generate gRPC code from proto files
-make test          # Run tests
-make fmt           # Format code
-make vet           # Go vet
-make lint          # Lint (golangci-lint)
-make docker-build  # Build Docker image
-make docker-up     # Start full stack with docker-compose
-make docker-down   # Stop all services
-make docker-logs   # Tail logs
-make clean         # Clean build artifacts
+make help            # Show all available commands
+make init            # Download and tidy dependencies
+make dev             # Run API server with hot-reload (air)
+make dev-schedule    # Run Schedule server with hot-reload (air)
+make apiserver       # Run API server (no hot-reload)
+make schedule        # Run Schedule server (no hot-reload)
+make migrate         # Run database migration
+make swagger         # Generate Swagger documentation
+make build           # Build binary
+make build-linux     # Cross-compile for Linux
+make proto           # Generate gRPC code from proto files
+make test            # Run tests
+make fmt             # Format code
+make vet             # Go vet
+make lint            # Lint (golangci-lint)
+make docker-build    # Build Docker image
+make docker-up       # Start full stack with docker-compose
+make docker-down     # Stop all services
+make docker-logs     # Tail logs
+make clean           # Clean build artifacts
 ```
 
 ---
@@ -516,6 +580,8 @@ make clean         # Clean build artifacts
 | ORM              | [GORM](https://gorm.io/) + PostgreSQL        |
 | Cache / Queue    | [Redis](https://redis.io/) (go-redis/v9)     |
 | Authentication   | [Casdoor](https://casdoor.org/) or [Bohrium](https://bohrium.dp.tech/) |
+| API Docs         | [Swagger](https://swagger.io/) via [swaggo](https://github.com/swaggo/swag) |
+| Hot Reload       | [Air](https://github.com/air-verse/air)      |
 | CLI              | [Cobra](https://github.com/spf13/cobra)      |
 | Config           | [Viper](https://github.com/spf13/viper)      |
 | Logging          | [Zap](https://github.com/uber-go/zap)        |

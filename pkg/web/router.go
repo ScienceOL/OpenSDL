@@ -13,6 +13,8 @@ import (
 	"github.com/scienceol/osdl/pkg/web/views/login"
 	materialView "github.com/scienceol/osdl/pkg/web/views/material"
 	"github.com/scienceol/osdl/pkg/web/views/sse"
+	swaggerfiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
@@ -34,6 +36,7 @@ func installURL(ctx context.Context, g *gin.Engine) {
 	api.GET("/health", health.Health)
 	api.GET("/health/live", health.Live)
 	api.GET("/health/ready", health.Ready)
+	api.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 
 	// Auth routes
 	{

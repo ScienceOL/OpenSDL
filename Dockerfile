@@ -5,6 +5,9 @@ FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
+# Install swag for Swagger generation
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 WORKDIR /src
 
 # Cache dependencies

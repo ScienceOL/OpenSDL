@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
+
+	_ "github.com/scienceol/osdl/docs" // swagger generated docs
 
 	"github.com/gin-gonic/gin"
 	"github.com/scienceol/osdl/internal/config"
@@ -85,6 +88,16 @@ func initWeb(cmd *cobra.Command, _ []string) error {
 }
 
 func newRouter(cmd *cobra.Command, _ []string) error {
+	// Generate Swagger documentation at startup
+	swagCmd := exec.Command("swag", "init", "-g", "main.go")
+	swagCmd.Dir = "."
+	output, err := swagCmd.CombinedOutput()
+	if err != nil {
+		logger.Warnf(cmd.Context(), "Could not generate Swagger docs: %v. Output: %s", err, string(output))
+	} else {
+		logger.Infof(cmd.Context(), "Swagger documentation generated successfully")
+	}
+
 	router := gin.Default()
 	web.NewRouter(cmd.Root().Context(), router)
 	conf := config.Global()

@@ -1,3 +1,21 @@
+// @title           OSDL API
+// @version         1.0
+// @description     OSDL (Open Self-Driving Lab) — Edge 设备通信与调度基础设施 API
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   OSDL Support
+// @contact.url    https://github.com/ScienceOL/OpenSDL
+
+// @license.name  GNU Affero General Public License v3.0
+// @license.url   http://www.gnu.org/licenses/agpl-3.0.en.html
+
+// @host      localhost:8080
+// @BasePath  /api
+// @schemes   http
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 package main
 
 import (

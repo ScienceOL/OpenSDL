@@ -1,0 +1,34 @@
+services:
+  api:
+    environment:
+      - GOPROXY=https://goproxy.cn,direct
+      - GIN_MODE=debug
+      - PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    env_file:
+      - .env.dev
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ..:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-bin-cache:/go/bin
+    command: sh -c "go mod download && make dev"
+
+  schedule:
+    environment:
+      - GOPROXY=https://goproxy.cn,direct
+      - GIN_MODE=debug
+      - PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    env_file:
+      - .env.dev
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ..:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-bin-cache:/go/bin
+    command: sh -c "go mod download && make dev-schedule"
+
+volumes:
+  go-mod-cache:
+  go-bin-cache:

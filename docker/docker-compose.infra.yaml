@@ -1,0 +1,78 @@
+name: osdl-infra
+services:
+  network-service:
+    image: alpine:3.22
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+      - '${REDIS_PORT:-6379}:6379'
+      - '${CASDOOR_PORT:-8000}:8000'
+    command: tail -f /dev/null
+    networks:
+      - osdl-network
+
+  postgresql:
+    image: postgres:16.8-alpine
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-osdl}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    entrypoint: >
+      /bin/sh -c "
+        mkdir -p /docker-entrypoint-initdb.d
+        echo 'CREATE DATABASE osdl;' > /docker-entrypoint-initdb.d/init-databases.sql
+        echo 'CREATE DATABASE casdoor;' >> /docker-entrypoint-initdb.d/init-databases.sql
+        exec /usr/local/bin/docker-entrypoint.sh postgres
+      "
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    attach: false
+
+  redis:
+    image: redis:7.4.2-alpine
+    network_mode: 'service:network-service'
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      replicas: ${REDIS_REPLICAS:-1}
+    attach: false
+
+  # Casdoor (Auth Provider) — uncomment to run locally
+  # casdoor:
+  #   image: casbin/casdoor:v2.43.0
+  #   container_name: osdl-casdoor
+  #   network_mode: 'service:network-service'
+  #   depends_on:
+  #     postgresql:
+  #       condition: service_healthy
+  #   environment:
+  #     RUNNING_IN_DOCKER: 'true'
+  #     driverName: 'postgres'
+  #     dataSourceName: 'user=${DATABASE_USER:-postgres} password=${DATABASE_PASSWORD:-osdl} host=127.0.0.1 port=5432 sslmode=disable dbname=casdoor'
+  #     runmode: 'dev'
+  #     dbName: 'casdoor'
+  #     initDataNewOnly: 'true'
+  #   attach: false
+
+volumes:
+  db-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  osdl-network:
+    driver: bridge

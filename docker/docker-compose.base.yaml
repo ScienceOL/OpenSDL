@@ -1,0 +1,64 @@
+name: osdl-dev
+services:
+  network-service:
+    image: alpine:3.22
+    container_name: osdl-network
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+      - '${GRPC_PORT:-9090}:9090'
+      - '${SCHEDULE_PORT:-8081}:8081'
+    command: tail -f /dev/null
+    networks:
+      - osdl-dev-network
+
+  api:
+    image: golang:1.24-alpine
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      network-service:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --quiet --tries=1 --timeout=3 --spider http://localhost:8080/api/health',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      replicas: 1
+
+  schedule:
+    image: golang:1.24-alpine
+    pull_policy: if_not_present
+    network_mode: 'service:network-service'
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      network-service:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --quiet --tries=1 --timeout=3 --spider http://localhost:8081/api/health',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      replicas: 1
+
+volumes:
+  go-mod-cache:
+  go-bin-cache:
+
+networks:
+  osdl-dev-network:
+    driver: bridge

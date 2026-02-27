@@ -300,9 +300,29 @@ osdl/
 ├── Dockerfile                       # 多阶段构建 (alpine)
 ├── docker-compose.yml               # 全栈部署: postgres + redis + osdl-api + osdl-schedule
 ├── .env.example                     # 环境变量模板
+├── .air.web.toml                    # Air 热重载配置 (API 服务)
+├── .air.schedule.toml               # Air 热重载配置 (Schedule 服务)
+│
+├── docker/                          # Docker Compose 分层配置
+│   ├── docker-compose.infra.yaml    # 基础设施: PostgreSQL + Redis + Casdoor
+│   ├── docker-compose.base.yaml     # 基础服务定义 (API + Schedule)
+│   ├── docker-compose.dev.yaml      # 开发覆盖: 源码挂载、热重载
+│   └── .env.dev                     # 开发环境变量
+│
+├── launch/                          # 开发脚本
+│   ├── dev.sh                       # 一键启动开发环境
+│   └── colors.sh                    # 终端颜色定义
+│
+├── docs/                            # 文档 + Swagger
+│   ├── docs.go                      # Swagger 生成的 Go 代码
+│   ├── swagger.json                 # OpenAPI 2.0 规范 (JSON)
+│   ├── swagger.yaml                 # OpenAPI 2.0 规范 (YAML)
+│   ├── README_CN.md                 # 中文文档
+│   ├── MIGRATION_FROM_UNILAB.md     # uni-lab-backend 迁移指南 (英文)
+│   └── MIGRATION_FROM_UNILAB_CN.md  # uni-lab-backend 迁移指南 (中文)
 │
 ├── cmd/
-│   ├── api/server.go                # API 服务启动 (HTTP + gRPC + 优雅关闭)
+│   ├── api/server.go                # API 服务启动 (HTTP + gRPC + Swagger + 优雅关闭)
 │   └── schedule/server.go           # Schedule 服务启动 (WebSocket + Redis 消费)
 │
 ├── internal/config/                 # 配置管理 (环境变量, Viper)
@@ -323,13 +343,13 @@ osdl/
 │   │   │   ├── lab/edge/            # EdgeImpl — 消息路由 & 队列消费
 │   │   │   └── engine/              # 任务执行: DAG、Notebook、Action
 │   │   └── notify/events/           # Redis Pub/Sub 广播系统
-│   ├── grpc/                        # gRPC 服务启动
+│   ├── grpc/                        # gRPC 服务 + 实现 + 认证拦截器
 │   ├── middleware/                   # 中间件: Auth、DB、Redis、Logger、OpenTelemetry
 │   ├── repo/                        # 数据仓储接口 + 实现
 │   │   ├── casdoor/                 # Casdoor 认证后端
 │   │   └── bohr/                    # Bohrium 认证后端
 │   ├── utils/                       # 工具: DAG、JWT、信号处理、并发安全
-│   └── web/                         # Gin HTTP 路由 + 处理器
+│   └── web/                         # Gin HTTP 路由 + 处理器 + Swagger UI
 │       └── views/                   # health、login、material、schedule、sse
 │
 └── gen/osdl/v1/                     # protoc 生成的 Go 代码
@@ -362,14 +382,41 @@ make init
 # 4. 数据库迁移
 make migrate
 
-# 5. 启动 API 服务 (HTTP :8080 + gRPC :9090)
-make apiserver
+# 5. 启动 API 服务 — 热重载 (HTTP :8080 + gRPC :9090)
+make dev
 
-# 6. 启动 Schedule 服务 (WebSocket :8081) — 另一个终端
-make schedule
+# 6. 启动 Schedule 服务 — 热重载 (WebSocket :8081) — 另一个终端
+make dev-schedule
 ```
 
-### Docker Compose 一键启动
+### Docker Compose 开发环境
+
+OSDL 使用分层式 Docker Compose 配置（参照 Studio 模式）：
+
+| 文件 | 用途 |
+|------|------|
+| `docker/docker-compose.infra.yaml` | 基础设施: PostgreSQL + Redis（共享网络） |
+| `docker/docker-compose.base.yaml` | API + Schedule 基础服务定义 |
+| `docker/docker-compose.dev.yaml` | 开发覆盖: 源码挂载、Go 模块缓存、热重载 |
+| `docker/.env.dev` | 开发环境变量（`host.docker.internal` 连接宿主机服务） |
+
+```bash
+# 一键启动（基础设施 + 开发服务）
+./launch/dev.sh
+
+# 后台运行
+./launch/dev.sh -d
+
+# 停止容器
+./launch/dev.sh -s
+
+# 停止并移除容器
+./launch/dev.sh -e
+```
+
+如果基础设施（PostgreSQL、Redis、Casdoor）已在宿主机运行，开发服务通过 `host.docker.internal` 连接。
+
+### Docker Compose 生产部署
 
 ```bash
 # 启动全部服务: PostgreSQL + Redis + 迁移 + API + Schedule
@@ -380,6 +427,20 @@ make docker-logs
 
 # 停止
 make docker-down
+```
+
+### Swagger API 文档
+
+Swagger 文档在 API 服务启动时由 [swaggo/swag](https://github.com/swaggo/swag) 自动生成。访问 Swagger UI：
+
+```
+http://localhost:8080/api/swagger/index.html
+```
+
+手动重新生成：
+
+```bash
+make swagger
 ```
 
 ---
@@ -479,23 +540,26 @@ make docker-down
 ## Make 命令
 
 ```bash
-make help          # 显示所有可用命令
-make init          # 下载并整理依赖
-make apiserver     # 启动 API 服务
-make schedule      # 启动 Schedule 服务
-make migrate       # 执行数据库迁移
-make build         # 构建二进制
-make build-linux   # 交叉编译 Linux 版本
-make proto         # 从 proto 文件生成 gRPC 代码
-make test          # 运行测试
-make fmt           # 格式化代码
-make vet           # Go vet 检查
-make lint          # 代码检查 (golangci-lint)
-make docker-build  # 构建 Docker 镜像
-make docker-up     # Docker Compose 一键启动
-make docker-down   # 停止所有服务
-make docker-logs   # 查看日志
-make clean         # 清理构建产物
+make help            # 显示所有可用命令
+make init            # 下载并整理依赖
+make dev             # 热重载启动 API 服务 (air)
+make dev-schedule    # 热重载启动 Schedule 服务 (air)
+make apiserver       # 启动 API 服务（无热重载）
+make schedule        # 启动 Schedule 服务（无热重载）
+make migrate         # 执行数据库迁移
+make swagger         # 生成 Swagger 文档
+make build           # 构建二进制
+make build-linux     # 交叉编译 Linux 版本
+make proto           # 从 proto 文件生成 gRPC 代码
+make test            # 运行测试
+make fmt             # 格式化代码
+make vet             # Go vet 检查
+make lint            # 代码检查 (golangci-lint)
+make docker-build    # 构建 Docker 镜像
+make docker-up       # Docker Compose 一键启动
+make docker-down     # 停止所有服务
+make docker-logs     # 查看日志
+make clean           # 清理构建产物
 ```
 
 ---
@@ -511,6 +575,8 @@ make clean         # 清理构建产物
 | ORM        | [GORM](https://gorm.io/) + PostgreSQL         |
 | 缓存/队列  | [Redis](https://redis.io/) (go-redis/v9)      |
 | 认证       | [Casdoor](https://casdoor.org/) 或 [Bohrium](https://bohrium.dp.tech/) |
+| API 文档   | [Swagger](https://swagger.io/) via [swaggo](https://github.com/swaggo/swag) |
+| 热重载     | [Air](https://github.com/air-verse/air)       |
 | CLI        | [Cobra](https://github.com/spf13/cobra)       |
 | 配置       | [Viper](https://github.com/spf13/viper)       |
 | 日志       | [Zap](https://github.com/uber-go/zap)         |
