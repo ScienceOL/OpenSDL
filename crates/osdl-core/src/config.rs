@@ -24,17 +24,23 @@ pub struct AdapterConfig {
     /// Platform standard: "unilabos", "sila", etc.
     #[serde(rename = "type")]
     pub adapter_type: String,
-    /// Identifier for this adapter instance.
-    pub gateway_id: String,
     /// Path to local device registry directory for this adapter.
     #[serde(default)]
     pub registry_path: Option<String>,
 }
 
-fn default_mqtt_host() -> String { "localhost".into() }
-fn default_mqtt_port() -> u16 { 1883 }
-fn default_client_id() -> String { "osdl".into() }
-fn default_keepalive() -> u64 { 30 }
+fn default_mqtt_host() -> String {
+    "localhost".into()
+}
+fn default_mqtt_port() -> u16 {
+    1883
+}
+fn default_client_id() -> String {
+    "osdl-mother".into()
+}
+fn default_keepalive() -> u64 {
+    30
+}
 
 impl Default for MqttConfig {
     fn default() -> Self {

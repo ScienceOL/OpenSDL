@@ -1,0 +1,35 @@
+device_type: heater_stirrer_dalong
+description: DaLong Heating Magnetic Stirrer (RS-485)
+protocol: custom
+baud_rate: 9600
+
+action_value_mappings:
+  - action_name: set_temperature
+    description: Set target temperature (°C)
+    goal_schema:
+      type: object
+      properties:
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 400
+
+  - action_name: set_stir_speed
+    description: Set stirring speed (RPM)
+    goal_schema:
+      type: object
+      properties:
+        speed:
+          type: integer
+          minimum: 0
+          maximum: 2000
+
+  - action_name: stop
+    description: Stop heating and stirring
+
+status_types:
+  - current_temperature
+  - target_temperature
+  - stir_speed
+  - is_heating
+  - is_stirring

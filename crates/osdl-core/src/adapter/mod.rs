@@ -1,39 +1,39 @@
 pub mod unilabos;
 
-use crate::event::OsdlEvent;
 use crate::protocol::*;
-use async_trait::async_trait;
-use rumqttc::AsyncClient;
 
-/// Adapts a device description standard + MQTT communication protocol.
+/// Adapts a device driver ecosystem's registry format and serial protocol.
 ///
 /// Each implementation understands one platform's way of describing devices
-/// (e.g. UniLabOS YAML registry) and its MQTT topic/payload conventions.
-/// It does NOT require the platform software to be running.
-#[async_trait]
-pub trait PlatformAdapter: Send + Sync {
+/// (e.g. UniLabOS YAML registry) and how to encode/decode serial bytes
+/// for those devices. It does NOT touch MQTT directly — the engine handles that.
+pub trait ProtocolAdapter: Send + Sync {
     /// Platform identifier, e.g. "unilabos", "sila".
     fn platform(&self) -> &str;
 
-    /// Load device definitions from the local registry.
+    /// Load device definitions from the local registry directory.
     fn load_registry(&mut self, path: &str) -> Result<(), String>;
 
-    /// Subscribe to relevant MQTT topics for this platform.
-    async fn start(&self, mqtt: &AsyncClient) -> Result<(), String>;
+    /// Given a hardware_id from a child node registration, try to match it
+    /// to a known device type. Returns device metadata if matched.
+    fn match_hardware(&self, hardware_id: &str) -> Option<DeviceMatch>;
 
-    /// Stop and clean up.
-    async fn stop(&self);
+    /// Encode a command into serial bytes to send to the device.
+    fn encode_command(&self, device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String>;
 
-    /// Return all devices known from the loaded registry.
-    fn devices(&self) -> Vec<Device>;
-
-    /// Parse an incoming MQTT message into an OsdlEvent, if it belongs to this adapter.
-    fn parse_message(&self, topic: &str, payload: &[u8]) -> Option<OsdlEvent>;
-
-    /// Serialize and publish a command via MQTT in this platform's format.
-    async fn dispatch_command(
+    /// Decode serial bytes received from a device into a status update.
+    /// Returns None if the bytes are incomplete or not parseable.
+    fn decode_response(
         &self,
-        mqtt: &AsyncClient,
-        cmd: &DeviceCommand,
-    ) -> Result<CommandResult, String>;
+        device_type: &str,
+        bytes: &[u8],
+    ) -> Option<std::collections::HashMap<String, serde_json::Value>>;
+}
+
+/// Result of matching a hardware_id to a known device type.
+#[derive(Debug, Clone)]
+pub struct DeviceMatch {
+    pub device_type: String,
+    pub description: String,
+    pub actions: Vec<ActionSchema>,
 }

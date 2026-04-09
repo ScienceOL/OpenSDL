@@ -1,13 +1,40 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// === Child Node ===
+
+/// A child node (ESP32 serial bridge) connected via MQTT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Node {
+    pub node_id: String,
+    pub hardware_id: String,
+    pub baud_rate: u32,
+    pub online: bool,
+    /// Device ID assigned after driver match (None if unrecognized hardware).
+    pub device_id: Option<String>,
+}
+
+/// Registration payload published by child node on boot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeRegistration {
+    pub hardware_id: String,
+    #[serde(default = "default_baud")]
+    pub baud_rate: u32,
+}
+
+fn default_baud() -> u32 {
+    9600
+}
+
+// === Device ===
+
 /// A discovered device with its capabilities and current state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
+    pub node_id: String,
     pub device_type: String,
     pub adapter: String,
-    pub category: Vec<String>,
     pub description: String,
     pub online: bool,
     pub properties: HashMap<String, serde_json::Value>,
@@ -19,9 +46,8 @@ pub struct Device {
 pub struct ActionSchema {
     pub name: String,
     pub description: String,
-    pub goal_schema: serde_json::Value,
-    pub feedback_schema: serde_json::Value,
-    pub result_schema: serde_json::Value,
+    #[serde(default)]
+    pub params: serde_json::Value,
 }
 
 /// Real-time status update from a device.
@@ -38,7 +64,7 @@ pub struct DeviceCommand {
     pub command_id: String,
     pub device_id: String,
     pub action: String,
-    pub goal: serde_json::Value,
+    pub params: serde_json::Value,
 }
 
 /// Result of a command execution.
@@ -47,8 +73,8 @@ pub struct CommandResult {
     pub command_id: String,
     pub device_id: String,
     pub status: CommandStatus,
-    pub feedback: serde_json::Value,
-    pub result: Option<serde_json::Value>,
+    pub message: String,
+    pub data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

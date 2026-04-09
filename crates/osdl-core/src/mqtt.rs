@@ -16,18 +16,22 @@ impl MqttBridge {
         Self { client, eventloop }
     }
 
-    pub async fn subscribe(&self, topic: &str) -> Result<(), rumqttc::ClientError> {
-        self.client.subscribe(topic, QoS::AtLeastOnce).await
+    /// Split into client + eventloop for separate ownership.
+    pub fn split(self) -> (AsyncClient, EventLoop) {
+        (self.client, self.eventloop)
+    }
+
+    pub async fn subscribe(client: &AsyncClient, topic: &str) -> Result<(), rumqttc::ClientError> {
+        client.subscribe(topic, QoS::AtLeastOnce).await
     }
 
     pub async fn publish(
-        &self,
+        client: &AsyncClient,
         topic: &str,
-        payload: &[u8],
-        retain: bool,
+        payload: Vec<u8>,
     ) -> Result<(), rumqttc::ClientError> {
-        self.client
-            .publish(topic, QoS::AtLeastOnce, retain, payload)
+        client
+            .publish(topic, QoS::AtLeastOnce, false, payload)
             .await
     }
 }

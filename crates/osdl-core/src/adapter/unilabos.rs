@@ -1,132 +1,158 @@
-use crate::adapter::PlatformAdapter;
-use crate::event::OsdlEvent;
+use crate::adapter::{DeviceMatch, ProtocolAdapter};
 use crate::protocol::*;
-use async_trait::async_trait;
-use rumqttc::AsyncClient;
 use std::collections::HashMap;
 
 /// Adapter for the UniLabOS device description standard.
 ///
 /// Reads UniLabOS YAML registry files to understand device capabilities,
-/// then speaks the UniLabOS MQTT topic/payload convention to communicate
-/// with devices directly.
+/// maps hardware_ids to device types, and encodes/decodes serial protocols
+/// (Modbus RTU, custom frames) for supported devices.
 pub struct UniLabOsAdapter {
-    gateway_id: String,
-    devices: HashMap<String, Device>,
+    /// hardware_id → device definition from registry YAML
+    registry: HashMap<String, RegistryEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct RegistryEntry {
+    device_type: String,
+    description: String,
+    actions: Vec<ActionSchema>,
+    // Future: protocol details (modbus address map, custom frame format, etc.)
 }
 
 impl UniLabOsAdapter {
-    pub fn new(gateway_id: &str) -> Self {
+    pub fn new() -> Self {
         Self {
-            gateway_id: gateway_id.to_string(),
-            devices: HashMap::new(),
+            registry: HashMap::new(),
         }
-    }
-
-    fn base_topic(&self) -> String {
-        format!("unilabos/{}", self.gateway_id)
     }
 }
 
-#[async_trait]
-impl PlatformAdapter for UniLabOsAdapter {
+impl Default for UniLabOsAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProtocolAdapter for UniLabOsAdapter {
     fn platform(&self) -> &str {
         "unilabos"
     }
 
     fn load_registry(&mut self, path: &str) -> Result<(), String> {
-        // TODO: walk `path`, parse each .yaml file using UniLabOS registry format,
-        // convert to Device structs with ActionSchema derived from action_value_mappings
-        // and status_types from the YAML.
         log::info!("Loading UniLabOS registry from: {}", path);
-        let _ = path;
-        Ok(())
-    }
 
-    async fn start(&self, mqtt: &AsyncClient) -> Result<(), String> {
-        let base = self.base_topic();
-        mqtt.subscribe(format!("{}/+/status", base), rumqttc::QoS::AtLeastOnce)
-            .await
-            .map_err(|e| e.to_string())?;
-        mqtt.subscribe(format!("{}/+/command/ack", base), rumqttc::QoS::AtLeastOnce)
-            .await
-            .map_err(|e| e.to_string())?;
-        mqtt.subscribe(format!("{}/+/online", base), rumqttc::QoS::AtLeastOnce)
-            .await
-            .map_err(|e| e.to_string())?;
-        log::info!("UniLabOS adapter started for gateway: {}", self.gateway_id);
-        Ok(())
-    }
+        // Walk the registry directory for .yaml files
+        let dir = std::fs::read_dir(path).map_err(|e| format!("read dir {}: {}", path, e))?;
 
-    async fn stop(&self) {
-        log::info!("UniLabOS adapter stopped for gateway: {}", self.gateway_id);
-    }
-
-    fn devices(&self) -> Vec<Device> {
-        self.devices.values().cloned().collect()
-    }
-
-    fn parse_message(&self, topic: &str, payload: &[u8]) -> Option<OsdlEvent> {
-        let base = self.base_topic();
-        let suffix = topic.strip_prefix(&format!("{}/", base))?;
-
-        // "{device_id}/status" | "{device_id}/command/ack" | "{device_id}/online"
-        if let Some(device_id) = suffix.strip_suffix("/status") {
-            let properties: HashMap<String, serde_json::Value> =
-                serde_json::from_slice(payload).ok()?;
-            Some(OsdlEvent::DeviceStatus(DeviceStatus {
-                device_id: device_id.to_string(),
-                timestamp: chrono_timestamp(),
-                properties,
-            }))
-        } else if let Some(device_id) = suffix.strip_suffix("/command/ack") {
-            let result: CommandResult = serde_json::from_slice(payload).ok()?;
-            let _ = device_id;
-            Some(OsdlEvent::CommandFeedback(result))
-        } else if let Some(device_id) = suffix.strip_suffix("/online") {
-            let online = payload == b"1";
-            if online {
-                // Device came online — emit with whatever we know from registry
-                if let Some(dev) = self.devices.get(device_id) {
-                    Some(OsdlEvent::DeviceOnline(dev.clone()))
-                } else {
-                    None
-                }
-            } else {
-                Some(OsdlEvent::DeviceOffline {
-                    device_id: device_id.to_string(),
-                })
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+                continue;
             }
-        } else {
-            None
+
+            match std::fs::read_to_string(&path) {
+                Ok(content) => match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                    Ok(yaml) => {
+                        if let Some(entry) = parse_registry_yaml(&yaml) {
+                            log::info!(
+                                "  Loaded device: {} ({})",
+                                entry.device_type,
+                                entry.description
+                            );
+                            // Use device_type as hardware_id for now.
+                            // Real mapping would come from the YAML's hardware_id field.
+                            self.registry
+                                .insert(entry.device_type.clone(), entry);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("  Failed to parse {}: {}", path.display(), e);
+                    }
+                },
+                Err(e) => {
+                    log::warn!("  Failed to read {}: {}", path.display(), e);
+                }
+            }
         }
+
+        log::info!(
+            "UniLabOS registry loaded: {} device types",
+            self.registry.len()
+        );
+        Ok(())
     }
 
-    async fn dispatch_command(
-        &self,
-        mqtt: &AsyncClient,
-        cmd: &DeviceCommand,
-    ) -> Result<CommandResult, String> {
-        let topic = format!("{}/{}/command", self.base_topic(), cmd.device_id);
-        let payload = serde_json::to_vec(cmd).map_err(|e| e.to_string())?;
-        mqtt.publish(topic, rumqttc::QoS::AtLeastOnce, false, payload)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // Return Pending — actual result arrives async via command/ack topic
-        Ok(CommandResult {
-            command_id: cmd.command_id.clone(),
-            device_id: cmd.device_id.clone(),
-            status: CommandStatus::Pending,
-            feedback: serde_json::Value::Null,
-            result: None,
+    fn match_hardware(&self, hardware_id: &str) -> Option<DeviceMatch> {
+        let entry = self.registry.get(hardware_id)?;
+        Some(DeviceMatch {
+            device_type: entry.device_type.clone(),
+            description: entry.description.clone(),
+            actions: entry.actions.clone(),
         })
+    }
+
+    fn encode_command(&self, device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
+        // TODO: look up protocol spec for device_type, encode serial bytes
+        // For now, return a placeholder that demonstrates the flow
+        let _ = device_type;
+        log::debug!(
+            "Encoding command {} for device {}",
+            cmd.action,
+            cmd.device_id
+        );
+        Err(format!(
+            "encode_command not yet implemented for device type: {}",
+            device_type
+        ))
+    }
+
+    fn decode_response(
+        &self,
+        device_type: &str,
+        bytes: &[u8],
+    ) -> Option<HashMap<String, serde_json::Value>> {
+        // TODO: look up protocol spec for device_type, decode serial bytes
+        let _ = (device_type, bytes);
+        None
     }
 }
 
-fn chrono_timestamp() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
+/// Parse a UniLabOS registry YAML into a RegistryEntry.
+fn parse_registry_yaml(yaml: &serde_yaml::Value) -> Option<RegistryEntry> {
+    let device_type = yaml.get("device_type")?.as_str()?.to_string();
+    let description = yaml
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let mut actions = Vec::new();
+
+    if let Some(mappings) = yaml.get("action_value_mappings").and_then(|v| v.as_sequence()) {
+        for mapping in mappings {
+            if let Some(name) = mapping.get("action_name").and_then(|v| v.as_str()) {
+                let desc = mapping
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let params = mapping
+                    .get("goal_schema")
+                    .map(|v| serde_json::to_value(v).unwrap_or_default())
+                    .unwrap_or_default();
+                actions.push(ActionSchema {
+                    name: name.to_string(),
+                    description: desc,
+                    params,
+                });
+            }
+        }
+    }
+
+    Some(RegistryEntry {
+        device_type,
+        description,
+        actions,
+    })
 }
