@@ -1,6 +1,6 @@
 # OpenSDL Developer Guide
 
-OpenSDL (Open Self-Drive Lab) is a mesh-based system for laboratory hardware control. It consists of a mother node (Rust) and child nodes (Linux SBCs running Docker), communicating via MQTT.
+OpenSDL (Open Self-Drive Lab) is a mesh-based system for laboratory hardware control. A mother node (Rust) manages low-cost child nodes (ESP32 serial bridges), communicating via MQTT.
 
 For detailed architecture diagrams and data flow, see [`docs/architecture.md`](docs/architecture.md).
 
@@ -8,87 +8,93 @@ For detailed architecture diagrams and data flow, see [`docs/architecture.md`](d
 
 ### System Overview
 
-OpenSDL is a mother-child mesh network. The mother node orchestrates; child nodes execute device drivers.
-
 ```
-┌─────────────────────── Mother Node ───────────────────────┐
-│                                                            │
-│  OsdlEngine (Rust)                                         │
-│    ├── ProtocolAdapter layer (device standard abstraction) │
-│    ├── Node Manager (child lifecycle, driver provisioning) │
-│    ├── MQTT Broker (embedded, LAN)                         │
-│    └── Registry (YAML schemas + driver code)               │
-│                                                            │
-└──────────────────────────┬─────────────────────────────────┘
-                           │ MQTT (WiFi / LAN)
-              ┌────────────┼────────────┐
-              │            │            │
-        ┌─────▼─────┐ ┌───▼───┐ ┌──────▼────┐
-        │ Child Node│ │ Child │ │ Child Node│
-        │           │ │ Node  │ │           │
-        │ Docker    │ │       │ │ Docker    │
-        │ container │ │  ...  │ │ container │
-        │ [driver]  │ │       │ │ [driver]  │
-        └─────┬─────┘ └───────┘ └─────┬─────┘
-              │ Serial (485/232/USB)   │
-           Device                   Device
+Mother Node (RPi / PC)                    Child Node (ESP32, ~$5)
+┌────────────────────────────┐           ┌──────────────────┐
+│ OsdlEngine (Rust)          │   MQTT    │ Firmware (C/Rust) │
+│  ├── ProtocolAdapter layer │◄═════════►│ Serial ↔ MQTT    │
+│  ├── Driver Manager        │           │ transparent bridge│
+│  ├── MQTT Broker (embedded)│           └────────┬─────────┘
+│  └── Registry (YAML+code)  │                    │ 485/232/USB
+└────────────────────────────┘                 Device
 ```
 
-### Key Principle: Driver Runs on the Child
+**Child nodes are dumb serial bridges.** All intelligence (drivers, protocol parsing, device management) lives on the mother.
 
-Device drivers (Python files from UniLabOS or other ecosystems) execute **on the child node** that is physically connected to the hardware. The mother never handles serial bytes or I/O — it only manages the mesh and translates between the application and MQTT.
+### Dual Driver Model
 
-This means:
-- No virtual serial ports, no I/O interception
-- Drivers use real `serial.Serial("/dev/ttyUSB0")` calls
-- Each driver runs in a Docker container with `--device` serial mapping
-- Child nodes are self-contained and can survive mother disconnection
+Two ways to drive a device, both producing serial bytes that get sent over MQTT:
+
+**Path A — Rust native driver (preferred for new devices):**
+```rust
+// Directly generates serial bytes
+fn set_temperature(&self, temp: f64) -> Vec<u8> {
+    build_modbus_frame(0x01, 0x06, 0x000B, (temp * 10.0) as u16)
+}
+// → MQTT publish to osdl/serial/{node_id}/tx
+```
+
+**Path B — Python compatibility layer (for existing UniLabOS drivers):**
+```python
+# Existing driver runs unmodified on mother, with injected MqttSerial
+heater = HeaterStirrer_DaLong.__new__(HeaterStirrer_DaLong)
+heater.serial = MqttSerial("heater-01", mqtt_client)
+heater.set_temperature(80)
+# MqttSerial.write() → MQTT publish to osdl/serial/{node_id}/tx
+```
+
+`MqttSerial` is a drop-in replacement for `serial.Serial` that routes bytes over MQTT to the child node. Existing Python drivers need zero code changes.
 
 ### ProtocolAdapter
 
-A `ProtocolAdapter` does NOT abstract individual devices. It abstracts a **device driver ecosystem's standard**:
+A `ProtocolAdapter` abstracts a **device driver ecosystem's standard**, not individual devices:
 
-- **UniLabOS adapter**: understands UniLabOS YAML registry format + its Python driver calling conventions + its MQTT topic structure
-- **Future SiLA adapter**: would understand SiLA XML definitions + its gRPC conventions
-- Each adapter knows how to: parse device descriptions, provision drivers to child nodes, and translate MQTT messages between the standard's format and OpenSDL's unified model
+- **UniLabOS adapter**: parses UniLabOS YAML registry → understands device capabilities, action schemas, status types. Knows how to load UniLabOS Python drivers and inject MqttSerial.
+- **Future adapters** (SiLA, vendor-specific): would parse their respective formats.
 
-### Child Node Lifecycle
+The adapter is responsible for:
+1. Parsing device description files (YAML/XML) from `registry/`
+2. Instantiating the correct driver for a given hardware ID
+3. Translating between OpenSDL's unified model and the ecosystem's conventions
 
-1. Child boots → connects to mother's MQTT broker → publishes hardware ID on `osdl/nodes/{node_id}/register`
-2. Mother receives registration → looks up hardware ID in registry → determines which driver + config to deploy
-3. Mother pushes driver image/files to child (Docker image pull or file transfer over MQTT)
-4. Child starts Docker container: `docker run --device /dev/ttyUSB0 driver-{device_type}`
-5. Container runs driver, subscribes/publishes on MQTT topics for status + commands
-6. On subsequent boots, child uses cached driver — instant start without mother
+### Child Node (ESP32)
+
+Minimal firmware (~hundreds of lines):
+- Boot → WiFi connect → MQTT connect
+- Publish registration: `osdl/nodes/{node_id}/register { hardware_id, baud_rate }`
+- Subscribe `osdl/serial/{node_id}/tx` → write bytes to UART
+- UART receive → publish `osdl/serial/{node_id}/rx`
+
+That's it. No device knowledge, no protocol parsing.
+
+Hardware: ESP32-S3 ($3) + RS-485 transceiver ($1) + PCB. Can be built as a small dongle.
 
 ### MQTT Topic Convention
 
 ```
 # Node management
-osdl/nodes/{node_id}/register              # child → mother: registration + hardware ID
-osdl/nodes/{node_id}/provision             # mother → child: driver config + image
-osdl/nodes/{node_id}/heartbeat             # child → mother: periodic health check
+osdl/nodes/{node_id}/register              # child → mother: hardware ID, baud rate
+osdl/nodes/{node_id}/heartbeat             # child → mother: alive ping
 
-# Device communication (within a protocol standard)
-osdl/{platform}/{node_id}/{device_id}/status       # child → mother: device status (QoS1, retained)
-osdl/{platform}/{node_id}/{device_id}/command       # mother → child: device command (QoS1)
-osdl/{platform}/{node_id}/{device_id}/command/ack   # child → mother: command result (QoS1)
-osdl/{platform}/{node_id}/{device_id}/online        # child → mother: LWT (retained)
+# Serial byte tunneling
+osdl/serial/{node_id}/tx                   # mother → child: bytes to write to UART
+osdl/serial/{node_id}/rx                   # child → mother: bytes read from UART
+
+# Device-level (after mother parses serial responses via driver)
+osdl/devices/{device_id}/status            # mother publishes parsed device status
+osdl/devices/{device_id}/online            # retained + LWT
 ```
 
-### Integration with Host Application
+### Integration with Xyzen
 
-OpenSDL is designed to be embedded in a host application (e.g. Xyzen Desktop via Tauri) as a Rust crate:
-
-1. Host creates `OsdlEngine` with config
-2. Host spawns `engine.run()` in a tokio task
-3. Host takes event receiver (`engine.take_event_rx()`) for async push events (device status, node online/offline)
-4. Host calls `engine.list_devices()`, `engine.send_command()` etc. for request-response
-
-When integrated with Xyzen:
 ```
-Xyzen Cloud → WebSocket → Runner → OsdlEngine → MQTT → Child Nodes → Devices
+Xyzen Cloud → WebSocket → Runner → OsdlEngine → MQTT → ESP32 → Serial → Device
 ```
+
+- `osdl-core` as optional crate dependency in `xyzen-runner` (`feature = "osdl"`)
+- New Runner message types: `osdl_list_devices`, `osdl_send_command`, etc.
+- OsdlEvent forwarded to cloud via existing WebSocket (same pattern as PTY events)
+- Desktop Tauri app also gets direct access for local device UI
 
 ## Project Structure
 
@@ -99,9 +105,13 @@ crates/
 │       ├── lib.rs               # Public API exports
 │       ├── engine.rs            # OsdlEngine — main loop, MQTT, dispatching
 │       ├── config.rs            # OsdlConfig
-│       ├── protocol.rs          # Unified device model (Device, DeviceStatus, DeviceCommand)
+│       ├── protocol.rs          # Unified device model
 │       ├── mqtt.rs              # MQTT client wrapper
 │       ├── event.rs             # OsdlEvent enum
+│       ├── driver/              # Driver manager + MqttSerial
+│       │   ├── mod.rs
+│       │   ├── mqtt_serial.rs   # MqttSerial (serial.Serial replacement)
+│       │   └── registry.rs      # Load drivers by hardware ID
 │       └── adapter/
 │           ├── mod.rs           # ProtocolAdapter trait
 │           └── unilabos.rs      # UniLabOS ecosystem adapter
@@ -109,7 +119,9 @@ crates/
     └── src/
         └── main.rs
 registry/
-└── unilabos/                    # Device schemas (YAML) + drivers (Python)
+└── unilabos/                    # YAML schemas + Python drivers
+firmware/
+└── esp32/                       # Child node firmware
 ```
 
 ## Code Style
@@ -124,11 +136,11 @@ registry/
 
 ```bash
 cargo build              # Build all crates
-cargo run --bin osdl     # Run mother node CLI
+cargo run --bin osdl     # Run mother node
 cargo test               # Run tests
 ```
 
 ## References
 
 - [Uni-Lab-OS](https://github.com/deepmodeling/Uni-Lab-OS) — First supported device driver ecosystem
-- Industry parallels: Balena.io (fleet management), AWS Greengrass (edge modules), EdgeX Foundry (IoT edge platform)
+- Industry parallels: Balena.io, AWS Greengrass, EdgeX Foundry

@@ -21,78 +21,106 @@ OpenSDL is a mother-child mesh network for laboratory hardware control.
 │  │  └──────┬──────┘  └──────┬───────┘  └──────┬──────┘  │    │
 │  │         └────────────┬───┘                  │         │    │
 │  │                      │                      │         │    │
-│  └──────────────────────┼──────────────────────┘         │    │
-│                         │                                 │    │
-│  ┌──────────────────────▼────────────────────────────┐   │    │
-│  │              MQTT Broker (embedded)                 │   │    │
-│  └──────────────────────┬────────────────────────────┘   │    │
-└─────────────────────────┼────────────────────────────────┘    │
-                          │                                      │
-                          │ MQTT over WiFi / LAN                 │
-                          │                                      │
-         ┌────────────────┼────────────────┐                     │
-         │                │                │                      │
-   ┌─────▼─────┐   ┌─────▼─────┐   ┌─────▼─────┐               │
-   │ Child Node│   │ Child Node│   │ Child Node│               │
-   │ (RPi Zero)│   │ (RPi Zero)│   │ (RPi Zero)│               │
-   │           │   │           │   │           │               │
-   │ ┌───────┐ │   │ ┌───────┐ │   │ ┌───────┐ │               │
-   │ │Docker │ │   │ │Docker │ │   │ │Docker │ │               │
-   │ │  ┌──┐ │ │   │ │  ┌──┐ │ │   │ │  ┌──┐ │ │               │
-   │ │  │Py│ │ │   │ │  │Py│ │ │   │ │  │Py│ │ │               │
-   │ │  └┬─┘ │ │   │ │  └┬─┘ │ │   │ │  └┬─┘ │ │               │
-   │ └───┼───┘ │   │ └───┼───┘ │   │ └───┼───┘ │               │
-   └─────┼─────┘   └─────┼─────┘   └─────┼─────┘               │
-         │ 485/232/USB    │               │                      │
-         │                │               │
-      Heater            Pump           Balance
+│  │  ┌───────────────────┤  Driver Manager      │         │    │
+│  │  │ Rust native       │  MqttSerial (Python) │         │    │
+│  │  └───────────────────┴──────────────────────┘         │    │
+│  │                                                        │    │
+│  └────────────────────────┬───────────────────────────────┘    │
+│                           │                                     │
+│  ┌────────────────────────▼────────────────────────────┐       │
+│  │              MQTT Broker (embedded)                   │       │
+│  └────────────────────────┬────────────────────────────┘       │
+└───────────────────────────┼─────────────────────────────────────┘
+                            │
+                            │ MQTT over WiFi / LAN
+                            │
+       ┌────────────────────┼────────────────┐
+       │                    │                │
+ ┌─────▼─────┐       ┌─────▼─────┐    ┌─────▼─────┐
+ │ Child Node│       │ Child Node│    │ Child Node│
+ │  (ESP32)  │       │  (ESP32)  │    │  (ESP32)  │
+ │   ~$5     │       │   ~$5     │    │   ~$5     │
+ │           │       │           │    │           │
+ │ Serial ◄──┤       │ Serial ◄──┤    │ Serial ◄──┤
+ │ bridge    │       │ bridge    │    │ bridge    │
+ └─────┬─────┘       └─────┬─────┘    └─────┬─────┘
+       │ RS-485            │ RS-232         │ USB
+    Heater               Pump            Balance
 ```
+
+## Child Node (ESP32)
+
+Child nodes are **dumb serial-to-MQTT bridges**. No drivers, no protocol parsing, no OS.
+
+Minimal firmware (~hundreds of lines):
+- Boot → WiFi connect → MQTT connect
+- Publish registration: `osdl/nodes/{node_id}/register { hardware_id, baud_rate }`
+- Subscribe `osdl/serial/{node_id}/tx` → write bytes to UART
+- UART receive → publish `osdl/serial/{node_id}/rx`
+
+Hardware: ESP32-S3 (~$3) + RS-485 transceiver (~$1) + PCB. Can be built as a small dongle.
+
+## Dual Driver Model
+
+All driver logic runs on the **mother node**. Two paths, both producing serial bytes sent over MQTT:
+
+### Path A — Rust Native Driver (preferred for new devices)
+
+```rust
+fn set_temperature(&self, temp: f64) -> Vec<u8> {
+    build_modbus_frame(0x01, 0x06, 0x000B, (temp * 10.0) as u16)
+}
+// → MQTT publish to osdl/serial/{node_id}/tx
+```
+
+### Path B — Python Compatibility Layer (for existing UniLabOS drivers)
+
+```python
+# Existing driver runs unmodified on mother, with injected MqttSerial
+heater = HeaterStirrer_DaLong.__new__(HeaterStirrer_DaLong)
+heater.serial = MqttSerial("heater-01", mqtt_client)
+heater.set_temperature(80)
+# MqttSerial.write() → MQTT publish to osdl/serial/{node_id}/tx
+```
+
+`MqttSerial` is a drop-in replacement for `serial.Serial` that routes bytes over MQTT to the child node. Existing Python drivers need zero code changes.
 
 ## Data Flow
-
-### Device Status Reporting (child → application)
-
-```
-Device (hardware)
-  → serial bytes
-  → Python driver (in Docker on child node)
-  → driver parses response, extracts status
-  → MQTT publish: osdl/unilabos/{node_id}/{device_id}/status
-  → Mother MQTT broker receives
-  → OsdlEngine ProtocolAdapter parses payload
-  → OsdlEvent::DeviceStatus emitted
-  → Host application receives via event channel
-```
 
 ### Command Execution (application → device)
 
 ```
 Host application calls engine.send_command(cmd)
   → OsdlEngine routes to correct ProtocolAdapter
-  → Adapter serializes to platform-specific MQTT format
-  → MQTT publish: osdl/unilabos/{node_id}/{device_id}/command
-  → Child node's MQTT client receives
-  → Passes to Python driver in Docker container
-  → Driver generates serial bytes, writes to port
+  → Adapter invokes driver (Rust native or Python with MqttSerial)
+  → Driver generates serial bytes
+  → MQTT publish: osdl/serial/{node_id}/tx
+  → Child node receives, writes bytes to UART
   → Device executes
-  → Driver reads response
-  → MQTT publish: osdl/unilabos/{node_id}/{device_id}/command/ack
-  → Mother receives, emits OsdlEvent::CommandFeedback
 ```
 
-### Child Node Provisioning (first boot)
+### Device Status Reporting (device → application)
 
 ```
-Child boots with fresh OS
-  → MQTT connect to mother broker
-  → Publish: osdl/nodes/{node_id}/register { hardware_id, serial_ports, ... }
+Device sends response bytes on serial
+  → Child node reads UART
+  → MQTT publish: osdl/serial/{node_id}/rx
+  → Mother receives bytes
+  → Driver parses response, extracts status
+  → OsdlEvent::DeviceStatus emitted
+  → Host application receives via event channel
+```
+
+### Child Node Registration (first boot)
+
+```
+Child boots
+  → WiFi connect → MQTT connect
+  → Publish: osdl/nodes/{node_id}/register { hardware_id, baud_rate }
   → Mother's Node Manager receives
   → Looks up hardware_id in registry
-  → Finds matching driver (e.g. registry/unilabos/drivers/dalong.py)
-  → Publish: osdl/nodes/{node_id}/provision { driver_image, config, ... }
-  → Child pulls Docker image, starts container
-  → Container runs driver with --device /dev/ttyUSB0
-  → Driver connects to device, begins status reporting
+  → Instantiates matching driver (Rust native or Python with MqttSerial)
+  → Device is now controllable
 ```
 
 ## ProtocolAdapter Design
@@ -107,45 +135,32 @@ UniLabOS Adapter:
   │                  → extract device capabilities, action schemas, status types
   ├── Driver format: UniLabOS Python driver conventions
   │                  → class with methods, serial.Serial usage, property decorators
-  ├── MQTT topics:   osdl/unilabos/{node_id}/{device_id}/...
+  ├── MQTT topics:   osdl/serial/{node_id}/tx and /rx for byte tunneling
   │                  → status payload format, command payload format
-  └── Provisioning:  how to package a UniLabOS driver into a Docker image
-                     → Dockerfile template, pyserial dependency, entry point
+  └── MqttSerial:    how to inject MqttSerial into existing Python drivers
+                     → replaces serial.Serial, routes bytes over MQTT
 
 Future SiLA Adapter:
   ├── XML format:  SiLA 2 Feature Definition Language
   ├── Driver format: SiLA server implementations
-  ├── Communication: SiLA uses gRPC (would need MQTT bridge on child)
-  └── Provisioning:  different container setup
+  ├── Communication: SiLA uses gRPC (would need MQTT bridge)
+  └── Integration:  different driver instantiation
 ```
 
-## Child Node Hardware
+## MQTT Topic Convention
 
-Recommended: **Raspberry Pi Zero 2 W** (~$15)
-- WiFi built-in → MQTT connectivity
-- USB OTG → USB-to-485/232 adapter
-- Runs Linux + Docker
-- 512MB RAM — sufficient for Python + pyserial driver
-
-Serial adapter options:
-- USB-to-RS485 dongle (~$5)
-- USB-to-RS232 dongle (~$5)
-- Direct USB if device supports it
-
-Total per child node: **~$20-25**
-
-### Serial Port Stability
-
-Use udev rules to ensure stable device names across reboots and hot-plug:
-
-```bash
-# /etc/udev/rules.d/99-osdl.rules
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{serial}=="ABC123", SYMLINK+="osdl/heater-01"
 ```
+# Node management
+osdl/nodes/{node_id}/register              # child → mother: hardware ID, baud rate
+osdl/nodes/{node_id}/heartbeat             # child → mother: alive ping
 
-Docker maps the stable symlink:
-```bash
-docker run --device /dev/osdl/heater-01:/dev/ttyUSB0 driver-heater
+# Serial byte tunneling
+osdl/serial/{node_id}/tx                   # mother → child: bytes to write to UART
+osdl/serial/{node_id}/rx                   # child → mother: bytes read from UART
+
+# Device-level (after mother parses serial responses via driver)
+osdl/devices/{device_id}/status            # mother publishes parsed device status
+osdl/devices/{device_id}/online            # retained + LWT
 ```
 
 ## Integration with Xyzen
@@ -162,7 +177,7 @@ Xyzen Runner (xyzen-runner crate)
 OsdlEngine
   │ MQTT
   ▼
-Child Nodes → Devices
+Child Nodes (ESP32) → Serial → Devices
 ```
 
 Runner integration points:
@@ -174,6 +189,6 @@ Runner integration points:
 ## Security Considerations
 
 - MQTT broker should use TLS + authentication in production
-- Docker containers run with minimal privileges (only `--device` for serial)
-- Driver code is from the registry — mother controls what gets deployed
-- Child nodes should verify driver checksums before running
+- MqttSerial runs Python drivers in a sandboxed process on the mother
+- Driver code is from the local registry — mother controls what gets loaded
+- Child nodes are minimal firmware with no attack surface beyond MQTT
