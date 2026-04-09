@@ -1,45 +1,93 @@
 # OpenSDL Developer Guide
 
-OpenSDL (Open Self-Drive Lab) is a Rust-based protocol adapter that bridges laboratory hardware platforms to applications via MQTT. It is stateless, embeddable, and platform-agnostic.
+OpenSDL (Open Self-Drive Lab) is a mesh-based system for laboratory hardware control. It consists of a mother node (Rust) and child nodes (Linux SBCs running Docker), communicating via MQTT.
+
+For detailed architecture diagrams and data flow, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Architecture
 
-### Core Abstraction
+### System Overview
 
-OpenSDL does NOT drive hardware directly. It adapts **platform-level protocols** — each lab platform (UniLabOS, SiLA, vendor systems) has its own device discovery, status reporting, and command format. OpenSDL normalizes these into a unified device model.
+OpenSDL is a mother-child mesh network. The mother node orchestrates; child nodes execute device drivers.
 
 ```
-Application → OsdlEngine → PlatformAdapter → MQTT → Hardware Platform → Devices
+┌─────────────────────── Mother Node ───────────────────────┐
+│                                                            │
+│  OsdlEngine (Rust)                                         │
+│    ├── ProtocolAdapter layer (device standard abstraction) │
+│    ├── Node Manager (child lifecycle, driver provisioning) │
+│    ├── MQTT Broker (embedded, LAN)                         │
+│    └── Registry (YAML schemas + driver code)               │
+│                                                            │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ MQTT (WiFi / LAN)
+              ┌────────────┼────────────┐
+              │            │            │
+        ┌─────▼─────┐ ┌───▼───┐ ┌──────▼────┐
+        │ Child Node│ │ Child │ │ Child Node│
+        │           │ │ Node  │ │           │
+        │ Docker    │ │       │ │ Docker    │
+        │ container │ │  ...  │ │ container │
+        │ [driver]  │ │       │ │ [driver]  │
+        └─────┬─────┘ └───────┘ └─────┬─────┘
+              │ Serial (485/232/USB)   │
+           Device                   Device
 ```
 
-### Key Components
+### Key Principle: Driver Runs on the Child
 
-| Component | Purpose |
-|-----------|---------|
-| `OsdlEngine` | Main entry point. Manages MQTT connection, routes messages to adapters, emits events. |
-| `PlatformAdapter` trait | One implementation per hardware platform. Handles protocol translation. |
-| `protocol` | Unified data model: `Device`, `DeviceStatus`, `DeviceCommand`, `CommandResult`. |
-| `mqtt` | MQTT client wrapper (rumqttc). |
-| `event` | `OsdlEvent` enum — device online/offline, status updates, command feedback. |
+Device drivers (Python files from UniLabOS or other ecosystems) execute **on the child node** that is physically connected to the hardware. The mother never handles serial bytes or I/O — it only manages the mesh and translates between the application and MQTT.
 
-### Integration Pattern
+This means:
+- No virtual serial ports, no I/O interception
+- Drivers use real `serial.Serial("/dev/ttyUSB0")` calls
+- Each driver runs in a Docker container with `--device` serial mapping
+- Child nodes are self-contained and can survive mother disconnection
 
-OpenSDL is designed to be embedded in a host application as a Rust crate dependency. The host:
-1. Creates an `OsdlEngine` with config
-2. Spawns `engine.run()` in a tokio task
-3. Takes the event receiver (`engine.take_event_rx()`) to forward events
-4. Calls `engine.list_devices()`, `engine.send_command()` etc. for request-response operations
+### ProtocolAdapter
 
-This mirrors the PtyManager pattern — an async engine with an unbounded event channel for push, plus direct methods for pull.
+A `ProtocolAdapter` does NOT abstract individual devices. It abstracts a **device driver ecosystem's standard**:
+
+- **UniLabOS adapter**: understands UniLabOS YAML registry format + its Python driver calling conventions + its MQTT topic structure
+- **Future SiLA adapter**: would understand SiLA XML definitions + its gRPC conventions
+- Each adapter knows how to: parse device descriptions, provision drivers to child nodes, and translate MQTT messages between the standard's format and OpenSDL's unified model
+
+### Child Node Lifecycle
+
+1. Child boots → connects to mother's MQTT broker → publishes hardware ID on `osdl/nodes/{node_id}/register`
+2. Mother receives registration → looks up hardware ID in registry → determines which driver + config to deploy
+3. Mother pushes driver image/files to child (Docker image pull or file transfer over MQTT)
+4. Child starts Docker container: `docker run --device /dev/ttyUSB0 driver-{device_type}`
+5. Container runs driver, subscribes/publishes on MQTT topics for status + commands
+6. On subsequent boots, child uses cached driver — instant start without mother
 
 ### MQTT Topic Convention
 
 ```
-{platform}/{gateway_id}/devices                  # retained, device list
-{platform}/{gateway_id}/{device_id}/status       # QoS1, status reports
-{platform}/{gateway_id}/{device_id}/online       # retained + LWT
-{platform}/{gateway_id}/{device_id}/command      # QoS1, command dispatch
-{platform}/{gateway_id}/{device_id}/command/ack  # QoS1, command result
+# Node management
+osdl/nodes/{node_id}/register              # child → mother: registration + hardware ID
+osdl/nodes/{node_id}/provision             # mother → child: driver config + image
+osdl/nodes/{node_id}/heartbeat             # child → mother: periodic health check
+
+# Device communication (within a protocol standard)
+osdl/{platform}/{node_id}/{device_id}/status       # child → mother: device status (QoS1, retained)
+osdl/{platform}/{node_id}/{device_id}/command       # mother → child: device command (QoS1)
+osdl/{platform}/{node_id}/{device_id}/command/ack   # child → mother: command result (QoS1)
+osdl/{platform}/{node_id}/{device_id}/online        # child → mother: LWT (retained)
+```
+
+### Integration with Host Application
+
+OpenSDL is designed to be embedded in a host application (e.g. Xyzen Desktop via Tauri) as a Rust crate:
+
+1. Host creates `OsdlEngine` with config
+2. Host spawns `engine.run()` in a tokio task
+3. Host takes event receiver (`engine.take_event_rx()`) for async push events (device status, node online/offline)
+4. Host calls `engine.list_devices()`, `engine.send_command()` etc. for request-response
+
+When integrated with Xyzen:
+```
+Xyzen Cloud → WebSocket → Runner → OsdlEngine → MQTT → Child Nodes → Devices
 ```
 
 ## Project Structure
@@ -49,17 +97,19 @@ crates/
 ├── osdl-core/                   # Core library
 │   └── src/
 │       ├── lib.rs               # Public API exports
-│       ├── engine.rs            # OsdlEngine — MQTT loop + adapter dispatch
-│       ├── config.rs            # OsdlConfig (TOML + env)
-│       ├── protocol.rs          # Device, DeviceStatus, DeviceCommand, CommandResult
+│       ├── engine.rs            # OsdlEngine — main loop, MQTT, dispatching
+│       ├── config.rs            # OsdlConfig
+│       ├── protocol.rs          # Unified device model (Device, DeviceStatus, DeviceCommand)
 │       ├── mqtt.rs              # MQTT client wrapper
 │       ├── event.rs             # OsdlEvent enum
 │       └── adapter/
-│           ├── mod.rs           # PlatformAdapter trait
-│           └── unilabos.rs      # Uni-Lab-OS adapter
-└── osdl-cli/                    # Standalone binary
+│           ├── mod.rs           # ProtocolAdapter trait
+│           └── unilabos.rs      # UniLabOS ecosystem adapter
+└── osdl-cli/                    # Standalone binary (mother node)
     └── src/
         └── main.rs
+registry/
+└── unilabos/                    # Device schemas (YAML) + drivers (Python)
 ```
 
 ## Code Style
@@ -67,28 +117,18 @@ crates/
 - Rust 2021 edition
 - Async by default (tokio runtime)
 - `thiserror` for error types
-- `serde` + `serde_json` for all data structures
+- `serde` + `serde_json` for serialization
 - Minimal dependencies — keep the crate lightweight and embeddable
 
 ## Build & Run
 
 ```bash
-# Build all crates
-cargo build
-
-# Run CLI
-cargo run --bin osdl
-
-# Run tests
-cargo test
+cargo build              # Build all crates
+cargo run --bin osdl     # Run mother node CLI
+cargo test               # Run tests
 ```
 
-## Key Dependencies
+## References
 
-| Crate | Purpose |
-|-------|---------|
-| `rumqttc` | MQTT 5.0 async client |
-| `tokio` | Async runtime |
-| `serde` / `serde_json` | Serialization |
-| `async-trait` | Async trait support |
-| `thiserror` | Error handling |
+- [Uni-Lab-OS](https://github.com/deepmodeling/Uni-Lab-OS) — First supported device driver ecosystem
+- Industry parallels: Balena.io (fleet management), AWS Greengrass (edge modules), EdgeX Foundry (IoT edge platform)

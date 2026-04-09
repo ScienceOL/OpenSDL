@@ -1,0 +1,16 @@
+[package]
+name = "osdl-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core library for OpenSDL — platform-agnostic lab hardware control via MQTT"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+rumqttc.workspace = true
+log.workspace = true
+thiserror.workspace = true

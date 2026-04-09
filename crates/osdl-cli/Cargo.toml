@@ -1,0 +1,16 @@
+[package]
+name = "osdl-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI for OpenSDL — standalone lab hardware bridge"
+
+[[bin]]
+name = "osdl"
+path = "src/main.rs"
+
+[dependencies]
+osdl-core = { path = "../osdl-core" }
+tokio.workspace = true
+log.workspace = true
+env_logger = "0.11"
