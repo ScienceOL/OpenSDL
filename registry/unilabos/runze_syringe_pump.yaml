@@ -1,0 +1,164 @@
+devices:
+  - device_type: syringe_pump_with_valve.runze.SY03B-T06
+    description: Runze SY03B-T06 Syringe Pump with 6-port Valve (RS-485)
+    driver: runze
+    protocol: ascii
+    baud_rate: 9600
+    max_volume: 25.0
+    total_steps: 6000
+    total_steps_vel: 6000
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pump (home plunger and valve)
+
+      - action_name: set_position
+        description: Move plunger to absolute position (mL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+              minimum: 0
+              maximum: 25.0
+            max_velocity:
+              type: number
+              description: Optional max velocity (mL/s)
+
+      - action_name: pull_plunger
+        description: Pull plunger by relative volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+
+      - action_name: push_plunger
+        description: Push plunger by relative volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+
+      - action_name: set_valve_position
+        description: Switch valve to a port (1-6)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+              minimum: 1
+              maximum: 6
+
+      - action_name: set_max_velocity
+        description: Set maximum plunger velocity (mL/s)
+        goal_schema:
+          type: object
+          properties:
+            velocity:
+              type: number
+
+      - action_name: stop
+        description: Stop current operation
+
+      - action_name: query_status
+        description: Query pump status (Idle/Busy)
+
+      - action_name: query_position
+        description: Query current plunger position
+
+      - action_name: query_valve_position
+        description: Query current valve position
+
+    status_types:
+      - status
+      - position
+      - valve_position
+      - raw_value
+
+  - device_type: syringe_pump_with_valve.runze.SY03B-T08
+    description: Runze SY03B-T08 Syringe Pump with 8-port Valve (RS-485)
+    driver: runze
+    protocol: ascii
+    baud_rate: 9600
+    max_volume: 25.0
+    total_steps: 6000
+    total_steps_vel: 6000
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pump (home plunger and valve)
+
+      - action_name: set_position
+        description: Move plunger to absolute position (mL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+              minimum: 0
+              maximum: 25.0
+            max_velocity:
+              type: number
+              description: Optional max velocity (mL/s)
+
+      - action_name: pull_plunger
+        description: Pull plunger by relative volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+
+      - action_name: push_plunger
+        description: Push plunger by relative volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+
+      - action_name: set_valve_position
+        description: Switch valve to a port (1-8)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+              minimum: 1
+              maximum: 8
+
+      - action_name: set_max_velocity
+        description: Set maximum plunger velocity (mL/s)
+        goal_schema:
+          type: object
+          properties:
+            velocity:
+              type: number
+
+      - action_name: stop
+        description: Stop current operation
+
+      - action_name: query_status
+        description: Query pump status (Idle/Busy)
+
+      - action_name: query_position
+        description: Query current plunger position
+
+      - action_name: query_valve_position
+        description: Query current valve position
+
+    status_types:
+      - status
+      - position
+      - valve_position
+      - raw_value

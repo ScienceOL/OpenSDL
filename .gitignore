@@ -2,3 +2,5 @@
 *.db
 *.db-shm
 *.db-wal
+firmware/esp32/src/config.h
+firmware/esp32/.pio/

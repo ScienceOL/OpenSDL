@@ -138,3 +138,56 @@ fn test_event_store_query_filters() {
     assert_eq!(unknown.len(), 1);
     assert!(unknown[0].payload.contains("mystery"));
 }
+
+#[test]
+fn test_runze_pump_via_adapter() {
+    use osdl_core::adapter::ProtocolAdapter;
+    use osdl_core::adapter::unilabos::UniLabOsAdapter;
+    use osdl_core::protocol::DeviceCommand;
+
+    let mut adapter = UniLabOsAdapter::new();
+    adapter.load_registry("../../registry/unilabos").unwrap();
+
+    // Match the T06 pump
+    let matched = adapter.match_hardware("syringe_pump_with_valve.runze.SY03B-T06");
+    assert!(matched.is_some(), "Should match Runze SY03B-T06");
+    let m = matched.unwrap();
+    assert!(m.actions.iter().any(|a| a.name == "initialize"));
+    assert!(m.actions.iter().any(|a| a.name == "set_position"));
+    assert!(m.actions.iter().any(|a| a.name == "set_valve_position"));
+
+    // Encode initialize command
+    let cmd = DeviceCommand {
+        command_id: "cmd-001".into(),
+        device_id: "pump-01".into(),
+        action: "initialize".into(),
+        params: serde_json::json!({}),
+    };
+    let bytes = adapter
+        .encode_command("syringe_pump_with_valve.runze.SY03B-T06", &cmd)
+        .unwrap();
+    assert_eq!(bytes, b"/1ZR\r\n");
+
+    // Encode set_position
+    let cmd = DeviceCommand {
+        command_id: "cmd-002".into(),
+        device_id: "pump-01".into(),
+        action: "set_position".into(),
+        params: serde_json::json!({"position": 12.5}),
+    };
+    let bytes = adapter
+        .encode_command("syringe_pump_with_valve.runze.SY03B-T06", &cmd)
+        .unwrap();
+    assert_eq!(bytes, b"/1A3000R\r\n");
+
+    // Decode a response
+    let props = adapter
+        .decode_response("syringe_pump_with_valve.runze.SY03B-T06", b"`3000\n")
+        .unwrap();
+    assert_eq!(props["status"], "Idle");
+    assert_eq!(props["position"], 12.5);
+
+    // T08 should also work
+    let matched = adapter.match_hardware("syringe_pump_with_valve.runze.SY03B-T08");
+    assert!(matched.is_some(), "Should match Runze SY03B-T08");
+}
