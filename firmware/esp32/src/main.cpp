@@ -1,10 +1,11 @@
 // OpenSDL Child Node Firmware — ESP32 Serial-to-MQTT Bridge
 //
 // This firmware turns an ESP32 into a transparent serial bridge:
-//   1. Connect WiFi → Connect MQTT broker (mother node)
-//   2. Publish registration: osdl/nodes/{node_id}/register
-//   3. Subscribe osdl/serial/{node_id}/tx → write bytes to UART (RS-485)
-//   4. UART receive → publish osdl/serial/{node_id}/rx
+//   1. Connect WiFi
+//   2. Discover mother node via mDNS (_osdl._tcp.local)
+//   3. Connect MQTT broker → publish registration
+//   4. Subscribe osdl/serial/{node_id}/tx → write bytes to UART (RS-485)
+//   5. UART receive → publish osdl/serial/{node_id}/rx
 //
 // The ESP32 has ZERO device knowledge. All protocol parsing happens on the
 // mother node in Rust. This node is just a "network cable to serial port".
@@ -14,6 +15,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <PubSubClient.h>
 #include "config.h"
 
@@ -22,6 +24,10 @@ static char topic_register[64];
 static char topic_heartbeat[64];
 static char topic_tx[64];  // subscribe: mother → child
 static char topic_rx[64];  // publish:   child → mother
+
+// Discovered mother node address
+static IPAddress mqtt_ip;
+static uint16_t  mqtt_port = MQTT_PORT;
 
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
@@ -71,6 +77,46 @@ void wifi_connect() {
     }
 }
 
+// ─── mDNS Discovery ─────────────────────────────────────────────────
+
+// Discover the mother node by querying for _osdl._tcp.local mDNS service.
+// Returns true if found, populating mqtt_ip and mqtt_port.
+bool discover_mother() {
+    // If a static host is configured, use it directly
+    const char* static_host = MQTT_HOST;
+    if (static_host[0] != '\0') {
+        mqtt_ip.fromString(static_host);
+        mqtt_port = MQTT_PORT;
+        Serial.printf("[mDNS] Using static host: %s:%d\n",
+                      mqtt_ip.toString().c_str(), mqtt_port);
+        return true;
+    }
+
+    Serial.println("[mDNS] Searching for _osdl._tcp.local ...");
+
+    if (!MDNS.begin(NODE_ID)) {
+        Serial.println("[mDNS] Failed to start mDNS client");
+        return false;
+    }
+
+    // Query for OpenSDL service
+    int n = MDNS.queryService("osdl", "tcp");
+
+    if (n > 0) {
+        // Use the first result
+        mqtt_ip   = MDNS.IP(0);
+        mqtt_port = MDNS.port(0);
+        Serial.printf("[mDNS] Found mother node: %s:%d (%s)\n",
+                      mqtt_ip.toString().c_str(),
+                      mqtt_port,
+                      MDNS.hostname(0).c_str());
+        return true;
+    }
+
+    Serial.println("[mDNS] No mother node found");
+    return false;
+}
+
 // ─── MQTT ────────────────────────────────────────────────────────────
 
 // Called when a message arrives on osdl/serial/{node_id}/tx
@@ -85,12 +131,13 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void mqtt_connect() {
-    mqtt.setServer(MQTT_HOST, MQTT_PORT);
+    mqtt.setServer(mqtt_ip, mqtt_port);
     mqtt.setCallback(mqtt_callback);
     mqtt.setBufferSize(512);  // enough for serial frames
 
     while (!mqtt.connected()) {
-        Serial.printf("[MQTT] Connecting to %s:%d as %s...\n", MQTT_HOST, MQTT_PORT, NODE_ID);
+        Serial.printf("[MQTT] Connecting to %s:%d as %s...\n",
+                      mqtt_ip.toString().c_str(), mqtt_port, NODE_ID);
 
         if (mqtt.connect(NODE_ID)) {
             Serial.println("[MQTT] Connected");
@@ -109,6 +156,10 @@ void mqtt_connect() {
         } else {
             Serial.printf("[MQTT] Failed (rc=%d), retry in 3s\n", mqtt.state());
             delay(3000);
+
+            // Re-discover in case mother node IP changed
+            discover_mother();
+            mqtt.setServer(mqtt_ip, mqtt_port);
         }
     }
 }
@@ -177,8 +228,16 @@ void setup() {
     // Device UART (Serial1) on configurable pins
     Serial1.begin(DEVICE_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
 
-    // Connect
+    // Connect WiFi
     wifi_connect();
+
+    // Discover mother node via mDNS
+    while (!discover_mother()) {
+        Serial.printf("[mDNS] Retrying in %d ms...\n", MDNS_TIMEOUT_MS);
+        delay(MDNS_TIMEOUT_MS);
+    }
+
+    // Connect MQTT
     mqtt_connect();
 }
 

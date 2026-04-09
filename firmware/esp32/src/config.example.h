@@ -7,9 +7,12 @@
 #define WIFI_SSID     "YourWiFi"
 #define WIFI_PASSWORD "YourPassword"
 
-// MQTT broker (mother node IP)
-#define MQTT_HOST     "192.168.1.100"
-#define MQTT_PORT     1883
+// MQTT broker discovery
+// The child node will auto-discover the mother node via mDNS (_osdl._tcp.local).
+// Set MQTT_HOST to "" to enable auto-discovery (recommended).
+// Set a specific IP to skip mDNS and connect directly (fallback).
+#define MQTT_HOST     ""        // "" = auto-discover via mDNS
+#define MQTT_PORT     1883      // only used when MQTT_HOST is set
 
 // Node identity — unique per physical child node
 #define NODE_ID       "pump-01"
@@ -29,5 +32,8 @@
 
 // Heartbeat interval (ms)
 #define HEARTBEAT_INTERVAL_MS  10000
+
+// mDNS discovery timeout (ms) — how long to search before retrying
+#define MDNS_TIMEOUT_MS  5000
 
 #endif

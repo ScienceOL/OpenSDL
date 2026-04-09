@@ -13,5 +13,6 @@ tokio.workspace = true
 rumqttc.workspace = true
 rumqttd.workspace = true
 rusqlite.workspace = true
+mdns-sd.workspace = true
 log.workspace = true
 thiserror.workspace = true

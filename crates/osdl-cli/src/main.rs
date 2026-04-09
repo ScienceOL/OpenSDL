@@ -1,6 +1,6 @@
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::config::{AdapterConfig, MqttConfig, OsdlConfig};
-use osdl_core::{EmbeddedBroker, EventStore, OsdlEngine};
+use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +17,9 @@ async fn main() {
 
     // Start embedded MQTT broker
     let _broker = EmbeddedBroker::start(config.mqtt.port).expect("Failed to start MQTT broker");
+
+    // Advertise via mDNS so child nodes can discover us
+    let _mdns = MdnsAdvertiser::start(config.mqtt.port).expect("Failed to start mDNS");
 
     // Give broker a moment to bind the port
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
