@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["full"] }
 rumqttc = "0.24"
 rumqttd = { version = "0.20", default-features = false }
 rusqlite = { version = "0.39", features = ["bundled"] }
+async-trait = "0.1"
 mdns-sd = "0.13"
 log = "0.4"
 thiserror = "2"

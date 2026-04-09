@@ -4,6 +4,8 @@ use crate::event::OsdlEvent;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
+use crate::transport::mqtt_serial::MqttSerialTransport;
+use crate::transport::{Transport, TransportRx};
 
 use rumqttc::AsyncClient;
 use std::collections::HashMap;
@@ -29,10 +31,16 @@ pub struct OsdlEngine {
     adapters: Vec<Box<dyn ProtocolAdapter>>,
     store: Option<Arc<EventStore>>,
 
-    /// Connected child nodes (node_id → Node).
+    /// Connected child nodes (node_id → Node). Specific to MQTT serial transport.
     nodes: Arc<RwLock<HashMap<String, Node>>>,
-    /// Matched devices (device_id → Device).
+    /// All devices regardless of transport type (device_id → Device).
     devices: Arc<RwLock<HashMap<String, Device>>>,
+    /// Active transports (transport_id → Transport).
+    transports: Arc<RwLock<HashMap<String, Arc<dyn Transport>>>>,
+
+    /// Channel for transports to push received bytes back to the engine.
+    transport_rx_tx: mpsc::UnboundedSender<TransportRx>,
+    transport_rx_rx: Option<mpsc::UnboundedReceiver<TransportRx>>,
 
     event_tx: mpsc::UnboundedSender<OsdlEvent>,
     event_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<OsdlEvent>>>>,
@@ -50,6 +58,7 @@ impl OsdlEngine {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (status_tx, status_rx) = watch::channel(OsdlStatus::Disconnected);
         let (stop_tx, stop_rx) = watch::channel(false);
+        let (transport_rx_tx, transport_rx_rx) = mpsc::unbounded_channel();
 
         Self {
             config,
@@ -57,6 +66,9 @@ impl OsdlEngine {
             store: None,
             nodes: Arc::new(RwLock::new(HashMap::new())),
             devices: Arc::new(RwLock::new(HashMap::new())),
+            transports: Arc::new(RwLock::new(HashMap::new())),
+            transport_rx_tx,
+            transport_rx_rx: Some(transport_rx_rx),
             event_tx,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
             status_tx,
@@ -81,6 +93,11 @@ impl OsdlEngine {
     /// Take the event receiver. The host calls this once to forward events.
     pub fn take_event_rx(&self) -> Arc<Mutex<Option<mpsc::UnboundedReceiver<OsdlEvent>>>> {
         self.event_rx.clone()
+    }
+
+    /// Get the transport RX sender (for custom transports to push received bytes).
+    pub fn transport_rx_sender(&self) -> mpsc::UnboundedSender<TransportRx> {
+        self.transport_rx_tx.clone()
     }
 
     pub fn status_rx(&self) -> watch::Receiver<OsdlStatus> {
@@ -154,6 +171,7 @@ impl OsdlEngine {
 
         let mut eventloop = eventloop;
         let mut stop_rx = self.stop_rx.clone();
+        let mut transport_rx = self.transport_rx_rx.take();
 
         loop {
             tokio::select! {
@@ -172,6 +190,15 @@ impl OsdlEngine {
                         }
                     }
                 }
+                // Receive bytes from non-MQTT transports (direct serial, TCP, etc.)
+                Some(rx) = async {
+                    match transport_rx.as_mut() {
+                        Some(r) => r.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.handle_transport_rx(&rx.transport_id, &rx.data).await;
+                }
                 _ = stop_rx.changed() => {
                     log::info!("OSDL engine stopping");
                     break;
@@ -189,11 +216,12 @@ impl OsdlEngine {
         } else if let Some(node_id) = extract_segment(topic, "osdl/nodes/", "/heartbeat") {
             self.handle_heartbeat(&node_id).await;
         } else if let Some(node_id) = extract_segment(topic, "osdl/serial/", "/rx") {
-            self.handle_serial_rx(&node_id, payload).await;
+            // MQTT serial RX — route through the unified transport handler
+            self.handle_transport_rx(&node_id, payload).await;
         }
     }
 
-    /// Child node registered: match hardware_id to driver, create device.
+    /// Child node registered via MQTT: match hardware, create transport + device.
     async fn handle_node_register(&self, node_id: &str, payload: &[u8]) {
         let reg: NodeRegistration = match serde_json::from_slice(payload) {
             Ok(r) => r,
@@ -209,6 +237,18 @@ impl OsdlEngine {
             reg.hardware_id,
             reg.baud_rate
         );
+
+        // Create MQTT serial transport for this node
+        if let Some(client) = &self.mqtt_client {
+            let transport = Arc::new(MqttSerialTransport::new(
+                node_id.to_string(),
+                client.clone(),
+            ));
+            self.transports
+                .write()
+                .await
+                .insert(node_id.to_string(), transport);
+        }
 
         // Try to match hardware_id across all adapters
         let mut matched = None;
@@ -237,7 +277,7 @@ impl OsdlEngine {
         if let Some((platform, device_match)) = matched {
             let device = Device {
                 id: device_id.clone(),
-                node_id: node_id.to_string(),
+                transport_id: node_id.to_string(),
                 device_type: device_match.device_type,
                 adapter: platform,
                 description: device_match.description,
@@ -280,44 +320,64 @@ impl OsdlEngine {
         }
     }
 
-    /// Handle serial bytes received from a child node's device.
-    async fn handle_serial_rx(&self, node_id: &str, bytes: &[u8]) {
+    /// Handle bytes received from any transport (MQTT serial, direct serial, TCP, etc.).
+    ///
+    /// This is the unified receive path. All transports eventually call this
+    /// with their transport_id and the raw bytes from the device.
+    async fn handle_transport_rx(&self, transport_id: &str, bytes: &[u8]) {
         // Log raw bytes for forensic replay
         if let Some(store) = &self.store {
-            store.log_serial(node_id, "rx", bytes);
+            store.log_serial(transport_id, "rx", bytes);
         }
 
-        let nodes = self.nodes.read().await;
-        let node = match nodes.get(node_id) {
-            Some(n) => n,
-            None => {
-                log::warn!("Serial RX from unknown node: {}", node_id);
-                return;
-            }
-        };
-
-        let device_id = match &node.device_id {
-            Some(id) => id.clone(),
-            None => return,
-        };
-
+        // Find which device uses this transport
         let devices = self.devices.read().await;
-        let device = match devices.get(&device_id) {
-            Some(d) => d,
-            None => return,
+        let (device_id, device_type, adapter_name) = {
+            let device = match devices.values().find(|d| d.transport_id == transport_id) {
+                Some(d) => d,
+                None => {
+                    // For MQTT serial, also check via node → device_id mapping
+                    let nodes = self.nodes.read().await;
+                    if let Some(node) = nodes.get(transport_id) {
+                        if let Some(ref did) = node.device_id {
+                            if let Some(d) = devices.get(did) {
+                                // Found via node mapping
+                                let result = (d.id.clone(), d.device_type.clone(), d.adapter.clone());
+                                drop(nodes);
+                                drop(devices);
+                                return self.decode_and_update(&result.0, &result.1, &result.2, bytes).await;
+                            }
+                        }
+                    }
+                    log::warn!("RX from unknown transport: {}", transport_id);
+                    return;
+                }
+            };
+            (device.id.clone(), device.device_type.clone(), device.adapter.clone())
         };
+        drop(devices);
 
+        self.decode_and_update(&device_id, &device_type, &adapter_name, bytes).await;
+    }
+
+    /// Decode bytes via adapter and update device state.
+    async fn decode_and_update(
+        &self,
+        device_id: &str,
+        device_type: &str,
+        adapter_name: &str,
+        bytes: &[u8],
+    ) {
         for adapter in &self.adapters {
-            if adapter.platform() == device.adapter {
-                if let Some(properties) = adapter.decode_response(&device.device_type, bytes) {
+            if adapter.platform() == adapter_name {
+                if let Some(properties) = adapter.decode_response(device_type, bytes) {
                     let status = DeviceStatus {
-                        device_id: device_id.clone(),
+                        device_id: device_id.to_string(),
                         timestamp: now_millis(),
                         properties,
                     };
-                    drop(devices);
                     let mut devices_w = self.devices.write().await;
-                    if let Some(dev) = devices_w.get_mut(&device_id) {
+                    if let Some(dev) = devices_w.get_mut(device_id) {
                         for (k, v) in &status.properties {
                             dev.properties.insert(k.clone(), v.clone());
                         }
@@ -356,6 +416,7 @@ impl OsdlEngine {
         self.nodes.read().await.values().cloned().collect()
     }
 
+    /// Send a command to a device via its transport.
     pub async fn send_command(&self, cmd: DeviceCommand) -> Result<CommandResult, String> {
         // Log the command
         if let Some(store) = &self.store {
@@ -367,7 +428,7 @@ impl OsdlEngine {
             .get(&cmd.device_id)
             .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
 
-        let node_id = device.node_id.clone();
+        let transport_id = device.transport_id.clone();
         let device_type = device.device_type.clone();
         let adapter_name = device.adapter.clone();
         drop(devices);
@@ -380,18 +441,18 @@ impl OsdlEngine {
             .ok_or_else(|| format!("no adapter for platform: {}", adapter_name))?
             .encode_command(&device_type, &cmd)?;
 
-        // Log outgoing serial bytes
+        // Log outgoing bytes
         if let Some(store) = &self.store {
-            store.log_serial(&node_id, "tx", &bytes);
+            store.log_serial(&transport_id, "tx", &bytes);
         }
 
-        // Publish serial bytes to child node
-        let client = self.mqtt_client.as_ref().ok_or("MQTT not connected")?;
-        let tx_topic = format!("osdl/serial/{}/tx", node_id);
-        client
-            .publish(tx_topic, rumqttc::QoS::AtLeastOnce, false, bytes)
-            .await
-            .map_err(|e| e.to_string())?;
+        // Send via the device's transport
+        let transports = self.transports.read().await;
+        let transport = transports
+            .get(&transport_id)
+            .ok_or_else(|| format!("no transport for: {}", transport_id))?;
+
+        transport.send(&bytes).await?;
 
         Ok(CommandResult {
             command_id: cmd.command_id.clone(),

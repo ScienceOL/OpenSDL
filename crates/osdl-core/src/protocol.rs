@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// === Child Node ===
+// === Child Node (MQTT serial bridge) ===
 
 /// A child node (ESP32 serial bridge) connected via MQTT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,11 @@ fn default_baud() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
-    pub node_id: String,
+    /// Transport identifier — how to reach this device.
+    /// For MQTT serial: the node_id (e.g., "pump-01")
+    /// For direct serial: the port path (e.g., "/dev/ttyUSB0")
+    /// For TCP: the host:port (e.g., "192.168.1.50:502")
+    pub transport_id: String,
     pub device_type: String,
     pub adapter: String,
     pub description: String,

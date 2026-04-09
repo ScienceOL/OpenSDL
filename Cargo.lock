@@ -1081,6 +1081,7 @@ dependencies = [
 name = "osdl-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "log",
  "mdns-sd",
  "rumqttc",

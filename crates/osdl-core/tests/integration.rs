@@ -109,7 +109,7 @@ fn test_event_store_query_filters() {
     // Log multiple event types
     let device = Device {
         id: "node-01:heater".into(),
-        node_id: "node-01".into(),
+        transport_id: "node-01".into(),
         device_type: "heater_stirrer_dalong".into(),
         adapter: "unilabos".into(),
         description: "test".into(),

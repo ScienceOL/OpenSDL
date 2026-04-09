@@ -7,6 +7,7 @@ pub mod mdns;
 pub mod mqtt;
 pub mod protocol;
 pub mod store;
+pub mod transport;
 
 pub use broker::EmbeddedBroker;
 pub use config::OsdlConfig;

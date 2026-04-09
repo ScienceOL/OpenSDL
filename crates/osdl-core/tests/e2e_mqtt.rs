@@ -158,7 +158,7 @@ async fn test_node_registration_and_device_discovery() {
 
     match &event {
         OsdlEvent::DeviceOnline(device) => {
-            assert_eq!(device.node_id, "pump-01");
+            assert_eq!(device.transport_id, "pump-01");
             assert_eq!(
                 device.device_type,
                 "syringe_pump_with_valve.runze.SY03B-T06"
