@@ -1,18 +1,23 @@
-use crate::adapter::runze::{self, RunzeConfig};
 use crate::adapter::{DeviceMatch, ProtocolAdapter};
+use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 use crate::protocol::*;
 use std::collections::HashMap;
 
 /// Adapter for the UniLabOS device description standard.
 ///
-/// Reads UniLabOS YAML registry files to understand device capabilities,
-/// maps hardware_ids to device types, and encodes/decodes serial protocols
-/// (Modbus RTU, custom frames) for supported devices.
+/// Reads UniLabOS YAML registry files, creates `Driver` instances via the
+/// `DriverRegistry`, and dispatches encode/decode through them.
+///
+/// The adapter itself contains no driver-specific code — all protocol
+/// knowledge lives in the driver modules under `drivers/`.
 pub struct UniLabOsAdapter {
-    /// hardware_id → device definition from registry YAML
+    /// device_type → device metadata from registry YAML
     registry: HashMap<String, RegistryEntry>,
-    /// device_type → RunzeConfig for Runze syringe pumps
-    runze_configs: HashMap<String, RunzeConfig>,
+    /// device_type → configured Driver instance
+    drivers: HashMap<String, Box<dyn Driver>>,
+    /// Factory registry for creating drivers by name
+    driver_registry: DriverRegistry,
 }
 
 #[derive(Debug, Clone)]
@@ -20,21 +25,15 @@ struct RegistryEntry {
     device_type: String,
     description: String,
     actions: Vec<ActionSchema>,
-    // Future: protocol details (modbus address map, custom frame format, etc.)
 }
 
 impl UniLabOsAdapter {
-    pub fn new() -> Self {
+    pub fn new(driver_registry: DriverRegistry) -> Self {
         Self {
             registry: HashMap::new(),
-            runze_configs: HashMap::new(),
+            drivers: HashMap::new(),
+            driver_registry,
         }
-    }
-}
-
-impl Default for UniLabOsAdapter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -46,7 +45,6 @@ impl ProtocolAdapter for UniLabOsAdapter {
     fn load_registry(&mut self, path: &str) -> Result<(), String> {
         log::info!("Loading UniLabOS registry from: {}", path);
 
-        // Walk the registry directory for .yaml files
         let dir = std::fs::read_dir(path).map_err(|e| format!("read dir {}: {}", path, e))?;
 
         for entry in dir.flatten() {
@@ -58,19 +56,37 @@ impl ProtocolAdapter for UniLabOsAdapter {
             match std::fs::read_to_string(&path) {
                 Ok(content) => match serde_yaml::from_str::<serde_yaml::Value>(&content) {
                     Ok(yaml) => {
-                        // A single YAML file may contain multiple devices
-                        let entries = parse_registry_yaml(&yaml);
-                        for (entry, runze_cfg) in entries {
-                            log::info!(
-                                "  Loaded device: {} ({})",
-                                entry.device_type,
-                                entry.description
-                            );
-                            let dt = entry.device_type.clone();
-                            self.registry.insert(dt.clone(), entry);
-                            if let Some(cfg) = runze_cfg {
-                                log::info!("    → Runze driver configured");
-                                self.runze_configs.insert(dt, cfg);
+                        let device_nodes = collect_device_nodes(&yaml);
+                        for device_yaml in device_nodes {
+                            if let Some((entry, driver_name)) =
+                                parse_registry_entry(&device_yaml)
+                            {
+                                log::info!(
+                                    "  Loaded device: {} ({})",
+                                    entry.device_type,
+                                    entry.description
+                                );
+                                let dt = entry.device_type.clone();
+                                self.registry.insert(dt.clone(), entry);
+
+                                if let Some(name) = driver_name {
+                                    match self.driver_registry.create(&name, &device_yaml) {
+                                        Ok(driver) => {
+                                            log::info!(
+                                                "    → {} driver configured",
+                                                driver.name()
+                                            );
+                                            self.drivers.insert(dt, driver);
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "    Failed to create driver '{}': {}",
+                                                name,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -85,8 +101,9 @@ impl ProtocolAdapter for UniLabOsAdapter {
         }
 
         log::info!(
-            "UniLabOS registry loaded: {} device types",
-            self.registry.len()
+            "UniLabOS registry loaded: {} device types, {} drivers",
+            self.registry.len(),
+            self.drivers.len()
         );
         Ok(())
     }
@@ -101,13 +118,10 @@ impl ProtocolAdapter for UniLabOsAdapter {
     }
 
     fn encode_command(&self, device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
-        if let Some(config) = self.runze_configs.get(device_type) {
-            return runze::encode(config, cmd);
-        }
-        Err(format!(
-            "encode_command not yet implemented for device type: {}",
-            device_type
-        ))
+        self.drivers
+            .get(device_type)
+            .ok_or_else(|| format!("no driver for device type: {}", device_type))?
+            .encode(cmd)
     }
 
     fn decode_response(
@@ -115,41 +129,49 @@ impl ProtocolAdapter for UniLabOsAdapter {
         device_type: &str,
         bytes: &[u8],
     ) -> Option<HashMap<String, serde_json::Value>> {
-        if let Some(config) = self.runze_configs.get(device_type) {
-            return runze::decode(config, bytes);
-        }
-        None
+        self.drivers.get(device_type)?.decode(bytes)
     }
 }
 
-/// Parse a UniLabOS registry YAML into (RegistryEntry, Option<RunzeConfig>) tuples.
+/// Collect device YAML nodes from a registry file.
 ///
-/// A YAML file may define a single device (has `device_type` at root) or
-/// multiple devices (has `devices` list). Each device that has
-/// `driver: "runze"` in its metadata gets a RunzeConfig.
-fn parse_registry_yaml(yaml: &serde_yaml::Value) -> Vec<(RegistryEntry, Option<RunzeConfig>)> {
-    // Multi-device YAML: top-level `devices` array
+/// Supports both multi-device format (`devices:` list) and
+/// single-device format (root is the device).
+fn collect_device_nodes(yaml: &serde_yaml::Value) -> Vec<serde_yaml::Value> {
     if let Some(devices) = yaml.get("devices").and_then(|v| v.as_sequence()) {
-        return devices.iter().filter_map(|d| parse_single_device(d)).collect();
+        return devices.clone();
     }
-    // Single-device YAML: root is the device
-    if let Some(pair) = parse_single_device(yaml) {
-        return vec![pair];
+    // Single-device: root is the device node
+    if yaml.get("device_type").is_some() {
+        return vec![yaml.clone()];
     }
     vec![]
 }
 
-fn parse_single_device(yaml: &serde_yaml::Value) -> Option<(RegistryEntry, Option<RunzeConfig>)> {
+/// Parse a device YAML node into registry metadata + optional driver name.
+///
+/// This function only extracts framework-level fields (device_type,
+/// description, actions). Driver-specific config (address, slave_id, etc.)
+/// is handled by each driver's `create_from_yaml` factory.
+fn parse_registry_entry(
+    yaml: &serde_yaml::Value,
+) -> Option<(RegistryEntry, Option<String>)> {
     let device_type = yaml.get("device_type")?.as_str()?.to_string();
     let description = yaml
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let driver_name = yaml
+        .get("driver")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let mut actions = Vec::new();
-
-    if let Some(mappings) = yaml.get("action_value_mappings").and_then(|v| v.as_sequence()) {
+    if let Some(mappings) = yaml
+        .get("action_value_mappings")
+        .and_then(|v| v.as_sequence())
+    {
         for mapping in mappings {
             if let Some(name) = mapping.get("action_name").and_then(|v| v.as_str()) {
                 let desc = mapping
@@ -175,33 +197,5 @@ fn parse_single_device(yaml: &serde_yaml::Value) -> Option<(RegistryEntry, Optio
         description,
         actions,
     };
-
-    // Detect Runze driver from YAML metadata
-    let runze_cfg = if yaml
-        .get("driver")
-        .and_then(|v| v.as_str())
-        .map(|s| s == "runze")
-        .unwrap_or(false)
-    {
-        let mut cfg = RunzeConfig::default();
-        if let Some(addr) = yaml.get("address").and_then(|v| v.as_str()) {
-            cfg.address = addr.to_string();
-        } else if let Some(addr) = yaml.get("address").and_then(|v| v.as_u64()) {
-            cfg.address = addr.to_string();
-        }
-        if let Some(vol) = yaml.get("max_volume").and_then(|v| v.as_f64()) {
-            cfg.max_volume = vol;
-        }
-        if let Some(steps) = yaml.get("total_steps").and_then(|v| v.as_u64()) {
-            cfg.total_steps = steps as u32;
-        }
-        if let Some(steps) = yaml.get("total_steps_vel").and_then(|v| v.as_u64()) {
-            cfg.total_steps_vel = steps as u32;
-        }
-        Some(cfg)
-    } else {
-        None
-    };
-
-    Some((entry, runze_cfg))
+    Some((entry, driver_name))
 }

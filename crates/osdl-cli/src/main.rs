@@ -1,5 +1,6 @@
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::config::{AdapterConfig, MqttConfig, OsdlConfig};
+use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 
 #[tokio::main]
@@ -28,7 +29,7 @@ async fn main() {
     let store = EventStore::open("osdl.db").expect("Failed to open event store");
 
     let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> =
-        vec![Box::new(UniLabOsAdapter::new())];
+        vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
 
     let mut engine = OsdlEngine::new(config, adapters).with_store(store);
 

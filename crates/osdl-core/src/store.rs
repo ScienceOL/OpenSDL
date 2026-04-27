@@ -117,7 +117,8 @@ impl EventStore {
         limit: usize,
     ) -> Vec<StoredEvent> {
         let conn = self.conn.lock().unwrap();
-        let mut sql = String::from("SELECT id, timestamp, event_type, payload FROM event_log WHERE 1=1");
+        let mut sql =
+            String::from("SELECT id, timestamp, event_type, payload FROM event_log WHERE 1=1");
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
         if let Some(t) = event_type {
@@ -135,7 +136,8 @@ impl EventStore {
         sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
         param_values.push(Box::new(limit as i64));
 
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = match conn.prepare(&sql) {
             Ok(s) => s,
