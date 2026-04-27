@@ -8,6 +8,7 @@
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::adapter::ProtocolAdapter;
 use osdl_core::config::{AdapterConfig, MqttConfig, OsdlConfig};
+use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::event::OsdlEvent;
 use osdl_core::{EmbeddedBroker, EventStore, OsdlEngine, OsdlStatus};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
@@ -52,7 +53,7 @@ impl TestHarness {
             }],
         };
 
-        let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new())];
+        let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
         let mut engine = if with_store {
             OsdlEngine::new(config, adapters).with_store(EventStore::in_memory().unwrap())
         } else {

@@ -73,7 +73,7 @@ Each `Device` has a `transport_id` that identifies its transport:
 
 | Transport | Latency | Use Case | Extra Hardware |
 |-----------|---------|----------|----------------|
-| **MqttSerial** | 5-20ms | RS-485/232 devices via ESP32 WiFi bridge | ESP32 ($3) + transceiver ($1) |
+| **MqttSerial** | 5-20ms | RS-485/232 devices via ESP32 WiFi bridge | ESP32 (\$3) + transceiver (\$1) |
 | **DirectSerial** | < 1ms | USB devices plugged into mother node | None |
 | **TCP** | 1-5ms | Modbus TCP, SCPI over TCP, network instruments | None |
 | **ESP-NOW** (future) | 1-3ms | Low-latency wireless, no WiFi needed | ESP32 USB gateway ($3) |
@@ -89,7 +89,7 @@ Minimal firmware (~220 lines C++):
 - UART receive → publish `osdl/serial/{node_id}/rx`
 - Periodic heartbeat: `osdl/nodes/{node_id}/heartbeat`
 
-Hardware: ESP32-S3 (~$3) + RS-485 transceiver (~$1) + PCB. Can be built as a small dongle.
+Hardware: ESP32-S3 (~\$3) + RS-485 transceiver (~\$1) + PCB. Can be built as a small dongle.
 
 ### mDNS Auto-Discovery
 

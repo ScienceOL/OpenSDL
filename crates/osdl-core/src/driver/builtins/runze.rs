@@ -17,6 +17,9 @@ pub struct RunzeConfig {
     pub max_volume: f64,
     pub total_steps: u32,
     pub total_steps_vel: u32,
+    /// Line ending for serial frames. Default "\r\n" for RS-485;
+    /// ChinWe TCP pumps use "\r".
+    pub line_ending: String,
 }
 
 impl Default for RunzeConfig {
@@ -26,6 +29,7 @@ impl Default for RunzeConfig {
             max_volume: 25.0,
             total_steps: 6000,
             total_steps_vel: 6000,
+            line_ending: "\r\n".into(),
         }
     }
 }
@@ -33,9 +37,10 @@ impl Default for RunzeConfig {
 /// Encode a high-level command into serial bytes for the Runze pump.
 pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
     let addr = &config.address;
+    let le = &config.line_ending;
 
     let command_str = match cmd.action.as_str() {
-        "initialize" => format!("/{}ZR\r\n", addr),
+        "initialize" => format!("/{}ZR{}", addr, le),
 
         "set_position" => {
             let position = cmd
@@ -49,9 +54,9 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
             if let Some(vel) = cmd.params.get("max_velocity").and_then(|v| v.as_f64()) {
                 let pulse_freq =
                     ((vel / config.max_volume * config.total_steps_vel as f64) as u32).min(6000);
-                format!("/{}V{}A{}R\r\n", addr, pulse_freq, pos_step)
+                format!("/{}V{}A{}R{}", addr, pulse_freq, pos_step, le)
             } else {
-                format!("/{}A{}R\r\n", addr, pos_step)
+                format!("/{}A{}R{}", addr, pos_step, le)
             }
         }
 
@@ -62,7 +67,7 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
                 .and_then(|v| v.as_f64())
                 .ok_or("pull_plunger requires 'volume' (float, mL)")?;
             let steps = (volume / config.max_volume * config.total_steps as f64) as u32;
-            format!("/{}P{}R\r\n", addr, steps)
+            format!("/{}P{}R{}", addr, steps, le)
         }
 
         "push_plunger" => {
@@ -72,7 +77,7 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
                 .and_then(|v| v.as_f64())
                 .ok_or("push_plunger requires 'volume' (float, mL)")?;
             let steps = (volume / config.max_volume * config.total_steps as f64) as u32;
-            format!("/{}D{}R\r\n", addr, steps)
+            format!("/{}D{}R{}", addr, steps, le)
         }
 
         "set_valve_position" => {
@@ -91,7 +96,7 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
             } else {
                 return Err("position must be an integer or string".into());
             };
-            format!("/{}{}R\r\n", addr, pos_str)
+            format!("/{}{}R{}", addr, pos_str, le)
         }
 
         "set_max_velocity" => {
@@ -102,7 +107,7 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
                 .ok_or("set_max_velocity requires 'velocity' (float, mL/s)")?;
             let pulse_freq =
                 ((vel / config.max_volume * config.total_steps_vel as f64) as u32).min(6000);
-            format!("/{}V{}R\r\n", addr, pulse_freq)
+            format!("/{}V{}R{}", addr, pulse_freq, le)
         }
 
         "set_velocity_grade" => {
@@ -117,16 +122,16 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
             } else {
                 return Err("velocity must be an integer or string".into());
             };
-            format!("/{}S{}R\r\n", addr, grade_str)
+            format!("/{}S{}R{}", addr, grade_str, le)
         }
 
-        "stop" | "stop_operation" => format!("/{}TR\r\n", addr),
+        "stop" | "stop_operation" => format!("/{}TR{}", addr, le),
 
-        "query_status" => format!("/{}Q\r\n", addr),
-        "query_position" => format!("/{}?0\r\n", addr),
-        "query_velocity" => format!("/{}?2\r\n", addr),
-        "query_valve_position" => format!("/{}?6\r\n", addr),
-        "query_software_version" => format!("/{}?23\r\n", addr),
+        "query_status" => format!("/{}Q{}", addr, le),
+        "query_position" => format!("/{}?0{}", addr, le),
+        "query_velocity" => format!("/{}?2{}", addr, le),
+        "query_valve_position" => format!("/{}?6{}", addr, le),
+        "query_software_version" => format!("/{}?23{}", addr, le),
 
         "send_command" => {
             // Raw command passthrough
@@ -147,49 +152,59 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
 /// Decode a serial response from the Runze pump into status properties.
 ///
 /// Returns None if the response is incomplete or unparseable.
-/// The response format is ASCII, newline-terminated.
+///
+/// Response formats seen in the wild:
+///   With delimiter: `[noise...] / <address> <status> [data...] \x03 \r\n`
+///   Without delimiter (legacy): `<status> [data...] \r\n`
+///
 /// Status byte: `` ` `` (0x60) = Idle, `@` (0x40) = Busy/error.
+/// Leading noise bytes (e.g., 0xFF on RS-485/TCP) are skipped.
 pub fn decode(config: &RunzeConfig, bytes: &[u8]) -> Option<HashMap<String, serde_json::Value>> {
-    // Must end with \n or \r\n
-    let text = std::str::from_utf8(bytes).ok()?;
+    // Skip leading non-ASCII noise bytes (e.g., 0xFF from bus),
+    // then find '/' delimiter for the framed format.
+    let slash_pos = bytes.iter().position(|&b| b == b'/');
+
+    // Parse from '/' if found, otherwise from the first valid byte
+    let start = slash_pos.unwrap_or(0);
+    let text = std::str::from_utf8(&bytes[start..]).ok()?;
     let text = text.trim_end_matches(['\r', '\n']);
 
-    if text.len() < 4 {
-        return None;
-    }
+    let (status_byte, data) = if slash_pos.is_some() {
+        // Framed format: /<address><status>[data...][\x03]
+        if text.len() < 3 {
+            return None;
+        }
+        let status = text.as_bytes()[2]; // skip '/' + address
+        let data_end = text.find('\x03').unwrap_or(text.len());
+        let data = if data_end > 3 { &text[3..data_end] } else { "" };
+        (status, data)
+    } else {
+        // Legacy format (no '/'): <status>[data...]
+        if text.is_empty() {
+            return None;
+        }
+        let status = text.as_bytes()[0];
+        let rest = &text[1..];
+        let data = rest.split('\x03').next().unwrap_or("");
+        (status, data)
+    };
 
     let mut props = HashMap::new();
 
-    // First byte indicates status: bit5 = 0 means busy, ` means idle
-    let status_byte = bytes[0];
     let is_idle = status_byte == b'`' || (status_byte & (1 << 5)) != 0;
     props.insert(
         "status".into(),
         serde_json::Value::String(if is_idle { "Idle" } else { "Busy" }.into()),
     );
 
-    // Data portion is typically [3:-3] of the full response
-    // But the exact format depends on what query was sent.
-    // For generic status polling, we extract what we can.
-    let data = if text.len() > 6 {
-        &text[3..text.len() - 3]
-    } else if text.len() > 1 {
-        &text[1..]
-    } else {
-        ""
-    };
-
     if !data.is_empty() {
-        // Try to parse as a number (position, velocity, etc.)
         if let Ok(n) = data.parse::<f64>() {
-            // Convert steps to volume if it looks like a step value
             if n > 0.0 && n <= config.total_steps as f64 {
                 let volume = n / config.total_steps as f64 * config.max_volume;
                 props.insert("position".into(), serde_json::json!(volume));
             }
             props.insert("raw_value".into(), serde_json::json!(n));
         } else if data.len() == 1 {
-            // Single character response — likely valve position
             props.insert(
                 "valve_position".into(),
                 serde_json::Value::String(data.to_uppercase()),
@@ -204,6 +219,60 @@ pub fn decode(config: &RunzeConfig, bytes: &[u8]) -> Option<HashMap<String, serd
 
     Some(props)
 }
+
+// --------------- Driver trait impl ---------------
+
+use crate::driver::Driver;
+use crate::driver::registry::DriverRegistry;
+
+/// Runze syringe pump driver instance (pre-configured).
+pub struct RunzeDriver {
+    config: RunzeConfig,
+}
+
+impl Driver for RunzeDriver {
+    fn name(&self) -> &str {
+        "runze"
+    }
+
+    fn encode(&self, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
+        encode(&self.config, cmd)
+    }
+
+    fn decode(&self, bytes: &[u8]) -> Option<HashMap<String, serde_json::Value>> {
+        decode(&self.config, bytes)
+    }
+}
+
+/// Create a RunzeDriver from YAML device config.
+pub fn create_from_yaml(yaml: &serde_yaml::Value) -> Result<Box<dyn Driver>, String> {
+    let mut cfg = RunzeConfig::default();
+    if let Some(addr) = yaml.get("address").and_then(|v| v.as_str()) {
+        cfg.address = addr.to_string();
+    } else if let Some(addr) = yaml.get("address").and_then(|v| v.as_u64()) {
+        cfg.address = addr.to_string();
+    }
+    if let Some(vol) = yaml.get("max_volume").and_then(|v| v.as_f64()) {
+        cfg.max_volume = vol;
+    }
+    if let Some(steps) = yaml.get("total_steps").and_then(|v| v.as_u64()) {
+        cfg.total_steps = steps as u32;
+    }
+    if let Some(steps) = yaml.get("total_steps_vel").and_then(|v| v.as_u64()) {
+        cfg.total_steps_vel = steps as u32;
+    }
+    if let Some(le) = yaml.get("line_ending").and_then(|v| v.as_str()) {
+        cfg.line_ending = le.replace("\\r", "\r").replace("\\n", "\n");
+    }
+    Ok(Box::new(RunzeDriver { config: cfg }))
+}
+
+/// Register this driver with the registry.
+pub fn register(registry: &mut DriverRegistry) {
+    registry.register("runze", create_from_yaml);
+}
+
+// --------------- Tests ---------------
 
 #[cfg(test)]
 mod tests {

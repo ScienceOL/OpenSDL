@@ -1,0 +1,306 @@
+devices:
+  # --- Runze SY-03B syringe pumps (ASCII protocol, IDs 1-3) ---
+  # ChinWe uses \r line ending (not \r\n) over TCP
+
+  - device_type: syringe_pump.chinwe.pump1
+    description: ChinWe Syringe Pump 1 (TCP, Runze SY-03B protocol)
+    driver: runze
+    protocol: ascii
+    address: "1"
+    max_volume: 25.0
+    total_steps: 6000
+    total_steps_vel: 6000
+    line_ending: "\\r"
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pump (home plunger and valve)
+      - action_name: set_position
+        description: Move plunger to absolute position (mL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+              minimum: 0
+              maximum: 25.0
+            max_velocity:
+              type: number
+      - action_name: pull_plunger
+        description: Pull plunger by volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+      - action_name: push_plunger
+        description: Push plunger by volume (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              maximum: 25.0
+      - action_name: set_valve_position
+        description: Switch valve port
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+              minimum: 1
+              maximum: 6
+      - action_name: stop
+        description: Stop current operation
+      - action_name: query_status
+        description: Query pump status
+
+    status_types:
+      - status
+      - position
+      - valve_position
+
+  - device_type: syringe_pump.chinwe.pump2
+    description: ChinWe Syringe Pump 2 (TCP, Runze SY-03B protocol)
+    driver: runze
+    protocol: ascii
+    address: "2"
+    max_volume: 25.0
+    total_steps: 6000
+    total_steps_vel: 6000
+    line_ending: "\\r"
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pump
+      - action_name: set_position
+        description: Move plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+              minimum: 0
+              maximum: 25.0
+      - action_name: pull_plunger
+        description: Pull plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+      - action_name: push_plunger
+        description: Push plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+      - action_name: set_valve_position
+        description: Switch valve port
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+      - action_name: stop
+        description: Stop
+      - action_name: query_status
+        description: Query status
+
+    status_types:
+      - status
+      - position
+
+  - device_type: syringe_pump.chinwe.pump3
+    description: ChinWe Syringe Pump 3 (TCP, Runze SY-03B protocol)
+    driver: runze
+    protocol: ascii
+    address: "3"
+    max_volume: 25.0
+    total_steps: 6000
+    total_steps_vel: 6000
+    line_ending: "\\r"
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pump
+      - action_name: set_position
+        description: Move plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+              minimum: 0
+              maximum: 25.0
+      - action_name: pull_plunger
+        description: Pull plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+      - action_name: push_plunger
+        description: Push plunger (mL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+      - action_name: set_valve_position
+        description: Switch valve port
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+      - action_name: stop
+        description: Stop
+      - action_name: query_status
+        description: Query status
+
+    status_types:
+      - status
+      - position
+
+  # --- Emm V5.0 closed-loop stepper motors (binary protocol, IDs 4-5) ---
+
+  - device_type: stepper_motor.chinwe.emm4
+    description: ChinWe Emm V5.0 Stepper Motor 4 (TCP, binary protocol)
+    driver: emm
+    protocol: binary
+    device_id: 4
+
+    action_value_mappings:
+      - action_name: enable
+        description: Enable or disable motor
+        goal_schema:
+          type: object
+          properties:
+            enable:
+              type: boolean
+              default: true
+
+      - action_name: run_speed
+        description: Run at constant speed (RPM)
+        goal_schema:
+          type: object
+          properties:
+            speed:
+              type: integer
+              minimum: 1
+              description: Speed in RPM
+            direction:
+              type: integer
+              enum: [0, 1]
+              default: 0
+            acceleration:
+              type: integer
+              default: 10
+
+      - action_name: run_position
+        description: Move to position by pulse count
+        goal_schema:
+          type: object
+          properties:
+            pulses:
+              type: integer
+              minimum: 1
+            speed:
+              type: integer
+              minimum: 1
+            direction:
+              type: integer
+              enum: [0, 1]
+              default: 0
+            acceleration:
+              type: integer
+              default: 10
+            absolute:
+              type: boolean
+              default: false
+
+      - action_name: stop
+        description: Emergency stop
+
+      - action_name: get_position
+        description: Read current encoder position
+
+      - action_name: set_zero
+        description: Set current position as zero
+
+    status_types:
+      - status
+      - position
+
+  - device_type: stepper_motor.chinwe.emm5
+    description: ChinWe Emm V5.0 Stepper Motor 5 (TCP, binary protocol)
+    driver: emm
+    protocol: binary
+    device_id: 5
+
+    action_value_mappings:
+      - action_name: enable
+        description: Enable or disable motor
+        goal_schema:
+          type: object
+          properties:
+            enable:
+              type: boolean
+      - action_name: run_speed
+        description: Run at constant speed
+        goal_schema:
+          type: object
+          properties:
+            speed:
+              type: integer
+            direction:
+              type: integer
+            acceleration:
+              type: integer
+      - action_name: run_position
+        description: Move to position
+        goal_schema:
+          type: object
+          properties:
+            pulses:
+              type: integer
+            speed:
+              type: integer
+            direction:
+              type: integer
+            acceleration:
+              type: integer
+            absolute:
+              type: boolean
+      - action_name: stop
+        description: Emergency stop
+      - action_name: get_position
+        description: Read position
+      - action_name: set_zero
+        description: Set zero
+
+    status_types:
+      - status
+      - position
+
+  # --- XKC non-contact liquid level sensor (Modbus RTU, ID 6) ---
+
+  - device_type: sensor.chinwe.xkc
+    description: ChinWe XKC Liquid Level Sensor (TCP, Modbus RTU)
+    driver: xkc
+    protocol: modbus_rtu
+    slave_id: 6
+    threshold: 300
+
+    action_value_mappings:
+      - action_name: read_level
+        description: Read liquid level (RSSI and threshold comparison)
+
+    status_types:
+      - rssi
+      - level

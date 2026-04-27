@@ -1,0 +1,225 @@
+devices:
+  - device_type: stepper_motor.laiyu_xyz.X
+    description: Laiyu XYZ Stepper Motor - X Axis (RS-485 Modbus RTU, 115200)
+    driver: laiyu_xyz
+    protocol: modbus_rtu
+    baud_rate: 115200
+    slave_id: 1
+    axis: X
+    steps_per_rev: 16384
+    lead_mm: 80.0
+
+    action_value_mappings:
+      - action_name: get_status
+        description: Read motor status, position, speed, and current
+
+      - action_name: move_to_position
+        description: Set target position (steps) with speed and acceleration
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+              description: Target position in steps (signed)
+            speed:
+              type: integer
+              minimum: 1
+              maximum: 10000
+              default: 2000
+            acceleration:
+              type: integer
+              minimum: 1
+              maximum: 5000
+              default: 500
+            precision:
+              type: integer
+              default: 50
+
+      - action_name: start_motion
+        description: Trigger motion after setting target position
+
+      - action_name: enable
+        description: Enable or disable motor driver
+        goal_schema:
+          type: object
+          properties:
+            enable:
+              type: boolean
+              default: true
+
+      - action_name: home
+        description: Execute homing sequence (return to zero)
+
+    status_types:
+      - status
+      - position_steps
+      - position_mm
+      - speed
+      - current_ma
+      - axis
+
+  - device_type: stepper_motor.laiyu_xyz.Y
+    description: Laiyu XYZ Stepper Motor - Y Axis (RS-485 Modbus RTU, 115200)
+    driver: laiyu_xyz
+    protocol: modbus_rtu
+    baud_rate: 115200
+    slave_id: 2
+    axis: Y
+    steps_per_rev: 16384
+    lead_mm: 80.0
+
+    action_value_mappings:
+      - action_name: get_status
+        description: Read motor status, position, speed, and current
+      - action_name: move_to_position
+        description: Set target position (steps)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+            speed:
+              type: integer
+              default: 2000
+            acceleration:
+              type: integer
+              default: 500
+      - action_name: start_motion
+        description: Trigger motion
+      - action_name: enable
+        description: Enable or disable motor driver
+        goal_schema:
+          type: object
+          properties:
+            enable:
+              type: boolean
+      - action_name: home
+        description: Execute homing sequence
+
+    status_types:
+      - status
+      - position_steps
+      - position_mm
+      - speed
+      - current_ma
+      - axis
+
+  - device_type: stepper_motor.laiyu_xyz.Z
+    description: Laiyu XYZ Stepper Motor - Z Axis (RS-485 Modbus RTU, 115200)
+    driver: laiyu_xyz
+    protocol: modbus_rtu
+    baud_rate: 115200
+    slave_id: 3
+    axis: Z
+    steps_per_rev: 16384
+    lead_mm: 5.0
+
+    action_value_mappings:
+      - action_name: get_status
+        description: Read motor status, position, speed, and current
+      - action_name: move_to_position
+        description: Set target position (steps)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: integer
+            speed:
+              type: integer
+              default: 2000
+            acceleration:
+              type: integer
+              default: 500
+      - action_name: start_motion
+        description: Trigger motion
+      - action_name: enable
+        description: Enable or disable motor driver
+        goal_schema:
+          type: object
+          properties:
+            enable:
+              type: boolean
+      - action_name: home
+        description: Execute homing sequence
+
+    status_types:
+      - status
+      - position_steps
+      - position_mm
+      - speed
+      - current_ma
+      - axis
+
+  - device_type: pipette.sopa.YYQ
+    description: SOPA Pneumatic Pipette YYQ (RS-485 ASCII, shared bus with XYZ)
+    driver: sopa
+    protocol: ascii
+    baud_rate: 115200
+    address: 4
+    comm_type: "/"
+
+    action_value_mappings:
+      - action_name: initialize
+        description: Initialize pipette (home plunger)
+
+      - action_name: aspirate
+        description: Aspirate liquid (uL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+              description: Volume in microliters
+
+      - action_name: dispense
+        description: Dispense liquid (uL)
+        goal_schema:
+          type: object
+          properties:
+            volume:
+              type: number
+              minimum: 0
+
+      - action_name: move_absolute
+        description: Move plunger to absolute position (uL)
+        goal_schema:
+          type: object
+          properties:
+            position:
+              type: number
+
+      - action_name: eject_tip
+        description: Eject the current tip
+
+      - action_name: query_status
+        description: Query pipette status
+
+      - action_name: query_position
+        description: Query plunger position
+
+      - action_name: query_tip
+        description: Query tip presence
+
+      - action_name: get_firmware
+        description: Query firmware version
+
+      - action_name: set_max_speed
+        description: Set maximum plunger speed
+        goal_schema:
+          type: object
+          properties:
+            speed:
+              type: integer
+
+      - action_name: set_acceleration
+        description: Set plunger acceleration
+        goal_schema:
+          type: object
+          properties:
+            acceleration:
+              type: integer
+
+    status_types:
+      - status
+      - tip_present

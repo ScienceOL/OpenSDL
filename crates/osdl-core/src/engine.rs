@@ -153,10 +153,7 @@ impl OsdlEngine {
             "osdl/serial/+/rx",
         ];
         for topic in &subs {
-            if let Err(e) = client
-                .subscribe(*topic, rumqttc::QoS::AtLeastOnce)
-                .await
-            {
+            if let Err(e) = client.subscribe(*topic, rumqttc::QoS::AtLeastOnce).await {
                 log::error!("Failed to subscribe to {}: {}", topic, e);
             }
         }
@@ -269,10 +266,7 @@ impl OsdlEngine {
             device_id: matched.as_ref().map(|_| device_id.clone()),
         };
 
-        self.nodes
-            .write()
-            .await
-            .insert(node_id.to_string(), node);
+        self.nodes.write().await.insert(node_id.to_string(), node);
 
         if let Some((platform, device_match)) = matched {
             let device = Device {
@@ -324,40 +318,51 @@ impl OsdlEngine {
     ///
     /// This is the unified receive path. All transports eventually call this
     /// with their transport_id and the raw bytes from the device.
+    ///
+    /// For shared buses (multiple devices on one transport), we try decoding
+    /// against ALL devices on that transport. Each codec checks the device
+    /// address (Modbus slave_id, Emm device_id, etc.) and returns None for
+    /// non-matching responses, so only the correct device gets updated.
     async fn handle_transport_rx(&self, transport_id: &str, bytes: &[u8]) {
         // Log raw bytes for forensic replay
         if let Some(store) = &self.store {
             store.log_serial(transport_id, "rx", bytes);
         }
 
-        // Find which device uses this transport
         let devices = self.devices.read().await;
-        let (device_id, device_type, adapter_name) = {
-            let device = match devices.values().find(|d| d.transport_id == transport_id) {
-                Some(d) => d,
-                None => {
-                    // For MQTT serial, also check via node → device_id mapping
-                    let nodes = self.nodes.read().await;
-                    if let Some(node) = nodes.get(transport_id) {
-                        if let Some(ref did) = node.device_id {
-                            if let Some(d) = devices.get(did) {
-                                // Found via node mapping
-                                let result = (d.id.clone(), d.device_type.clone(), d.adapter.clone());
-                                drop(nodes);
-                                drop(devices);
-                                return self.decode_and_update(&result.0, &result.1, &result.2, bytes).await;
-                            }
-                        }
+
+        // Collect all devices sharing this transport
+        let matching: Vec<_> = devices
+            .values()
+            .filter(|d| d.transport_id == transport_id)
+            .map(|d| (d.id.clone(), d.device_type.clone(), d.adapter.clone()))
+            .collect();
+
+        if matching.is_empty() {
+            // Fallback: MQTT serial node → device_id mapping (one node = one device)
+            let nodes = self.nodes.read().await;
+            if let Some(node) = nodes.get(transport_id) {
+                if let Some(ref did) = node.device_id {
+                    if let Some(d) = devices.get(did) {
+                        let info = (d.id.clone(), d.device_type.clone(), d.adapter.clone());
+                        drop(nodes);
+                        drop(devices);
+                        self.decode_and_update(&info.0, &info.1, &info.2, bytes)
+                            .await;
+                        return;
                     }
-                    log::warn!("RX from unknown transport: {}", transport_id);
-                    return;
                 }
-            };
-            (device.id.clone(), device.device_type.clone(), device.adapter.clone())
-        };
+            }
+            log::warn!("RX from unknown transport: {}", transport_id);
+            return;
+        }
         drop(devices);
 
-        self.decode_and_update(&device_id, &device_type, &adapter_name, bytes).await;
+        // Try decode for each device on this transport
+        for (device_id, device_type, adapter_name) in matching {
+            self.decode_and_update(&device_id, &device_type, &adapter_name, bytes)
+                .await;
+        }
     }
 
     /// Decode bytes via adapter and update device state.
@@ -414,6 +419,48 @@ impl OsdlEngine {
 
     pub async fn list_nodes(&self) -> Vec<Node> {
         self.nodes.read().await.values().cloned().collect()
+    }
+
+    /// Register a transport for direct serial / TCP devices.
+    ///
+    /// Multiple devices can share the same transport (shared bus).
+    /// The transport should already be `start()`ed before calling this.
+    pub async fn register_transport(&self, id: String, transport: Arc<dyn Transport>) {
+        log::info!("Transport registered: {} ({})", id, transport.description());
+        self.transports.write().await.insert(id, transport);
+    }
+
+    /// Register a device manually (for direct serial / TCP transports).
+    ///
+    /// Unlike MQTT node registration which auto-discovers devices,
+    /// this method explicitly registers a device with its transport.
+    /// The device's `transport_id` must match a previously registered transport.
+    pub async fn register_device(&self, device: Device) -> Result<(), String> {
+        let transport_id = device.transport_id.clone();
+        let device_id = device.id.clone();
+
+        // Verify transport exists
+        if !self.transports.read().await.contains_key(&transport_id) {
+            return Err(format!(
+                "transport '{}' not registered — call register_transport() first",
+                transport_id
+            ));
+        }
+
+        self.devices
+            .write()
+            .await
+            .insert(device_id.clone(), device.clone());
+
+        log::info!(
+            "Device registered: {} ({}) on transport {}",
+            device_id,
+            device.device_type,
+            transport_id
+        );
+        self.emit(OsdlEvent::DeviceOnline(device));
+        self.broadcast_status().await;
+        Ok(())
     }
 
     /// Send a command to a device via its transport.
