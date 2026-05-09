@@ -26,23 +26,48 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use std::time::Duration;
+use tokio::sync::{mpsc, Mutex, Notify, RwLock};
 use tokio::task::JoinHandle;
 
 pub type Mac = [u8; 6];
 
+/// Marker prefix in ESP-NOW payloads used by children to announce their
+/// hardware_id. Keep in sync with firmware (`espnow_child.rs::send_reg`).
+const REG_PREFIX: &[u8] = b"REG ";
+
 /// Shared owner of the USB-CDC connection to a gateway board. Holds the
-/// `MAC → hardware_id` table used to route inbound frames and exposes a
-/// `send_to_mac` entrypoint for per-child transports to call.
+/// `MAC ↔ hardware_id` table used to route inbound frames and exposes a
+/// `send_to_mac` entrypoint for per-child transports to call. Children
+/// announce themselves via `REG <hardware_id>` broadcasts which the client
+/// parses to keep the table up to date (no static config required).
 pub struct EspNowGatewayClient {
     port_path: String,
     baud_rate: u32,
     rx_tx: mpsc::UnboundedSender<TransportRx>,
-    /// MAC -> hardware_id. Used to tag inbound frames with the right transport_id.
-    routes: RwLock<HashMap<Mac, String>>,
+    routes: RwLock<Routes>,
+    /// Fires whenever a new REG arrives, so `wait_for_registration` can wake up.
+    reg_notify: Notify,
     connected: Arc<AtomicBool>,
     writer: Arc<Mutex<Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>>,
     read_task: Mutex<Option<JoinHandle<()>>>,
+}
+
+#[derive(Default)]
+struct Routes {
+    mac_to_id: HashMap<Mac, String>,
+    id_to_mac: HashMap<String, Mac>,
+}
+
+impl Routes {
+    fn upsert(&mut self, mac: Mac, hardware_id: String) {
+        if let Some(old_id) = self.mac_to_id.insert(mac, hardware_id.clone()) {
+            if old_id != hardware_id {
+                self.id_to_mac.remove(&old_id);
+            }
+        }
+        self.id_to_mac.insert(hardware_id, mac);
+    }
 }
 
 impl EspNowGatewayClient {
@@ -55,17 +80,55 @@ impl EspNowGatewayClient {
             port_path,
             baud_rate,
             rx_tx,
-            routes: RwLock::new(HashMap::new()),
+            routes: RwLock::new(Routes::default()),
+            reg_notify: Notify::new(),
             connected: Arc::new(AtomicBool::new(false)),
             writer: Arc::new(Mutex::new(None)),
             read_task: Mutex::new(None),
         }
     }
 
-    /// Register a hardware_id ↔ MAC binding so inbound frames from that MAC are
-    /// dispatched to the engine with `transport_id = hardware_id`.
+    /// Register a hardware_id ↔ MAC binding manually. Normally unnecessary —
+    /// children announce themselves via REG frames — but useful for tests or
+    /// to pre-seed the table before a device has booted.
     pub async fn register_device(&self, hardware_id: String, mac: Mac) {
-        self.routes.write().await.insert(mac, hardware_id);
+        self.routes.write().await.upsert(mac, hardware_id);
+        self.reg_notify.notify_waiters();
+    }
+
+    /// Look up the MAC for a given hardware_id, if known.
+    pub async fn mac_for(&self, hardware_id: &str) -> Option<Mac> {
+        self.routes.read().await.id_to_mac.get(hardware_id).copied()
+    }
+
+    /// Block until a child announces (or has already announced) `hardware_id`
+    /// via REG. Returns its MAC. Useful for callers that want to construct an
+    /// `EspNowChildTransport` without knowing the MAC in advance.
+    pub async fn wait_for_registration(
+        &self,
+        hardware_id: &str,
+        timeout: Duration,
+    ) -> Result<Mac, String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if let Some(mac) = self.mac_for(hardware_id).await {
+                return Ok(mac);
+            }
+            let notified = self.reg_notify.notified();
+            // Re-check after arming the notifier to avoid the lost-wakeup race.
+            if let Some(mac) = self.mac_for(hardware_id).await {
+                return Ok(mac);
+            }
+            match tokio::time::timeout_at(deadline, notified).await {
+                Ok(()) => continue,
+                Err(_) => {
+                    return Err(format!(
+                        "timed out waiting for REG <{}> on gateway {}",
+                        hardware_id, self.port_path
+                    ))
+                }
+            }
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -112,22 +175,49 @@ impl EspNowGatewayClient {
         let handle = tokio::spawn(async move {
             let mut lines = BufReader::new(reader).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if let Some((mac, payload)) = parse_rx_line(&line) {
-                    let maybe_id = this.routes.read().await.get(&mac).cloned();
-                    match maybe_id {
-                        Some(hardware_id) => {
-                            let _ = tx.send(TransportRx {
-                                transport_id: hardware_id,
-                                data: payload,
-                            });
-                        }
-                        None => {
-                            log::debug!(
-                                "gateway RX from unregistered MAC {} ({} bytes) — dropping",
-                                mac_hex(&mac),
-                                payload.len()
-                            );
-                        }
+                let Some((mac, payload)) = parse_rx_line(&line) else {
+                    continue;
+                };
+
+                // REG frame? Update the routing table and notify waiters.
+                if let Some(hardware_id) = parse_reg_payload(&payload) {
+                    let is_new = {
+                        let mut routes = this.routes.write().await;
+                        let was_unknown = !routes.mac_to_id.contains_key(&mac);
+                        routes.upsert(mac, hardware_id.clone());
+                        was_unknown
+                    };
+                    if is_new {
+                        log::info!(
+                            "gateway registered {} = {}",
+                            hardware_id,
+                            mac_hex(&mac)
+                        );
+                    } else {
+                        log::debug!(
+                            "gateway re-REG {} = {}",
+                            hardware_id,
+                            mac_hex(&mac)
+                        );
+                    }
+                    this.reg_notify.notify_waiters();
+                    continue;
+                }
+
+                let maybe_id = this.routes.read().await.mac_to_id.get(&mac).cloned();
+                match maybe_id {
+                    Some(hardware_id) => {
+                        let _ = tx.send(TransportRx {
+                            transport_id: hardware_id,
+                            data: payload,
+                        });
+                    }
+                    None => {
+                        log::debug!(
+                            "gateway RX from unregistered MAC {} ({} bytes) — dropping",
+                            mac_hex(&mac),
+                            payload.len()
+                        );
                     }
                 }
             }
@@ -227,6 +317,23 @@ pub(crate) fn parse_rx_line(line: &str) -> Option<(Mac, Vec<u8>)> {
     Some((mac, data))
 }
 
+/// Extract the hardware_id from a REG payload, or None if the bytes don't
+/// look like a REG announcement. Format: ASCII `REG <hardware_id>`.
+pub(crate) fn parse_reg_payload(payload: &[u8]) -> Option<String> {
+    let tail = payload.strip_prefix(REG_PREFIX)?;
+    // Must be valid UTF-8, non-empty, no embedded whitespace.
+    let id = std::str::from_utf8(tail).ok()?.trim();
+    if id.is_empty() || id.contains(char::is_whitespace) {
+        return None;
+    }
+    // Light sanity: reject control chars so a stray binary frame that happens
+    // to start with "REG " can't pollute the table.
+    if id.chars().any(|c| c.is_control()) {
+        return None;
+    }
+    Some(id.to_string())
+}
+
 pub fn parse_mac(s: &str) -> Option<Mac> {
     if s.len() != 12 {
         return None;
@@ -298,5 +405,49 @@ mod tests {
     #[test]
     fn rejects_odd_hex_length() {
         assert!(parse_rx_line("RX 30EDA0B65B38 DEADBEE").is_none());
+    }
+
+    #[test]
+    fn parses_reg_payload() {
+        let payload = b"REG pump-01";
+        assert_eq!(parse_reg_payload(payload).as_deref(), Some("pump-01"));
+    }
+
+    #[test]
+    fn reg_rejects_non_reg_payload() {
+        // 8-byte counter+uptime payload shouldn't be mistaken for REG.
+        let payload = [0x20, 0x13, 0x00, 0x00, 0x3C, 0x74, 0x4B, 0x00];
+        assert_eq!(parse_reg_payload(&payload), None);
+    }
+
+    #[test]
+    fn reg_rejects_empty_id() {
+        assert_eq!(parse_reg_payload(b"REG "), None);
+        assert_eq!(parse_reg_payload(b"REG   "), None);
+    }
+
+    #[test]
+    fn reg_rejects_whitespace_in_id() {
+        assert_eq!(parse_reg_payload(b"REG pump 01"), None);
+    }
+
+    #[test]
+    fn reg_rejects_binary_garbage_after_prefix() {
+        assert_eq!(parse_reg_payload(b"REG \x00\x01\x02"), None);
+    }
+
+    #[test]
+    fn routes_upsert_updates_both_directions() {
+        let mut r = Routes::default();
+        let mac_a: Mac = [1, 2, 3, 4, 5, 6];
+        r.upsert(mac_a, "pump-01".into());
+        assert_eq!(r.mac_to_id.get(&mac_a).map(String::as_str), Some("pump-01"));
+        assert_eq!(r.id_to_mac.get("pump-01").copied(), Some(mac_a));
+
+        // Re-registering same MAC with a renamed hardware_id should evict the
+        // old id_to_mac entry so reverse lookup stays consistent.
+        r.upsert(mac_a, "pump-01b".into());
+        assert_eq!(r.id_to_mac.get("pump-01"), None);
+        assert_eq!(r.id_to_mac.get("pump-01b").copied(), Some(mac_a));
     }
 }

@@ -1,19 +1,22 @@
 //! Minimal probe: prove `EspNowGatewayClient` + `EspNowChildTransport` work
 //! end-to-end against a real gateway board.
 //!
+//! Discovery is now REG-based: the probe waits for the child to announce
+//! itself via `REG <hardware_id>` on the radio, then uses the MAC it
+//! learned to set up a per-child transport. No hard-coded MAC needed.
+//!
 //! What it does:
 //!   1. Opens the gateway serial port (default `/dev/cu.usbserial-A5069RR4`).
-//!   2. Registers a single child: hardware_id="pump-01", MAC=30:ED:A0:B6:5B:38.
-//!   3. Listens for inbound telemetry from the child for 5 seconds, printing each frame.
-//!   4. Sends one downstream test frame (`DE AD BE EF CA FE`) to the child.
-//!   5. Listens 2 more seconds for any ack / follow-up.
+//!   2. Waits up to 15s for a REG frame matching `OSDL_CHILD_ID` (default "pump-01").
+//!   3. Listens for inbound telemetry from that child for 5 seconds.
+//!   4. Sends one downstream test frame (`DE AD BE EF CA FE`).
+//!   5. Listens 2 more seconds for follow-up frames.
 //!
 //! Run with:
 //!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
 //!
-//! Override port / MAC via env vars:
+//! Override via env vars:
 //!   OSDL_GATEWAY_PORT=/dev/cu.usbserial-XXXX \
-//!   OSDL_CHILD_MAC=30EDA0B65B38 \
 //!   OSDL_CHILD_ID=pump-01 \
 //!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
 
@@ -21,9 +24,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-use osdl_core::transport::espnow_gateway::{
-    parse_mac, EspNowChildTransport, EspNowGatewayClient, Mac,
-};
+use osdl_core::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -33,27 +34,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let port = env::var("OSDL_GATEWAY_PORT")
         .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
-    let mac_hex = env::var("OSDL_CHILD_MAC").unwrap_or_else(|_| "30EDA0B65B38".to_string());
     let child_id = env::var("OSDL_CHILD_ID").unwrap_or_else(|_| "pump-01".to_string());
-
-    let mac: Mac = parse_mac(&mac_hex).ok_or_else(|| {
-        format!(
-            "OSDL_CHILD_MAC must be 12 hex chars (got {:?})",
-            mac_hex
-        )
-    })?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
     let client = Arc::new(EspNowGatewayClient::new(port.clone(), 115200, tx));
     client.start().await.map_err(|e| e.to_string())?;
 
+    log::info!("waiting up to 15s for REG <{}> ...", child_id);
+    let mac = client
+        .wait_for_registration(&child_id, Duration::from_secs(15))
+        .await?;
+    log::info!(
+        "discovered {} = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        child_id,
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    );
+
     let child = EspNowChildTransport::new(child_id.clone(), mac, client.clone());
     child.start().await.map_err(|e| e.to_string())?;
 
     log::info!(
-        "probe ready — listening for frames from {} (MAC {}) for 5s ...",
-        child_id,
-        mac_hex
+        "probe ready — listening for frames from {} for 5s ...",
+        child_id
     );
 
     // Phase 1: passive listen
