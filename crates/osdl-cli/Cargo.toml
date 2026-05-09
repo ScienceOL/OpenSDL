@@ -9,6 +9,11 @@ description = "CLI for OpenSDL — standalone lab hardware bridge"
 name = "osdl"
 path = "src/main.rs"
 
+[[example]]
+name = "espnow_probe"
+path = "examples/espnow_probe.rs"
+required-features = ["osdl-core/espnow"]
+
 [dependencies]
 osdl-core = { path = "../osdl-core" }
 tokio.workspace = true
