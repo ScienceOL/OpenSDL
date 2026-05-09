@@ -14,6 +14,14 @@ name = "espnow_probe"
 path = "examples/espnow_probe.rs"
 required-features = ["osdl-core/espnow"]
 
+[[example]]
+name = "runze_via_espnow"
+path = "examples/runze_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[dev-dependencies]
+serde_json.workspace = true
+
 [dependencies]
 osdl-core = { path = "../osdl-core" }
 tokio.workspace = true
