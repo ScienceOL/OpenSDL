@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mac = client
         .wait_for_registration(&child_id, Duration::from_secs(15))
         .await?;
-    let child = EspNowChildTransport::new(child_id.clone(), mac, client.clone());
+    let child = EspNowChildTransport::new(mac, client.clone());
     child.start().await.map_err(|e| e.to_string())?;
 
     // Drain buffered telemetry

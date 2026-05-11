@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
-    let child = EspNowChildTransport::new(child_id.clone(), mac, client.clone());
+    let child = EspNowChildTransport::new(mac, client.clone());
     child.start().await.map_err(|e| e.to_string())?;
 
     log::info!(

@@ -5,7 +5,10 @@ use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
 #[cfg(feature = "espnow")]
-use crate::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient, Mac, RegEvent};
+use crate::transport::espnow_gateway::{
+    transport_id_for as espnow_transport_id, EspNowChildTransport, EspNowGatewayClient, Mac,
+    RegEvent,
+};
 use crate::transport::mqtt_serial::MqttSerialTransport;
 use crate::transport::{Transport, TransportRx};
 
@@ -276,6 +279,12 @@ impl OsdlEngine {
                 }
             }
         }
+
+        // Explicitly stop every ESP-NOW gateway so the read tasks (which hold
+        // `Arc<EspNowGatewayClient>`) can drop — otherwise they'd live on
+        // until their serial port EOFs.
+        #[cfg(feature = "espnow")]
+        self.stop_espnow_gateways().await;
 
         let _ = self.status_tx.send(OsdlStatus::Disconnected);
     }
@@ -548,42 +557,55 @@ impl OsdlEngine {
         }
     }
 
+    /// Stop every ESP-NOW gateway this engine started, so their read tasks
+    /// can drop and the engine shuts down cleanly. Called automatically at
+    /// the end of `run()`.
+    #[cfg(feature = "espnow")]
+    async fn stop_espnow_gateways(&self) {
+        // Take ownership of the map so callers can't observe half-stopped state.
+        let gateways: Vec<_> = {
+            let mut guard = self.espnow_gateways.write().await;
+            guard.drain().collect()
+        };
+        for (port, client) in gateways {
+            if let Err(e) = client.stop().await {
+                log::warn!("ESP-NOW gateway {} stop failed: {}", port, e);
+            }
+        }
+    }
+
     /// Handle a REG announcement from an ESP-NOW child: match its hardware_id
-    /// against known adapters, create a per-child transport keyed on
-    /// hardware_id, and register the device so command routing works.
+    /// against known adapters, then create a per-child transport + device keyed
+    /// on the child's MAC so multiple boards with the same firmware don't
+    /// collide. `hardware_id` is used only for adapter lookup.
     ///
-    /// Idempotent: a re-REG (child rebooting) just refreshes the transport's
-    /// route and leaves the existing device record in place.
+    /// Idempotent: a re-REG (child rebooting) is a no-op once the transport
+    /// and device already exist for that MAC.
     #[cfg(feature = "espnow")]
     async fn handle_espnow_reg(&self, client: Arc<EspNowGatewayClient>, reg: RegEvent) {
         let RegEvent { hardware_id, mac, is_new } = reg;
+        let transport_id = espnow_transport_id(&mac);
 
-        // Ensure the per-child transport exists. Keyed on hardware_id so the
-        // transport id is stable across gateway restarts.
+        // Build transport outside the lock to avoid holding it across any
+        // future await. EspNowChildTransport::new is synchronous, start() is a
+        // no-op, so this is just a lock discipline choice — keeps the hot path
+        // cheap and future-proofs against lock-across-await mistakes.
+        let child: Arc<dyn Transport> = Arc::new(EspNowChildTransport::new(mac, client.clone()));
         {
             let mut transports = self.transports.write().await;
-            if !transports.contains_key(&hardware_id) {
-                let child = Arc::new(EspNowChildTransport::new(
-                    hardware_id.clone(),
-                    mac,
-                    client.clone(),
-                ));
-                // start() on the child just registers the route inside the
-                // gateway; infallible in practice but propagate errors.
-                if let Err(e) = child.start().await {
-                    log::warn!(
-                        "EspNowChildTransport start failed for {}: {}",
-                        hardware_id,
-                        e
-                    );
-                }
-                transports.insert(hardware_id.clone(), child);
-            }
+            transports.entry(transport_id.clone()).or_insert(child);
         }
 
         // Only run adapter match + device creation the first time we see this
-        // child. Re-REG shouldn't duplicate the device record.
+        // MAC. Re-REG shouldn't duplicate the device record.
         if !is_new {
+            return;
+        }
+
+        // Skip if the device already exists (e.g. re-created after engine
+        // restart picked up old state somewhere).
+        let device_id = transport_id.clone();
+        if self.devices.read().await.contains_key(&device_id) {
             return;
         }
 
@@ -595,18 +617,10 @@ impl OsdlEngine {
             }
         }
 
-        // Skip if the device already exists (e.g. re-created after engine
-        // restart picked up old state somewhere).
-        let device_id = format!("espnow:{}", hardware_id);
-        if self.devices.read().await.contains_key(&device_id) {
-            let _ = mac; // silence unused in this branch
-            return;
-        }
-
         if let Some((platform, device_match)) = matched {
             let device = Device {
                 id: device_id.clone(),
-                transport_id: hardware_id.clone(),
+                transport_id: transport_id.clone(),
                 device_type: device_match.device_type,
                 adapter: platform,
                 description: device_match.description,
@@ -615,11 +629,11 @@ impl OsdlEngine {
                 actions: device_match.actions,
             };
             log::info!(
-                "ESP-NOW device matched: {} -> {} ({}) MAC {:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+                "ESP-NOW device matched: hardware_id={} -> {} ({}) MAC {}",
                 hardware_id,
                 device.id,
                 device.device_type,
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                mac_hex_flat(&mac),
             );
             self.devices
                 .write()
@@ -629,12 +643,12 @@ impl OsdlEngine {
             self.broadcast_status().await;
         } else {
             log::warn!(
-                "No driver found for ESP-NOW hardware_id: {} (MAC {:02X}{:02X}{:02X}{:02X}{:02X}{:02X})",
+                "No driver found for ESP-NOW hardware_id: {} (MAC {})",
                 hardware_id,
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                mac_hex_flat(&mac),
             );
             self.emit(OsdlEvent::UnknownNode {
-                node_id: format!("espnow:{}", mac_hex_flat(&mac)),
+                node_id: transport_id,
                 hardware_id,
             });
         }

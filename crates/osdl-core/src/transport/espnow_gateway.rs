@@ -15,9 +15,11 @@
 //!   `TX <mac_hex> <hex_bytes>\n`
 //!
 //! Each child is exposed to the engine as its own `EspNowChildTransport` whose
-//! `transport_id` equals the engine-facing hardware id (e.g. `"pump-01"`). The
-//! client dispatches inbound frames to the matching child's `transport_id`
-//! based on a `MAC → hardware_id` lookup table built at setup time.
+//! `transport_id` is derived from its MAC (`"espnow:<MAC_HEX>"`). Using the MAC
+//! — which is guaranteed unique per board — avoids collisions when two
+//! children run the same firmware / announce the same `hardware_id`. The
+//! client also tracks an auxiliary `MAC ↔ hardware_id` table so callers that
+//! care (e.g. `wait_for_registration`) can still look up by hardware_id.
 //!
 //! Requires the `espnow` feature: `cargo build --features espnow`.
 
@@ -254,21 +256,23 @@ impl EspNowGatewayClient {
                     continue;
                 }
 
-                let maybe_id = this.routes.read().await.mac_to_id.get(&mac).cloned();
-                match maybe_id {
-                    Some(hardware_id) => {
-                        let _ = tx.send(TransportRx {
-                            transport_id: hardware_id,
-                            data: payload,
-                        });
-                    }
-                    None => {
-                        log::debug!(
-                            "gateway RX from unregistered MAC {} ({} bytes) — dropping",
-                            mac_hex(&mac),
-                            payload.len()
-                        );
-                    }
+                // Route by MAC — every distinct board gets its own transport_id,
+                // so two children running identical firmware don't collide.
+                // Frames from MACs we've never seen a REG for are dropped: the
+                // engine has no Device keyed on them yet and the convention is
+                // REG-first anyway.
+                let known = this.routes.read().await.mac_to_id.contains_key(&mac);
+                if known {
+                    let _ = tx.send(TransportRx {
+                        transport_id: transport_id_for(&mac),
+                        data: payload,
+                    });
+                } else {
+                    log::debug!(
+                        "gateway RX from unregistered MAC {} ({} bytes) — dropping",
+                        mac_hex(&mac),
+                        payload.len()
+                    );
                 }
             }
             connected.store(false, Ordering::Relaxed);
@@ -303,17 +307,32 @@ impl EspNowGatewayClient {
     }
 }
 
+/// Canonical engine-facing transport id for a child, keyed on its MAC so
+/// that two boards running identical firmware don't collide. Shared between
+/// the gateway read loop (which stamps inbound frames) and the engine (which
+/// looks them up).
+pub fn transport_id_for(mac: &Mac) -> String {
+    format!("espnow:{}", mac_hex(mac))
+}
+
 /// Per-child transport. Delegates all I/O to a shared `EspNowGatewayClient`.
-/// The engine treats it as a regular transport keyed by `hardware_id`.
+/// Transport id is derived from the child's MAC (see [`transport_id_for`]).
 pub struct EspNowChildTransport {
-    hardware_id: String,
     mac: Mac,
     client: Arc<EspNowGatewayClient>,
 }
 
 impl EspNowChildTransport {
-    pub fn new(hardware_id: String, mac: Mac, client: Arc<EspNowGatewayClient>) -> Self {
-        Self { hardware_id, mac, client }
+    pub fn new(mac: Mac, client: Arc<EspNowGatewayClient>) -> Self {
+        Self { mac, client }
+    }
+
+    pub fn mac(&self) -> Mac {
+        self.mac
+    }
+
+    pub fn transport_id(&self) -> String {
+        transport_id_for(&self.mac)
     }
 }
 
@@ -336,12 +355,6 @@ impl Transport for EspNowChildTransport {
     }
 
     async fn start(&self) -> Result<(), String> {
-        // Ensure the MAC → hardware_id route is registered. The shared client
-        // itself is started by the caller once; multiple children calling start
-        // on the transport is a no-op beyond route registration.
-        self.client
-            .register_device(self.hardware_id.clone(), self.mac)
-            .await;
         Ok(())
     }
 
