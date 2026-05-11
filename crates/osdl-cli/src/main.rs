@@ -1,7 +1,9 @@
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::config::{AdapterConfig, EspNowGatewayConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
-use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
+use osdl_core::{
+    DeviceCommand, EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine, OsdlEvent,
+};
 
 #[tokio::main]
 async fn main() {
@@ -48,12 +50,56 @@ async fn main() {
 
     let mut engine = OsdlEngine::new(config, adapters).with_store(store);
 
-    // Spawn event consumer
+    // Event consumer + optional auto-drive.
+    //
+    // `OSDL_DEMO_DEVICE_TYPE` turns on a one-shot demo: when the first Device
+    // with that `device_type` comes online, inject a small canned command
+    // sequence (by default: initialize → query_position → query_valve_position
+    // for a Runze pump). Lets us verify the full Mac → gateway → child →
+    // RS-485 → device control loop without a separate example binary.
+    //
+    // Examples:
+    //   OSDL_DEMO_DEVICE_TYPE=syringe_pump_with_valve.runze.SY03B-T06 \
+    //       OSDL_ESPNOW_PORT=/dev/cu.usbserial-XXX cargo run -p osdl-cli
     let event_rx = engine.take_event_rx();
+    let cmd_tx = engine.command_sender();
+    let demo_device_type = std::env::var("OSDL_DEMO_DEVICE_TYPE").ok();
     tokio::spawn(async move {
         let mut rx = event_rx.lock().await.take().unwrap();
+        let mut demo_triggered = false;
         while let Some(event) = rx.recv().await {
             log::info!("Event: {:?}", event);
+            if let (false, Some(target), OsdlEvent::DeviceOnline(device)) =
+                (demo_triggered, demo_device_type.as_deref(), &event)
+            {
+                if device.device_type == target {
+                    demo_triggered = true;
+                    let device_id = device.id.clone();
+                    let tx = cmd_tx.clone();
+                    log::info!(
+                        "demo: driving {} with canned command sequence",
+                        device_id
+                    );
+                    tokio::spawn(async move {
+                        let script = [
+                            ("cmd-init",   "initialize",           serde_json::json!({})),
+                            ("cmd-qpos",   "query_position",       serde_json::json!({})),
+                            ("cmd-qvalve", "query_valve_position", serde_json::json!({})),
+                        ];
+                        // Give transport + device a beat to settle after online.
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        for (id, action, params) in script {
+                            let _ = tx.send(DeviceCommand {
+                                command_id: id.into(),
+                                device_id: device_id.clone(),
+                                action: action.into(),
+                                params,
+                            });
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    });
+                }
+            }
         }
     });
 

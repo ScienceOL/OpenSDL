@@ -41,3 +41,4 @@ osdl-core = { path = "../osdl-core" }
 tokio.workspace = true
 log.workspace = true
 env_logger = "0.11"
+serde_json.workspace = true

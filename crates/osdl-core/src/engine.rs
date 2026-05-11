@@ -57,6 +57,14 @@ pub struct OsdlEngine {
 
     mqtt_client: Option<AsyncClient>,
 
+    /// External command injection: callers clone the sender via
+    /// `command_sender()` before `run()` and push `DeviceCommand`s into it.
+    /// The engine's select! loop picks them up and dispatches via
+    /// `send_command`. Useful for tests, CLI, and demo harnesses that need
+    /// to drive the engine without going through MQTT.
+    cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
+    cmd_inject_rx: Option<mpsc::UnboundedReceiver<DeviceCommand>>,
+
     /// ESP-NOW gateway boards kept alive for the lifetime of the engine.
     /// Indexed by serial port path; each owns a serial read loop.
     #[cfg(feature = "espnow")]
@@ -75,6 +83,7 @@ impl OsdlEngine {
         let (status_tx, status_rx) = watch::channel(OsdlStatus::Disconnected);
         let (stop_tx, stop_rx) = watch::channel(false);
         let (transport_rx_tx, transport_rx_rx) = mpsc::unbounded_channel();
+        let (cmd_inject_tx, cmd_inject_rx) = mpsc::unbounded_channel();
         #[cfg(feature = "espnow")]
         let (espnow_reg_tx, espnow_reg_rx) = mpsc::unbounded_channel();
 
@@ -94,6 +103,8 @@ impl OsdlEngine {
             stop_tx,
             stop_rx,
             mqtt_client: None,
+            cmd_inject_tx,
+            cmd_inject_rx: Some(cmd_inject_rx),
             #[cfg(feature = "espnow")]
             espnow_gateways: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "espnow")]
@@ -112,6 +123,14 @@ impl OsdlEngine {
     /// Get a reference to the event store (for querying logs).
     pub fn store(&self) -> Option<&Arc<EventStore>> {
         self.store.as_ref()
+    }
+
+    /// Clone of the command-injection sender. Drop commands into it and the
+    /// running engine's main loop will dispatch them via `send_command`
+    /// — handy when the caller doesn't have `&engine` (e.g. inside the event
+    /// consumer task spawned before `run()`).
+    pub fn command_sender(&self) -> mpsc::UnboundedSender<DeviceCommand> {
+        self.cmd_inject_tx.clone()
     }
 
     /// Take the event receiver. The host calls this once to forward events.
@@ -199,6 +218,7 @@ impl OsdlEngine {
         let mut eventloop = eventloop;
         let mut stop_rx = self.stop_rx.clone();
         let mut transport_rx = self.transport_rx_rx.take();
+        let mut cmd_inject_rx = self.cmd_inject_rx.take();
         #[cfg(feature = "espnow")]
         let mut espnow_reg_rx = self.espnow_reg_rx.take();
 
@@ -240,6 +260,17 @@ impl OsdlEngine {
                     } => {
                         self.handle_espnow_reg(client, reg).await;
                     }
+                    Some(cmd) = async {
+                        match cmd_inject_rx.as_mut() {
+                            Some(r) => r.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        match self.send_command(cmd).await {
+                            Ok(res) => log::info!("injected command dispatched: {:?}", res),
+                            Err(e)  => log::warn!("injected command failed: {}", e),
+                        }
+                    }
                     _ = stop_rx.changed() => {
                         log::info!("OSDL engine stopping");
                         break;
@@ -271,6 +302,17 @@ impl OsdlEngine {
                         }
                     } => {
                         self.handle_transport_rx(&rx.transport_id, &rx.data).await;
+                    }
+                    Some(cmd) = async {
+                        match cmd_inject_rx.as_mut() {
+                            Some(r) => r.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        match self.send_command(cmd).await {
+                            Ok(res) => log::info!("injected command dispatched: {:?}", res),
+                            Err(e)  => log::warn!("injected command failed: {}", e),
+                        }
                     }
                     _ = stop_rx.changed() => {
                         log::info!("OSDL engine stopping");
