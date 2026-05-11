@@ -25,7 +25,7 @@ async fn main() {
 
     // TODO: load config from file / CLI args
     let config = OsdlConfig {
-        mqtt: MqttConfig::default(),
+        mqtt: Some(MqttConfig::default()),
         adapters: vec![AdapterConfig {
             adapter_type: "unilabos".into(),
             registry_path: Some("registry/unilabos".into()),
@@ -33,11 +33,15 @@ async fn main() {
         espnow_gateways,
     };
 
-    // Start embedded MQTT broker
-    let _broker = EmbeddedBroker::start(config.mqtt.port).expect("Failed to start MQTT broker");
-
-    // Advertise via mDNS so child nodes can discover us
-    let _mdns = MdnsAdvertiser::start(config.mqtt.port).expect("Failed to start mDNS");
+    // Start embedded MQTT broker + mDNS only when MQTT is enabled.
+    let _broker = config
+        .mqtt
+        .as_ref()
+        .map(|c| EmbeddedBroker::start(c.port).expect("Failed to start MQTT broker"));
+    let _mdns = config
+        .mqtt
+        .as_ref()
+        .map(|c| MdnsAdvertiser::start(c.port).expect("Failed to start mDNS"));
 
     // Give broker a moment to bind the port
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

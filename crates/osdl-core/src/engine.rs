@@ -184,30 +184,44 @@ impl OsdlEngine {
             }
         }
 
-        // Connect MQTT — split into client + eventloop for separate ownership
-        let bridge = MqttBridge::new(&self.config.mqtt);
-        let (client, eventloop) = bridge.split();
-        self.mqtt_client = Some(client.clone());
+        // Connect MQTT if configured. `None` means the MQTT serial bridge is
+        // disabled — the engine runs without broker/subscriptions and the
+        // MQTT arm of the select! loop stays pending forever.
+        let mut eventloop = if let Some(mqtt_cfg) = &self.config.mqtt {
+            let bridge = MqttBridge::new(mqtt_cfg);
+            let (client, eventloop) = bridge.split();
+            self.mqtt_client = Some(client.clone());
 
-        // Subscribe to node management + serial tunneling topics
-        let subs = [
-            "osdl/nodes/+/register",
-            "osdl/nodes/+/heartbeat",
-            "osdl/serial/+/rx",
-        ];
-        for topic in &subs {
-            if let Err(e) = client.subscribe(*topic, rumqttc::QoS::AtLeastOnce).await {
-                log::error!("Failed to subscribe to {}: {}", topic, e);
+            let subs = [
+                "osdl/nodes/+/register",
+                "osdl/nodes/+/heartbeat",
+                "osdl/serial/+/rx",
+            ];
+            for topic in &subs {
+                if let Err(e) = client.subscribe(*topic, rumqttc::QoS::AtLeastOnce).await {
+                    log::error!("Failed to subscribe to {}: {}", topic, e);
+                }
             }
-        }
 
-        let broker = format!("{}:{}", self.config.mqtt.host, self.config.mqtt.port);
+            let broker = format!("{}:{}", mqtt_cfg.host, mqtt_cfg.port);
+            log::info!("OSDL engine connected to MQTT broker {}", broker);
+            Some(eventloop)
+        } else {
+            log::info!("OSDL engine running without MQTT (ESP-NOW / direct only)");
+            None
+        };
+
+        // Emit initial Connected status (broker description reflects MQTT mode).
         let _ = self.status_tx.send(OsdlStatus::Connected {
-            broker: broker.clone(),
+            broker: self
+                .config
+                .mqtt
+                .as_ref()
+                .map(|c| format!("{}:{}", c.host, c.port))
+                .unwrap_or_else(|| "mqtt-disabled".into()),
             node_count: 0,
             device_count: 0,
         });
-        log::info!("OSDL engine connected to {}", broker);
 
         // Start configured ESP-NOW gateways (USB-CDC). Each gateway owns a
         // serial read loop and emits REG events for registration-driven
@@ -215,7 +229,6 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.start_espnow_gateways().await;
 
-        let mut eventloop = eventloop;
         let mut stop_rx = self.stop_rx.clone();
         let mut transport_rx = self.transport_rx_rx.take();
         let mut cmd_inject_rx = self.cmd_inject_rx.take();
@@ -229,9 +242,14 @@ impl OsdlEngine {
             #[cfg(feature = "espnow")]
             {
                 tokio::select! {
-                    event = eventloop.poll() => {
+                    event = async {
+                        match eventloop.as_mut() {
+                            Some(el) => el.poll().await.map(Some),
+                            None => std::future::pending().await,
+                        }
+                    } => {
                         match event {
-                            Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish))) => {
+                            Ok(Some(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)))) => {
                                 self.handle_mqtt_message(&publish.topic, &publish.payload).await;
                             }
                             Ok(_) => {}
@@ -280,9 +298,14 @@ impl OsdlEngine {
             #[cfg(not(feature = "espnow"))]
             {
                 tokio::select! {
-                    event = eventloop.poll() => {
+                    event = async {
+                        match eventloop.as_mut() {
+                            Some(el) => el.poll().await.map(Some),
+                            None => std::future::pending().await,
+                        }
+                    } => {
                         match event {
-                            Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish))) => {
+                            Ok(Some(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)))) => {
                                 self.handle_mqtt_message(&publish.topic, &publish.payload).await;
                             }
                             Ok(_) => {}
@@ -521,7 +544,12 @@ impl OsdlEngine {
 
     fn broadcast_status(&self) -> impl std::future::Future<Output = ()> + '_ {
         async {
-            let broker = format!("{}:{}", self.config.mqtt.host, self.config.mqtt.port);
+            let broker = self
+                .config
+                .mqtt
+                .as_ref()
+                .map(|c| format!("{}:{}", c.host, c.port))
+                .unwrap_or_else(|| "mqtt-disabled".into());
             let node_count = self.nodes.read().await.len();
             let device_count = self.devices.read().await.len();
             let _ = self.status_tx.send(OsdlStatus::Connected {

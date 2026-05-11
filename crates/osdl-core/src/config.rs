@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsdlConfig {
-    pub mqtt: MqttConfig,
+    /// MQTT configuration. `None` disables the MQTT serial bridge entirely —
+    /// engine runs without broker/subscriptions, and MQTT-backed features
+    /// (child node register/heartbeat, `handle_mqtt_message`) are inert.
+    /// Use this when only ESP-NOW / direct-serial / TCP transports are needed.
+    #[serde(default)]
+    pub mqtt: Option<MqttConfig>,
     #[serde(default)]
     pub adapters: Vec<AdapterConfig>,
     /// ESP-NOW gateway boards plugged into this host (USB-CDC). Each entry
