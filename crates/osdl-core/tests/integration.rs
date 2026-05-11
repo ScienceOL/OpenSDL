@@ -42,6 +42,7 @@ fn test_engine_creation() {
             adapter_type: "unilabos".into(),
             registry_path: Some("../../registry/unilabos".into()),
         }],
+        espnow_gateways: vec![],
     };
 
     let store = EventStore::in_memory().unwrap();

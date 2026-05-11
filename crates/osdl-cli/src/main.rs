@@ -1,5 +1,5 @@
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
-use osdl_core::config::{AdapterConfig, MqttConfig, OsdlConfig};
+use osdl_core::config::{AdapterConfig, EspNowGatewayConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 
@@ -7,13 +7,28 @@ use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 async fn main() {
     env_logger::init();
 
+    // ESP-NOW gateway is opt-in via env var so a host without the board
+    // plugged in still boots cleanly. Example:
+    //   OSDL_ESPNOW_PORT=/dev/cu.usbserial-A5069RR4 cargo run -p osdl-cli
+    let espnow_gateways = match std::env::var("OSDL_ESPNOW_PORT") {
+        Ok(port) if !port.is_empty() => vec![EspNowGatewayConfig {
+            port,
+            baud_rate: std::env::var("OSDL_ESPNOW_BAUD")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(115200),
+        }],
+        _ => vec![],
+    };
+
     // TODO: load config from file / CLI args
     let config = OsdlConfig {
         mqtt: MqttConfig::default(),
         adapters: vec![AdapterConfig {
             adapter_type: "unilabos".into(),
-            registry_path: Some("../../registry/unilabos".into()),
+            registry_path: Some("registry/unilabos".into()),
         }],
+        espnow_gateways,
     };
 
     // Start embedded MQTT broker

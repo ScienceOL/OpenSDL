@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex, Notify, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, Notify, RwLock};
 use tokio::task::JoinHandle;
 
 pub type Mac = [u8; 6];
@@ -35,6 +35,17 @@ pub type Mac = [u8; 6];
 /// Marker prefix in ESP-NOW payloads used by children to announce their
 /// hardware_id. Keep in sync with firmware (`espnow_child.rs::send_reg`).
 const REG_PREFIX: &[u8] = b"REG ";
+
+/// Emitted by the gateway read loop every time a REG frame arrives. Consumers
+/// (e.g. `OsdlEngine`) subscribe to build per-child transports and devices.
+#[derive(Debug, Clone)]
+pub struct RegEvent {
+    pub hardware_id: String,
+    pub mac: Mac,
+    /// True the first time this MAC is seen on this gateway; false if the
+    /// child is re-announcing (e.g. after a reboot).
+    pub is_new: bool,
+}
 
 /// Shared owner of the USB-CDC connection to a gateway board. Holds the
 /// `MAC ↔ hardware_id` table used to route inbound frames and exposes a
@@ -48,6 +59,9 @@ pub struct EspNowGatewayClient {
     routes: RwLock<Routes>,
     /// Fires whenever a new REG arrives, so `wait_for_registration` can wake up.
     reg_notify: Notify,
+    /// Broadcasts every REG frame so multiple subscribers (engine, tests, …)
+    /// can react to child registration independently.
+    reg_tx: broadcast::Sender<RegEvent>,
     connected: Arc<AtomicBool>,
     writer: Arc<Mutex<Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>>,
     read_task: Mutex<Option<JoinHandle<()>>>,
@@ -76,24 +90,55 @@ impl EspNowGatewayClient {
         baud_rate: u32,
         rx_tx: mpsc::UnboundedSender<TransportRx>,
     ) -> Self {
+        let (reg_tx, _) = broadcast::channel(64);
         Self {
             port_path,
             baud_rate,
             rx_tx,
             routes: RwLock::new(Routes::default()),
             reg_notify: Notify::new(),
+            reg_tx,
             connected: Arc::new(AtomicBool::new(false)),
             writer: Arc::new(Mutex::new(None)),
             read_task: Mutex::new(None),
         }
     }
 
+    /// Subscribe to REG events from this gateway. Each new subscription gets
+    /// future events only (broadcast semantics); call `register_device` or
+    /// iterate `known_registrations()` if you need the current state.
+    pub fn subscribe_reg(&self) -> broadcast::Receiver<RegEvent> {
+        self.reg_tx.subscribe()
+    }
+
+    /// Snapshot of the current MAC ↔ hardware_id table. Useful when a late
+    /// subscriber needs to replay what has already registered.
+    pub async fn known_registrations(&self) -> Vec<(String, Mac)> {
+        self.routes
+            .read()
+            .await
+            .id_to_mac
+            .iter()
+            .map(|(id, mac)| (id.clone(), *mac))
+            .collect()
+    }
+
     /// Register a hardware_id ↔ MAC binding manually. Normally unnecessary —
     /// children announce themselves via REG frames — but useful for tests or
     /// to pre-seed the table before a device has booted.
     pub async fn register_device(&self, hardware_id: String, mac: Mac) {
-        self.routes.write().await.upsert(mac, hardware_id);
+        let is_new = {
+            let mut routes = self.routes.write().await;
+            let was_unknown = !routes.mac_to_id.contains_key(&mac);
+            routes.upsert(mac, hardware_id.clone());
+            was_unknown
+        };
         self.reg_notify.notify_waiters();
+        let _ = self.reg_tx.send(RegEvent {
+            hardware_id,
+            mac,
+            is_new,
+        });
     }
 
     /// Look up the MAC for a given hardware_id, if known.
@@ -201,6 +246,11 @@ impl EspNowGatewayClient {
                         );
                     }
                     this.reg_notify.notify_waiters();
+                    let _ = this.reg_tx.send(RegEvent {
+                        hardware_id,
+                        mac,
+                        is_new,
+                    });
                     continue;
                 }
 

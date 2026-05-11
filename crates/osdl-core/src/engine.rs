@@ -4,6 +4,8 @@ use crate::event::OsdlEvent;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
+#[cfg(feature = "espnow")]
+use crate::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient, Mac, RegEvent};
 use crate::transport::mqtt_serial::MqttSerialTransport;
 use crate::transport::{Transport, TransportRx};
 
@@ -51,6 +53,17 @@ pub struct OsdlEngine {
     stop_rx: watch::Receiver<bool>,
 
     mqtt_client: Option<AsyncClient>,
+
+    /// ESP-NOW gateway boards kept alive for the lifetime of the engine.
+    /// Indexed by serial port path; each owns a serial read loop.
+    #[cfg(feature = "espnow")]
+    espnow_gateways: Arc<RwLock<HashMap<String, Arc<EspNowGatewayClient>>>>,
+    /// REG events from all gateways, multiplexed into one stream for the
+    /// main select! loop to react to.
+    #[cfg(feature = "espnow")]
+    espnow_reg_tx: mpsc::UnboundedSender<(Arc<EspNowGatewayClient>, RegEvent)>,
+    #[cfg(feature = "espnow")]
+    espnow_reg_rx: Option<mpsc::UnboundedReceiver<(Arc<EspNowGatewayClient>, RegEvent)>>,
 }
 
 impl OsdlEngine {
@@ -59,6 +72,8 @@ impl OsdlEngine {
         let (status_tx, status_rx) = watch::channel(OsdlStatus::Disconnected);
         let (stop_tx, stop_rx) = watch::channel(false);
         let (transport_rx_tx, transport_rx_rx) = mpsc::unbounded_channel();
+        #[cfg(feature = "espnow")]
+        let (espnow_reg_tx, espnow_reg_rx) = mpsc::unbounded_channel();
 
         Self {
             config,
@@ -76,6 +91,12 @@ impl OsdlEngine {
             stop_tx,
             stop_rx,
             mqtt_client: None,
+            #[cfg(feature = "espnow")]
+            espnow_gateways: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "espnow")]
+            espnow_reg_tx,
+            #[cfg(feature = "espnow")]
+            espnow_reg_rx: Some(espnow_reg_rx),
         }
     }
 
@@ -166,39 +187,92 @@ impl OsdlEngine {
         });
         log::info!("OSDL engine connected to {}", broker);
 
+        // Start configured ESP-NOW gateways (USB-CDC). Each gateway owns a
+        // serial read loop and emits REG events for registration-driven
+        // device discovery.
+        #[cfg(feature = "espnow")]
+        self.start_espnow_gateways().await;
+
         let mut eventloop = eventloop;
         let mut stop_rx = self.stop_rx.clone();
         let mut transport_rx = self.transport_rx_rx.take();
+        #[cfg(feature = "espnow")]
+        let mut espnow_reg_rx = self.espnow_reg_rx.take();
 
         loop {
-            tokio::select! {
-                event = eventloop.poll() => {
-                    match event {
-                        Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish))) => {
-                            self.handle_mqtt_message(&publish.topic, &publish.payload).await;
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            log::error!("MQTT error: {}", e);
-                            let _ = self.status_tx.send(OsdlStatus::Error {
-                                message: e.to_string(),
-                            });
-                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            // The ESP-NOW REG arm can't be conditionally included inside a
+            // single `tokio::select!` (cfg attrs on arms aren't supported), so
+            // the loop body is duplicated per feature flag.
+            #[cfg(feature = "espnow")]
+            {
+                tokio::select! {
+                    event = eventloop.poll() => {
+                        match event {
+                            Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish))) => {
+                                self.handle_mqtt_message(&publish.topic, &publish.payload).await;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("MQTT error: {}", e);
+                                let _ = self.status_tx.send(OsdlStatus::Error {
+                                    message: e.to_string(),
+                                });
+                                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                            }
                         }
                     }
-                }
-                // Receive bytes from non-MQTT transports (direct serial, TCP, etc.)
-                Some(rx) = async {
-                    match transport_rx.as_mut() {
-                        Some(r) => r.recv().await,
-                        None => std::future::pending().await,
+                    Some(rx) = async {
+                        match transport_rx.as_mut() {
+                            Some(r) => r.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        self.handle_transport_rx(&rx.transport_id, &rx.data).await;
                     }
-                } => {
-                    self.handle_transport_rx(&rx.transport_id, &rx.data).await;
+                    Some((client, reg)) = async {
+                        match espnow_reg_rx.as_mut() {
+                            Some(r) => r.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        self.handle_espnow_reg(client, reg).await;
+                    }
+                    _ = stop_rx.changed() => {
+                        log::info!("OSDL engine stopping");
+                        break;
+                    }
                 }
-                _ = stop_rx.changed() => {
-                    log::info!("OSDL engine stopping");
-                    break;
+            }
+            #[cfg(not(feature = "espnow"))]
+            {
+                tokio::select! {
+                    event = eventloop.poll() => {
+                        match event {
+                            Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish))) => {
+                                self.handle_mqtt_message(&publish.topic, &publish.payload).await;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("MQTT error: {}", e);
+                                let _ = self.status_tx.send(OsdlStatus::Error {
+                                    message: e.to_string(),
+                                });
+                                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                            }
+                        }
+                    }
+                    Some(rx) = async {
+                        match transport_rx.as_mut() {
+                            Some(r) => r.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        self.handle_transport_rx(&rx.transport_id, &rx.data).await;
+                    }
+                    _ = stop_rx.changed() => {
+                        log::info!("OSDL engine stopping");
+                        break;
+                    }
                 }
             }
         }
@@ -407,6 +481,165 @@ impl OsdlEngine {
         }
     }
 
+    /// Spin up every gateway in `config.espnow_gateways`, subscribe to their
+    /// REG streams, and forward events into the engine's main loop. Replays
+    /// any registrations that already arrived before the listener attached.
+    #[cfg(feature = "espnow")]
+    async fn start_espnow_gateways(&self) {
+        for gw_cfg in &self.config.espnow_gateways {
+            let client = Arc::new(EspNowGatewayClient::new(
+                gw_cfg.port.clone(),
+                gw_cfg.baud_rate,
+                self.transport_rx_tx.clone(),
+            ));
+            if let Err(e) = client.start().await {
+                log::error!(
+                    "Failed to start ESP-NOW gateway on {}: {}",
+                    gw_cfg.port,
+                    e
+                );
+                continue;
+            }
+            self.espnow_gateways
+                .write()
+                .await
+                .insert(gw_cfg.port.clone(), client.clone());
+
+            // Pump REG events from this gateway into the engine's unified
+            // select! loop via the shared espnow_reg channel.
+            let mut reg_rx = client.subscribe_reg();
+            let forward_tx = self.espnow_reg_tx.clone();
+            let forward_client = client.clone();
+            tokio::spawn(async move {
+                loop {
+                    match reg_rx.recv().await {
+                        Ok(ev) => {
+                            if forward_tx.send((forward_client.clone(), ev)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            log::warn!("ESP-NOW REG listener lagged, dropped {} events", n);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+
+            // Replay any registrations that arrived between start() and
+            // subscribe_reg() — otherwise a fast-booting child could register
+            // before we're listening.
+            for (hardware_id, mac) in client.known_registrations().await {
+                let _ = self.espnow_reg_tx.send((
+                    client.clone(),
+                    RegEvent {
+                        hardware_id,
+                        mac,
+                        is_new: true,
+                    },
+                ));
+            }
+
+            log::info!(
+                "ESP-NOW gateway listening on {} @ {} baud",
+                gw_cfg.port,
+                gw_cfg.baud_rate
+            );
+        }
+    }
+
+    /// Handle a REG announcement from an ESP-NOW child: match its hardware_id
+    /// against known adapters, create a per-child transport keyed on
+    /// hardware_id, and register the device so command routing works.
+    ///
+    /// Idempotent: a re-REG (child rebooting) just refreshes the transport's
+    /// route and leaves the existing device record in place.
+    #[cfg(feature = "espnow")]
+    async fn handle_espnow_reg(&self, client: Arc<EspNowGatewayClient>, reg: RegEvent) {
+        let RegEvent { hardware_id, mac, is_new } = reg;
+
+        // Ensure the per-child transport exists. Keyed on hardware_id so the
+        // transport id is stable across gateway restarts.
+        {
+            let mut transports = self.transports.write().await;
+            if !transports.contains_key(&hardware_id) {
+                let child = Arc::new(EspNowChildTransport::new(
+                    hardware_id.clone(),
+                    mac,
+                    client.clone(),
+                ));
+                // start() on the child just registers the route inside the
+                // gateway; infallible in practice but propagate errors.
+                if let Err(e) = child.start().await {
+                    log::warn!(
+                        "EspNowChildTransport start failed for {}: {}",
+                        hardware_id,
+                        e
+                    );
+                }
+                transports.insert(hardware_id.clone(), child);
+            }
+        }
+
+        // Only run adapter match + device creation the first time we see this
+        // child. Re-REG shouldn't duplicate the device record.
+        if !is_new {
+            return;
+        }
+
+        let mut matched = None;
+        for adapter in &self.adapters {
+            if let Some(m) = adapter.match_hardware(&hardware_id) {
+                matched = Some((adapter.platform().to_string(), m));
+                break;
+            }
+        }
+
+        // Skip if the device already exists (e.g. re-created after engine
+        // restart picked up old state somewhere).
+        let device_id = format!("espnow:{}", hardware_id);
+        if self.devices.read().await.contains_key(&device_id) {
+            let _ = mac; // silence unused in this branch
+            return;
+        }
+
+        if let Some((platform, device_match)) = matched {
+            let device = Device {
+                id: device_id.clone(),
+                transport_id: hardware_id.clone(),
+                device_type: device_match.device_type,
+                adapter: platform,
+                description: device_match.description,
+                online: true,
+                properties: HashMap::new(),
+                actions: device_match.actions,
+            };
+            log::info!(
+                "ESP-NOW device matched: {} -> {} ({}) MAC {:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+                hardware_id,
+                device.id,
+                device.device_type,
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            );
+            self.devices
+                .write()
+                .await
+                .insert(device_id.clone(), device.clone());
+            self.emit(OsdlEvent::DeviceOnline(device));
+            self.broadcast_status().await;
+        } else {
+            log::warn!(
+                "No driver found for ESP-NOW hardware_id: {} (MAC {:02X}{:02X}{:02X}{:02X}{:02X}{:02X})",
+                hardware_id,
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            );
+            self.emit(OsdlEvent::UnknownNode {
+                node_id: format!("espnow:{}", mac_hex_flat(&mac)),
+                hardware_id,
+            });
+        }
+    }
+
     // === Request-response API (called by host) ===
 
     pub async fn list_devices(&self) -> Vec<Device> {
@@ -515,6 +748,14 @@ impl OsdlEngine {
 fn extract_segment<'a>(topic: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
     let rest = topic.strip_prefix(prefix)?;
     rest.strip_suffix(suffix)
+}
+
+#[cfg(feature = "espnow")]
+fn mac_hex_flat(mac: &Mac) -> String {
+    format!(
+        "{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    )
 }
 
 fn now_millis() -> i64 {

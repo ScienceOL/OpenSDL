@@ -19,8 +19,22 @@ name = "runze_via_espnow"
 path = "examples/runze_via_espnow.rs"
 required-features = ["osdl-core/espnow"]
 
+[[example]]
+name = "chinwe_scan"
+path = "examples/chinwe_scan.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "laiyu_scan"
+path = "examples/laiyu_scan.rs"
+required-features = ["osdl-core/espnow"]
+
 [dev-dependencies]
 serde_json.workspace = true
+
+[features]
+default = ["espnow"]
+espnow = ["osdl-core/espnow"]
 
 [dependencies]
 osdl-core = { path = "../osdl-core" }
