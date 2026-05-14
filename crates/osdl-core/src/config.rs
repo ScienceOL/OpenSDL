@@ -2,9 +2,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsdlConfig {
-    pub mqtt: MqttConfig,
+    /// MQTT configuration. `None` disables the MQTT serial bridge entirely —
+    /// engine runs without broker/subscriptions, and MQTT-backed features
+    /// (child node register/heartbeat, `handle_mqtt_message`) are inert.
+    /// Use this when only ESP-NOW / direct-serial / TCP transports are needed.
+    #[serde(default)]
+    pub mqtt: Option<MqttConfig>,
     #[serde(default)]
     pub adapters: Vec<AdapterConfig>,
+    /// ESP-NOW gateway boards plugged into this host (USB-CDC). Each entry
+    /// owns one serial port and routes frames to/from its ESP-NOW children.
+    #[serde(default)]
+    pub espnow_gateways: Vec<EspNowGatewayConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +26,18 @@ pub struct MqttConfig {
     pub client_id: String,
     #[serde(default = "default_keepalive")]
     pub keepalive_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EspNowGatewayConfig {
+    /// Serial device path of the gateway board, e.g. `/dev/cu.usbserial-A5069RR4`.
+    pub port: String,
+    #[serde(default = "default_espnow_baud")]
+    pub baud_rate: u32,
+}
+
+fn default_espnow_baud() -> u32 {
+    115200
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

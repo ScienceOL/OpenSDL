@@ -9,8 +9,36 @@ description = "CLI for OpenSDL — standalone lab hardware bridge"
 name = "osdl"
 path = "src/main.rs"
 
+[[example]]
+name = "espnow_probe"
+path = "examples/espnow_probe.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "runze_via_espnow"
+path = "examples/runze_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "chinwe_scan"
+path = "examples/chinwe_scan.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "laiyu_scan"
+path = "examples/laiyu_scan.rs"
+required-features = ["osdl-core/espnow"]
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+default = ["espnow"]
+espnow = ["osdl-core/espnow"]
+
 [dependencies]
 osdl-core = { path = "../osdl-core" }
 tokio.workspace = true
 log.workspace = true
 env_logger = "0.11"
+serde_json.workspace = true

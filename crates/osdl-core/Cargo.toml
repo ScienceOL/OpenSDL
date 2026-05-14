@@ -8,6 +8,7 @@ description = "Core library for OpenSDL — platform-agnostic lab hardware contr
 [features]
 default = []
 serial = ["dep:tokio-serial"]
+espnow = ["dep:tokio-serial"]
 
 [dependencies]
 serde.workspace = true

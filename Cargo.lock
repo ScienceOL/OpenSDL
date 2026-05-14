@@ -1200,6 +1200,7 @@ dependencies = [
  "env_logger",
  "log",
  "osdl-core",
+ "serde_json",
  "tokio",
 ]
 

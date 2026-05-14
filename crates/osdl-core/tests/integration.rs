@@ -37,11 +37,12 @@ fn test_engine_creation() {
     use osdl_core::{EventStore, OsdlEngine, OsdlStatus};
 
     let config = OsdlConfig {
-        mqtt: MqttConfig::default(),
+        mqtt: Some(MqttConfig::default()),
         adapters: vec![AdapterConfig {
             adapter_type: "unilabos".into(),
             registry_path: Some("../../registry/unilabos".into()),
         }],
+        espnow_gateways: vec![],
     };
 
     let store = EventStore::in_memory().unwrap();

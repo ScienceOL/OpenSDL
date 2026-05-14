@@ -41,16 +41,17 @@ impl TestHarness {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let config = OsdlConfig {
-            mqtt: MqttConfig {
+            mqtt: Some(MqttConfig {
                 host: "localhost".into(),
                 port,
                 client_id: client_id.into(),
                 keepalive_secs: 5,
-            },
+            }),
             adapters: vec![AdapterConfig {
                 adapter_type: "unilabos".into(),
                 registry_path: Some("../../registry/unilabos".into()),
             }],
+            espnow_gateways: vec![],
         };
 
         let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
@@ -95,13 +96,14 @@ impl TestHarness {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let config = OsdlConfig {
-            mqtt: MqttConfig {
+            mqtt: Some(MqttConfig {
                 host: "localhost".into(),
                 port,
                 client_id: client_id.into(),
                 keepalive_secs: 5,
-            },
+            }),
             adapters: vec![],
+            espnow_gateways: vec![],
         };
 
         let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![];

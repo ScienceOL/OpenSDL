@@ -1,0 +1,69 @@
+# Standalone crate — NOT a member of the OpenSDL workspace.
+# Builds with the xtensa-esp32s3 toolchain; requires `source ~/export-esp.sh`
+# before any cargo command. See README.md.
+[workspace]
+
+[package]
+name = "osdl-esp32-firmware"
+version = "0.1.0"
+authors = ["xinquiry <100398322+xinquiry@users.noreply.github.com>"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.82"
+
+[[bin]]
+name = "osdl-esp32-firmware"
+path = "src/main.rs"
+harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+
+[[bin]]
+name = "espnow-mac"
+path = "src/bin/espnow_mac.rs"
+harness = false
+
+[[bin]]
+name = "espnow-gateway"
+path = "src/bin/espnow_gateway.rs"
+harness = false
+
+[[bin]]
+name = "espnow-child"
+path = "src/bin/espnow_child.rs"
+harness = false
+
+[[bin]]
+name = "espnow-diag"
+path = "src/bin/espnow_diag.rs"
+harness = false
+
+[[bin]]
+name = "uart-count"
+path = "src/bin/uart_count.rs"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true    # Symbols are nice, and they don't increase the size on Flash
+opt-level = "z"
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
+
+[dependencies]
+log = "0.4"
+anyhow = "1"
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+# Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
+embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+mipidsi = "0.9"
+embedded-graphics = "0.8"
+
+[build-dependencies]
+embuild = "0.33"
+
+# Pull in ESP-IDF's mDNS component so esp_idf_svc::mdns compiles.
+[[package.metadata.esp-idf-sys.extra_components]]
+remote_component = { name = "espressif/mdns", version = "1.2" }
