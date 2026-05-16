@@ -14,6 +14,48 @@ pub struct OsdlConfig {
     /// owns one serial port and routes frames to/from its ESP-NOW children.
     #[serde(default)]
     pub espnow_gateways: Vec<EspNowGatewayConfig>,
+    /// Bus manifests: declares which devices hang off a single transport
+    /// (shared RS-485 bus, etc.) when one child announces one hardware_id
+    /// but physically bridges multiple addressed devices.
+    ///
+    /// When a child registers with `match_hardware_id`, the engine creates
+    /// one `Device` per entry in `devices`, all sharing the child's
+    /// transport. Without a matching bus entry, the legacy 1:1 behavior
+    /// applies (one Device per REG).
+    #[serde(default)]
+    pub buses: Vec<BusConfig>,
+}
+
+/// One physical bus (e.g., RS-485) reached through a single transport,
+/// typically an ESP-NOW child. `match_hardware_id` is the ID the child
+/// announces via REG; `devices` is the manifest of what the child bridges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BusConfig {
+    /// Child's announced hardware_id (must match `device_type` in one of
+    /// the registry YAMLs — that's how REG matching works today).
+    pub match_hardware_id: String,
+    pub devices: Vec<BusDeviceConfig>,
+}
+
+/// One device on a shared bus. `device_type` picks the adapter/driver from
+/// the registry; `local_id` becomes part of the engine Device's id so the
+/// Agent can address each one independently.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BusDeviceConfig {
+    /// Short id appended to the transport_id to form the final device_id,
+    /// e.g. `pump-1` → `espnow:30EDA0B65B38:pump-1`.
+    pub local_id: String,
+    /// A device_type registered in one of the loaded adapter YAMLs.
+    pub device_type: String,
+    /// Optional semantic tag for the Agent: `stirrer`, `drain_valve`,
+    /// `syringe_pump`, etc. Free-form; consumers should be lenient.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// Optional human/LLM-readable description override. Replaces the YAML
+    /// default when present — useful for workflow-specific hints like
+    /// "drain valve; 800 pulses = open".
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

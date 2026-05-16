@@ -426,6 +426,7 @@ impl OsdlEngine {
                 online: true,
                 properties: HashMap::new(),
                 actions: device_match.actions,
+                role: None,
             };
 
             log::info!(
@@ -572,11 +573,7 @@ impl OsdlEngine {
                 self.transport_rx_tx.clone(),
             ));
             if let Err(e) = client.start().await {
-                log::error!(
-                    "Failed to start ESP-NOW gateway on {}: {}",
-                    gw_cfg.port,
-                    e
-                );
+                log::error!("Failed to start ESP-NOW gateway on {}: {}", gw_cfg.port, e);
                 continue;
             }
             self.espnow_gateways
@@ -644,36 +641,55 @@ impl OsdlEngine {
         }
     }
 
-    /// Handle a REG announcement from an ESP-NOW child: match its hardware_id
-    /// against known adapters, then create a per-child transport + device keyed
-    /// on the child's MAC so multiple boards with the same firmware don't
-    /// collide. `hardware_id` is used only for adapter lookup.
+    /// Handle a REG announcement from an ESP-NOW child.
     ///
-    /// Idempotent: a re-REG (child rebooting) is a no-op once the transport
-    /// and device already exist for that MAC.
+    /// Two registration paths:
+    ///
+    /// 1. **Bus manifest** (`config.buses`): the child's `hardware_id`
+    ///    matches a `BusConfig.match_hardware_id`. We register one
+    ///    `Device` per entry in `devices`, all sharing the child's
+    ///    transport — this is how one ESP-NOW child bridging a shared
+    ///    RS-485 bus exposes multiple addressable devices to the engine.
+    ///
+    /// 2. **Legacy 1:1**: no bus manifest matches. Fall back to the old
+    ///    behavior — look up the hardware_id directly in the adapter
+    ///    registry and create a single Device keyed on the MAC.
+    ///
+    /// Idempotent: re-REG (child reboot) is a no-op once transport + any
+    /// devices exist.
     #[cfg(feature = "espnow")]
     async fn handle_espnow_reg(&self, client: Arc<EspNowGatewayClient>, reg: RegEvent) {
-        let RegEvent { hardware_id, mac, is_new } = reg;
+        let RegEvent {
+            hardware_id,
+            mac,
+            is_new,
+        } = reg;
         let transport_id = espnow_transport_id(&mac);
 
-        // Build transport outside the lock to avoid holding it across any
-        // future await. EspNowChildTransport::new is synchronous, start() is a
-        // no-op, so this is just a lock discipline choice — keeps the hot path
-        // cheap and future-proofs against lock-across-await mistakes.
         let child: Arc<dyn Transport> = Arc::new(EspNowChildTransport::new(mac, client.clone()));
         {
             let mut transports = self.transports.write().await;
             transports.entry(transport_id.clone()).or_insert(child);
         }
 
-        // Only run adapter match + device creation the first time we see this
-        // MAC. Re-REG shouldn't duplicate the device record.
         if !is_new {
             return;
         }
 
-        // Skip if the device already exists (e.g. re-created after engine
-        // restart picked up old state somewhere).
+        // Path 1: bus manifest.
+        let bus = self
+            .config
+            .buses
+            .iter()
+            .find(|b| b.match_hardware_id == hardware_id)
+            .cloned();
+        if let Some(bus) = bus {
+            self.register_bus_devices(&bus, &transport_id, &mac, &hardware_id)
+                .await;
+            return;
+        }
+
+        // Path 2: legacy 1:1 registration.
         let device_id = transport_id.clone();
         if self.devices.read().await.contains_key(&device_id) {
             return;
@@ -697,6 +713,7 @@ impl OsdlEngine {
                 online: true,
                 properties: HashMap::new(),
                 actions: device_match.actions,
+                role: None,
             };
             log::info!(
                 "ESP-NOW device matched: hardware_id={} -> {} ({}) MAC {}",
@@ -722,6 +739,83 @@ impl OsdlEngine {
                 hardware_id,
             });
         }
+    }
+
+    /// Create one Device per entry in a `BusConfig`, all sharing the
+    /// child's transport. Skips entries whose `device_type` isn't found in
+    /// any loaded adapter (logged as warn — typically a YAML/config typo).
+    ///
+    /// Device id format: `{transport_id}:{local_id}` (e.g.
+    /// `espnow:30EDA0B65B38:pump-1`), so the Agent can address each device
+    /// on a shared bus independently.
+    #[cfg(feature = "espnow")]
+    async fn register_bus_devices(
+        &self,
+        bus: &crate::config::BusConfig,
+        transport_id: &str,
+        mac: &Mac,
+        hardware_id: &str,
+    ) {
+        log::info!(
+            "ESP-NOW bus matched: hardware_id={} → {} devices on MAC {}",
+            hardware_id,
+            bus.devices.len(),
+            mac_hex_flat(mac),
+        );
+
+        for entry in &bus.devices {
+            let device_id = format!("{}:{}", transport_id, entry.local_id);
+            if self.devices.read().await.contains_key(&device_id) {
+                continue;
+            }
+
+            let mut matched = None;
+            for adapter in &self.adapters {
+                if let Some(m) = adapter.match_hardware(&entry.device_type) {
+                    matched = Some((adapter.platform().to_string(), m));
+                    break;
+                }
+            }
+
+            let Some((platform, device_match)) = matched else {
+                log::warn!(
+                    "bus device {} references unknown device_type '{}' — skipping",
+                    device_id,
+                    entry.device_type,
+                );
+                continue;
+            };
+
+            let description = entry
+                .description
+                .clone()
+                .unwrap_or(device_match.description);
+
+            let device = Device {
+                id: device_id.clone(),
+                transport_id: transport_id.to_string(),
+                device_type: device_match.device_type,
+                adapter: platform,
+                description,
+                online: true,
+                properties: HashMap::new(),
+                actions: device_match.actions,
+                role: entry.role.clone(),
+            };
+            log::info!(
+                "  bus device registered: {} ({}){}",
+                device.id,
+                device.device_type,
+                device
+                    .role
+                    .as_deref()
+                    .map(|r| format!(" role={}", r))
+                    .unwrap_or_default(),
+            );
+            self.devices.write().await.insert(device_id, device.clone());
+            self.emit(OsdlEvent::DeviceOnline(device));
+        }
+        self.broadcast_status().await;
     }
 
     // === Request-response API (called by host) ===

@@ -29,7 +29,7 @@ def listen(path, baud, buckets, duration):
     try:
         s = serial.Serial(path, baud, timeout=0.1)
     except Exception as e:
-        buckets.append(("OPEN_FAIL", str(e)))
+        buckets.append(("OPEN_FAIL", e))
         return
     t0 = time.time()
     while time.time() - t0 < duration:
@@ -37,6 +37,13 @@ def listen(path, baud, buckets, duration):
         if c:
             buckets.append((time.time() - t0, c))
     s.close()
+
+
+def collect_bytes(buckets):
+    """Return (bytes, open_fail_error_or_None) from a listener bucket."""
+    if buckets and buckets[0][0] == "OPEN_FAIL":
+        return b"", buckets[0][1]
+    return b"".join(c for _, c in buckets), None
 
 
 print(f"gateway = {GW_PORT}")
@@ -64,20 +71,28 @@ for t in ts:
     t.join()
 
 print("\n====== GATEWAY log (tx->radio / ER / RX from child) ======")
-gtxt = b"".join(c for _, c in results["gw"]).decode("utf-8", "replace")
-seen = set()
-for ln in gtxt.splitlines():
-    if any(k in ln for k in ("tx->radio", "ER", "parse")):
-        print("  " + ln)
-    elif f"RX {CHILD_MAC}" in ln:
-        # CH343 on macOS sometimes replays the ring-buffer on reopen; dedupe identical lines.
-        key = ln.split(": ", 1)[-1]
-        if key not in seen:
-            seen.add(key)
+gw_bytes, gw_err = collect_bytes(results["gw"])
+if gw_err is not None:
+    print(f"  [gateway port {GW_PORT!r} could not be opened: {gw_err}]")
+else:
+    gtxt = gw_bytes.decode("utf-8", "replace")
+    seen = set()
+    for ln in gtxt.splitlines():
+        if any(k in ln for k in ("tx->radio", "ER", "parse")):
             print("  " + ln)
+        elif f"RX {CHILD_MAC}" in ln:
+            # CH343 on macOS sometimes replays the ring-buffer on reopen; dedupe identical lines.
+            key = ln.split(": ", 1)[-1]
+            if key not in seen:
+                seen.add(key)
+                print("  " + ln)
 
 print("\n====== CHILD log (rx-for-me + any uart rx) ======")
-ctxt = b"".join(c for _, c in results["child"]).decode("utf-8", "replace")
-for ln in ctxt.splitlines():
-    if any(k in ln for k in ("rx-for-me", "uart rx", "uart tx", "[rx", "short", "failed")):
-        print("  " + ln)
+child_bytes, child_err = collect_bytes(results["child"])
+if child_err is not None:
+    print(f"  [child port {CHILD_PORT!r} not available — skipping child log ({child_err})]")
+else:
+    ctxt = child_bytes.decode("utf-8", "replace")
+    for ln in ctxt.splitlines():
+        if any(k in ln for k in ("rx-for-me", "uart rx", "uart tx", "[rx", "short", "failed")):
+            print("  " + ln)

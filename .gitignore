@@ -3,5 +3,6 @@
 *.db-shm
 *.db-wal
 .DS_Store
+.claude/
 firmware/esp32/src/config.h
 firmware/esp32/.pio/

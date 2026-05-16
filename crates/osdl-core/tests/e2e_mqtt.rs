@@ -52,6 +52,7 @@ impl TestHarness {
                 registry_path: Some("../../registry/unilabos".into()),
             }],
             espnow_gateways: vec![],
+            buses: vec![],
         };
 
         let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
@@ -104,6 +105,7 @@ impl TestHarness {
             }),
             adapters: vec![],
             espnow_gateways: vec![],
+            buses: vec![],
         };
 
         let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![];

@@ -43,6 +43,11 @@ pub struct Device {
     pub online: bool,
     pub properties: HashMap<String, serde_json::Value>,
     pub actions: Vec<ActionSchema>,
+    /// Optional semantic tag (e.g. "stirrer", "drain_valve", "syringe_pump")
+    /// sourced from the `buses:` config. Free-form; consumers should treat
+    /// unknown values as no-op. Surfaced to the Agent via `list_devices`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// Schema describing one executable action on a device.
