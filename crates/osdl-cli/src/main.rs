@@ -31,6 +31,7 @@ async fn main() {
             registry_path: Some("registry/unilabos".into()),
         }],
         espnow_gateways,
+        buses: vec![],
     };
 
     // Start embedded MQTT broker + mDNS only when MQTT is enabled.

@@ -23,6 +23,58 @@ fn test_load_registry() {
 }
 
 #[test]
+fn test_bus_config_round_trips_and_device_types_resolve() {
+    use osdl_core::config::{BusConfig, BusDeviceConfig};
+
+    // Simulate what a user would put in ~/.xyzen/config.yaml — one bus
+    // fronted by a Runze pump hardware_id, five real devices behind it.
+    let yaml = r#"
+match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06
+devices:
+  - local_id: pump-1
+    device_type: syringe_pump.chinwe.pump1
+    role: syringe_pump
+  - local_id: pump-2
+    device_type: syringe_pump.chinwe.pump2
+    role: syringe_pump
+  - local_id: pump-3
+    device_type: syringe_pump.chinwe.pump3
+    role: syringe_pump
+  - local_id: motor-4
+    device_type: stepper_motor.chinwe.emm4
+    role: stirrer
+    description: Overrides the registry description
+  - local_id: motor-5
+    device_type: stepper_motor.chinwe.emm5
+    role: drain_valve
+"#;
+    let bus: BusConfig = serde_yaml::from_str(yaml).expect("valid bus yaml");
+    assert_eq!(bus.devices.len(), 5);
+
+    // Optional fields survive the round-trip.
+    let motor4: &BusDeviceConfig =
+        bus.devices.iter().find(|d| d.local_id == "motor-4").unwrap();
+    assert_eq!(motor4.role.as_deref(), Some("stirrer"));
+    assert_eq!(
+        motor4.description.as_deref(),
+        Some("Overrides the registry description")
+    );
+
+    // Every referenced device_type has to resolve against the registry, or
+    // the engine's register_bus_devices would log a warn and skip it —
+    // which is exactly the config typo we want this test to catch.
+    let mut adapter = UniLabOsAdapter::new(DriverRegistry::with_builtins());
+    adapter.load_registry("../../registry/unilabos").unwrap();
+    for entry in &bus.devices {
+        assert!(
+            adapter.match_hardware(&entry.device_type).is_some(),
+            "device_type '{}' from bus manifest not found in registry",
+            entry.device_type
+        );
+    }
+}
+
+#[test]
 fn test_unknown_hardware() {
     let mut adapter = UniLabOsAdapter::new(DriverRegistry::with_builtins());
     adapter.load_registry("../../registry/unilabos").unwrap();
@@ -43,6 +95,7 @@ fn test_engine_creation() {
             registry_path: Some("../../registry/unilabos".into()),
         }],
         espnow_gateways: vec![],
+        buses: vec![],
     };
 
     let store = EventStore::in_memory().unwrap();
@@ -119,6 +172,7 @@ fn test_event_store_query_filters() {
         online: true,
         properties: Default::default(),
         actions: vec![],
+        role: None,
     };
     store.log_event(&OsdlEvent::DeviceOnline(device));
     store.log_event(&OsdlEvent::DeviceOffline {
