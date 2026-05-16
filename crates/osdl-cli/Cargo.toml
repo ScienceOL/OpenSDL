@@ -20,6 +20,46 @@ path = "examples/runze_via_espnow.rs"
 required-features = ["osdl-core/espnow"]
 
 [[example]]
+name = "runze_three_pumps_via_espnow"
+path = "examples/runze_three_pumps_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "emm_motors_probe_via_espnow"
+path = "examples/emm_motors_probe_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "emm_motor_nudge_via_espnow"
+path = "examples/emm_motor_nudge_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "emm_motor_roundtrip_via_espnow"
+path = "examples/emm_motor_roundtrip_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "bus_manifest_live"
+path = "examples/bus_manifest_live.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "drain_funnel_via_espnow"
+path = "examples/drain_funnel_via_espnow.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "drain_funnel_nudge_more"
+path = "examples/drain_funnel_nudge_more.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
+name = "stir_10s"
+path = "examples/stir_10s.rs"
+required-features = ["osdl-core/espnow"]
+
+[[example]]
 name = "chinwe_scan"
 path = "examples/chinwe_scan.rs"
 required-features = ["osdl-core/espnow"]
