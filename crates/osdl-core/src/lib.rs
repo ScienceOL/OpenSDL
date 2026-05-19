@@ -5,6 +5,7 @@ pub mod config;
 pub mod engine;
 pub mod event;
 pub mod mdns;
+pub mod media;
 pub mod mqtt;
 pub mod orchestrator;
 pub mod protocol;

@@ -1,6 +1,7 @@
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
+use crate::media::mediamtx::MediamtxProcess;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
@@ -229,6 +230,15 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.start_espnow_gateways().await;
 
+        // Start the media gateway (mediamtx) when any media sources are
+        // configured. Failures here don't abort the engine — devices and
+        // commands keep working without streams.
+        let mut media_proc = self.start_media_gateway().await;
+        // Periodic poll of mediamtx liveness. The interval is cheap (a
+        // single try_wait) and 5s catches a crash within a useful window.
+        let mut media_health = tokio::time::interval(std::time::Duration::from_secs(5));
+        media_health.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         let mut stop_rx = self.stop_rx.clone();
         let mut transport_rx = self.transport_rx_rx.take();
         let mut cmd_inject_rx = self.cmd_inject_rx.take();
@@ -289,6 +299,18 @@ impl OsdlEngine {
                             Err(e)  => log::warn!("injected command failed: {}", e),
                         }
                     }
+                    _ = media_health.tick(), if media_proc.is_some() => {
+                        if let Some(p) = media_proc.as_mut() {
+                            if let Some(status) = p.try_exited() {
+                                let reason = format!(
+                                    "mediamtx exited unexpectedly (status={status})"
+                                );
+                                log::error!("{reason}");
+                                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                                media_proc = None;
+                            }
+                        }
+                    }
                     _ = stop_rx.changed() => {
                         log::info!("OSDL engine stopping");
                         break;
@@ -337,6 +359,18 @@ impl OsdlEngine {
                             Err(e)  => log::warn!("injected command failed: {}", e),
                         }
                     }
+                    _ = media_health.tick(), if media_proc.is_some() => {
+                        if let Some(p) = media_proc.as_mut() {
+                            if let Some(status) = p.try_exited() {
+                                let reason = format!(
+                                    "mediamtx exited unexpectedly (status={status})"
+                                );
+                                log::error!("{reason}");
+                                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                                media_proc = None;
+                            }
+                        }
+                    }
                     _ = stop_rx.changed() => {
                         log::info!("OSDL engine stopping");
                         break;
@@ -351,7 +385,67 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_gateways().await;
 
+        if let Some(p) = media_proc.take() {
+            p.shutdown().await;
+        }
+
         let _ = self.status_tx.send(OsdlStatus::Disconnected);
+    }
+
+    /// Spawn mediamtx if any media sources are configured. Emits
+    /// `MediaSourceOnline` for each source so the host learns the URLs.
+    /// Returns the process handle so the caller can shut it down.
+    async fn start_media_gateway(&self) -> Option<MediamtxProcess> {
+        if self.config.media_sources.is_empty() {
+            return None;
+        }
+
+        // Validate all sources before spawning. Catches misconfigurations
+        // like remote_rtmp without a transcode path that would otherwise
+        // silently produce dead playback URLs.
+        for src in &self.config.media_sources {
+            if let Err(reason) = src.validate() {
+                log::error!("Media source rejected: {reason}");
+                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                return None;
+            }
+        }
+
+        let gateway = &self.config.media_gateway;
+        let mut all_paths = Vec::new();
+        for src in &self.config.media_sources {
+            all_paths.extend(src.paths());
+        }
+
+        let proc = match MediamtxProcess::spawn(gateway, &all_paths).await {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("Failed to start media gateway: {}", e);
+                self.emit(OsdlEvent::MediaGatewayDown {
+                    reason: e.to_string(),
+                });
+                return None;
+            }
+        };
+
+        // No sleep needed — MediamtxProcess::spawn returns only after the
+        // RTSP listener is up.
+
+        for src in &self.config.media_sources {
+            let endpoints = src.endpoints(&gateway.advertise_host, &gateway.ports);
+            log::info!(
+                "Media source online: {} ({} endpoints)",
+                src.id(),
+                endpoints.len(),
+            );
+            self.emit(OsdlEvent::MediaSourceOnline {
+                id: src.id().to_string(),
+                description: src.description().to_string(),
+                endpoints,
+            });
+        }
+
+        Some(proc)
     }
 
     /// Route incoming MQTT messages to the appropriate handler.

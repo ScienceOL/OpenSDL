@@ -96,6 +96,7 @@ fn test_engine_creation() {
         }],
         espnow_gateways: vec![],
         buses: vec![],
+        ..Default::default()
     };
 
     let store = EventStore::in_memory().unwrap();

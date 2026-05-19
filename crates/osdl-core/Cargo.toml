@@ -22,7 +22,11 @@ async-trait.workspace = true
 mdns-sd.workspace = true
 log.workspace = true
 thiserror.workspace = true
+tempfile.workspace = true
 tokio-serial = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 env_logger.workspace = true

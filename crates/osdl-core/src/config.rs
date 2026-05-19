@@ -1,6 +1,7 @@
+use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OsdlConfig {
     /// MQTT configuration. `None` disables the MQTT serial bridge entirely —
     /// engine runs without broker/subscriptions, and MQTT-backed features
@@ -24,6 +25,14 @@ pub struct OsdlConfig {
     /// applies (one Device per REG).
     #[serde(default)]
     pub buses: Vec<BusConfig>,
+    /// Media sources (cameras, etc.). When non-empty the engine starts a
+    /// mediamtx subprocess on `run()` to expose them via RTSP/HLS/WebRTC.
+    #[serde(default)]
+    pub media_sources: Vec<MediaSourceConfig>,
+    /// Gateway config (ports, advertise host, mediamtx binary path). Only
+    /// consulted when `media_sources` is non-empty.
+    #[serde(default)]
+    pub media_gateway: MediaGatewayConfig,
 }
 
 /// One physical bus (e.g., RS-485) reached through a single transport,

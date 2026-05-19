@@ -32,6 +32,7 @@ async fn main() {
         }],
         espnow_gateways,
         buses: vec![],
+        ..Default::default()
     };
 
     // Start embedded MQTT broker + mDNS only when MQTT is enabled.

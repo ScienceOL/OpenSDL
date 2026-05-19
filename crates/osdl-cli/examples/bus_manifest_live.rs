@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             baud_rate: 115200,
         }],
         buses,
+        ..Default::default()
     };
 
     let adapters: Vec<Box<dyn ProtocolAdapter>> =
