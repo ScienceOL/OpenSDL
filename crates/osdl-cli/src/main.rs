@@ -1,113 +1,100 @@
-use osdl_core::adapter::unilabos::UniLabOsAdapter;
-use osdl_core::config::{AdapterConfig, EspNowGatewayConfig, MqttConfig, OsdlConfig};
-use osdl_core::driver::registry::DriverRegistry;
-use osdl_core::{
-    DeviceCommand, EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine, OsdlEvent,
-};
+//! `osdl` — the OpenSDL command-line tool.
+//!
+//! Subcommands split into two families:
+//!   * `serve` boots the engine + gRPC server in this process.
+//!   * everything else is a gRPC client that talks to a running server.
 
-#[tokio::main]
-async fn main() {
-    env_logger::init();
+mod client;
+mod commands;
 
-    // ESP-NOW gateway is opt-in via env var so a host without the board
-    // plugged in still boots cleanly. Example:
-    //   OSDL_ESPNOW_PORT=/dev/cu.usbserial-A5069RR4 cargo run -p osdl-cli
-    let espnow_gateways = match std::env::var("OSDL_ESPNOW_PORT") {
-        Ok(port) if !port.is_empty() => vec![EspNowGatewayConfig {
-            port,
-            baud_rate: std::env::var("OSDL_ESPNOW_BAUD")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(115200),
-        }],
-        _ => vec![],
-    };
+use clap::{Parser, Subcommand};
 
-    // TODO: load config from file / CLI args
-    let config = OsdlConfig {
-        mqtt: Some(MqttConfig::default()),
-        adapters: vec![AdapterConfig {
-            adapter_type: "unilabos".into(),
-            registry_path: Some("registry/unilabos".into()),
-        }],
-        espnow_gateways,
-        buses: vec![],
-    };
+#[derive(Debug, Parser)]
+#[command(name = "osdl", version, about = "OpenSDL command-line interface")]
+struct Cli {
+    /// Connect to this endpoint instead of auto-discovering. Examples:
+    /// `unix:/run/osdl/default.sock`, `http://lab-pi.local:50051`.
+    #[arg(long, env = "OSDL_ENDPOINT", global = true)]
+    endpoint: Option<String>,
 
-    // Start embedded MQTT broker + mDNS only when MQTT is enabled.
-    let _broker = config
-        .mqtt
-        .as_ref()
-        .map(|c| EmbeddedBroker::start(c.port).expect("Failed to start MQTT broker"));
-    let _mdns = config
-        .mqtt
-        .as_ref()
-        .map(|c| MdnsAdvertiser::start(c.port).expect("Failed to start mDNS"));
+    /// Resolve to this server instance via the lockfile dir. Use when
+    /// multiple `osdl serve` processes are running on the host.
+    #[arg(long, env = "OSDL_INSTANCE", global = true)]
+    instance: Option<String>,
 
-    // Give broker a moment to bind the port
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    /// Bearer token attached to every TCP RPC. Required when the
+    /// remote server has auth enabled. Ignored on UDS (filesystem
+    /// perms are the auth there).
+    #[arg(long, env = "OSDL_AUTH_TOKEN", global = true, hide_env_values = true)]
+    auth_token: Option<String>,
 
-    // Open event store (SQLite)
-    let store = EventStore::open("osdl.db").expect("Failed to open event store");
+    #[command(subcommand)]
+    command: Command,
+}
 
-    let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> =
-        vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Boot the engine + gRPC server in this process.
+    Serve(commands::serve::ServeArgs),
+    /// Show server identity and engine status.
+    Status,
+    /// Inspect known devices.
+    Device {
+        #[command(subcommand)]
+        cmd: commands::device::DeviceCmd,
+    },
+    /// Send a single command to a device.
+    Send(commands::send::SendArgs),
+    /// Stream engine events.
+    Events(commands::events::EventsArgs),
+    /// Ask the running server to shut down.
+    Stop,
+}
 
-    let mut engine = OsdlEngine::new(config, adapters).with_store(store);
+fn main() {
+    let cli = Cli::parse();
 
-    // Event consumer + optional auto-drive.
-    //
-    // `OSDL_DEMO_DEVICE_TYPE` turns on a one-shot demo: when the first Device
-    // with that `device_type` comes online, inject a small canned command
-    // sequence (by default: initialize → query_position → query_valve_position
-    // for a Runze pump). Lets us verify the full Mac → gateway → child →
-    // RS-485 → device control loop without a separate example binary.
-    //
-    // Examples:
-    //   OSDL_DEMO_DEVICE_TYPE=syringe_pump_with_valve.runze.SY03B-T06 \
-    //       OSDL_ESPNOW_PORT=/dev/cu.usbserial-XXX cargo run -p osdl-cli
-    let event_rx = engine.take_event_rx();
-    let cmd_tx = engine.command_sender();
-    let demo_device_type = std::env::var("OSDL_DEMO_DEVICE_TYPE").ok();
-    tokio::spawn(async move {
-        let mut rx = event_rx.lock().await.take().unwrap();
-        let mut demo_triggered = false;
-        while let Some(event) = rx.recv().await {
-            log::info!("Event: {:?}", event);
-            if let (false, Some(target), OsdlEvent::DeviceOnline(device)) =
-                (demo_triggered, demo_device_type.as_deref(), &event)
+    // `serve --detach` daemonizes the process *before* the tokio runtime
+    // starts — forking after tokio has registered fds with epoll/kqueue
+    // hands the child a broken reactor. So we route Serve through a
+    // dedicated entrypoint that owns the daemonize → runtime sequence,
+    // and keep `#[tokio::main]`-equivalent behavior for everything else.
+    let result: anyhow::Result<()> = match cli.command {
+        Command::Serve(args) => commands::serve::main_entrypoint(args),
+        other => {
+            // Client subcommands run a vanilla tokio runtime in the foreground.
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .init();
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
             {
-                if device.device_type == target {
-                    demo_triggered = true;
-                    let device_id = device.id.clone();
-                    let tx = cmd_tx.clone();
-                    log::info!(
-                        "demo: driving {} with canned command sequence",
-                        device_id
-                    );
-                    tokio::spawn(async move {
-                        let script = [
-                            ("cmd-init",   "initialize",           serde_json::json!({})),
-                            ("cmd-qpos",   "query_position",       serde_json::json!({})),
-                            ("cmd-qvalve", "query_valve_position", serde_json::json!({})),
-                        ];
-                        // Give transport + device a beat to settle after online.
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        for (id, action, params) in script {
-                            let _ = tx.send(DeviceCommand {
-                                command_id: id.into(),
-                                device_id: device_id.clone(),
-                                action: action.into(),
-                                params,
-                            });
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        }
-                    });
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("osdl: failed to build tokio runtime: {e}");
+                    std::process::exit(1);
                 }
-            }
+            };
+            let opts = client::ClientOpts {
+                endpoint: cli.endpoint,
+                instance: cli.instance,
+                auth_token: cli.auth_token,
+            };
+            rt.block_on(async move {
+                match other {
+                    Command::Serve(_) => unreachable!(),
+                    Command::Status => commands::status::run(opts).await,
+                    Command::Device { cmd } => commands::device::run(cmd, opts).await,
+                    Command::Send(args) => commands::send::run(args, opts).await,
+                    Command::Events(args) => commands::events::run(args, opts).await,
+                    Command::Stop => commands::stop::run(opts).await,
+                }
+            })
         }
-    });
+    };
 
-    log::info!("Starting OpenSDL...");
-    engine.run().await;
+    if let Err(e) = result {
+        eprintln!("osdl: {e:#}");
+        std::process::exit(1);
+    }
 }

@@ -1,0 +1,260 @@
+// OpenSDL gRPC API.
+//
+// Wire types are intentionally separate from osdl-core internal types so
+// the engine can be refactored without breaking the API contract. Convert
+// at the boundary in osdl-server.
+
+syntax = "proto3";
+
+package osdl.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// ===== Service =====
+
+service Osdl {
+  // Server identity + connection counts. Cheap to call; clients can poll.
+  rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Child nodes (MQTT-serial bridge children). Devices sit on top of these
+  // for that transport — for ESP-NOW / direct serial there are no nodes.
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+
+  // All known devices, regardless of transport.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+
+  // Look up one device by its `device_id`.
+  rpc GetDevice(GetDeviceRequest) returns (Device);
+
+  // Block until a device matching a hardware_id or device_type appears, or
+  // the deadline expires. Useful for scripted bring-up where the child has
+  // not yet booted when the client starts. Returns the first match.
+  rpc WaitForDevice(WaitForDeviceRequest) returns (Device);
+
+  // Encode an action via the device's adapter and dispatch it through its
+  // transport. Reply is the immediate dispatch result (Pending), not the
+  // final device response — those arrive as DeviceStatus events.
+  rpc SendCommand(SendCommandRequest) returns (CommandResult);
+
+  // Server-streaming: every event the engine emits, until the client
+  // disconnects or the server stops. Events are queued in a per-subscriber
+  // buffer; if the client lags too far behind, older events are dropped
+  // (the gap is reported as a Lagged event).
+  rpc StreamEvents(StreamEventsRequest) returns (stream Event);
+
+  // Ask the server to stop. Authorized callers only (TODO: auth).
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+// ===== Status =====
+
+message StatusRequest {}
+
+message StatusResponse {
+  // Build identity.
+  string version = 1;
+  // The instance name this server registered under (see lockfile-based
+  // multi-instance discovery on the client side).
+  string instance = 2;
+  // Process id of the server.
+  uint32 pid = 3;
+  // Where the server is listening. Either or both may be set.
+  optional string socket_path = 4;
+  optional string listen_addr = 5;
+  // Engine status (mirrors osdl_core::OsdlStatus).
+  EngineStatus engine = 6;
+  google.protobuf.Timestamp started_at = 7;
+}
+
+message EngineStatus {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    DISCONNECTED = 1;
+    CONNECTING = 2;
+    CONNECTED = 3;
+    ERROR = 4;
+  }
+  State state = 1;
+  // Broker description ("host:port" or "mqtt-disabled").
+  string broker = 2;
+  uint32 node_count = 3;
+  uint32 device_count = 4;
+  // Populated when state == ERROR.
+  string error_message = 5;
+}
+
+// ===== Nodes / Devices =====
+
+message Node {
+  string node_id = 1;
+  string hardware_id = 2;
+  uint32 baud_rate = 3;
+  bool online = 4;
+  optional string device_id = 5;
+}
+
+message ActionSchema {
+  string name = 1;
+  string description = 2;
+  // Free-form JSON describing the parameter shape.
+  google.protobuf.Struct params = 3;
+}
+
+message Device {
+  string id = 1;
+  // How to reach this device (node_id, port path, host:port, espnow:MAC, ...).
+  string transport_id = 2;
+  string device_type = 3;
+  // Adapter platform: "unilabos", "sila", etc.
+  string adapter = 4;
+  string description = 5;
+  bool online = 6;
+  // Last-known properties (k → JSON value).
+  google.protobuf.Struct properties = 7;
+  repeated ActionSchema actions = 8;
+  // Optional semantic tag from bus manifest: "stirrer", "drain_valve", etc.
+  optional string role = 9;
+}
+
+message ListNodesRequest {}
+message ListNodesResponse {
+  repeated Node nodes = 1;
+}
+
+message ListDevicesRequest {
+  // Optional filters; empty means no filter.
+  optional string adapter = 1;
+  optional string role = 2;
+  optional string device_type = 3;
+}
+message ListDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message GetDeviceRequest {
+  string device_id = 1;
+}
+
+message WaitForDeviceRequest {
+  // One of these match modes must be set.
+  oneof selector {
+    string device_id = 1;
+    string device_type = 2;
+    string role = 3;
+  }
+  // Hard ceiling. The engine returns DEADLINE_EXCEEDED if no device
+  // matches within this window.
+  uint32 timeout_ms = 4;
+}
+
+// ===== Commands =====
+
+message SendCommandRequest {
+  // If the client supplies an empty command_id, the server generates one.
+  string command_id = 1;
+  string device_id = 2;
+  string action = 3;
+  google.protobuf.Struct params = 4;
+}
+
+message CommandResult {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PENDING = 1;
+    RUNNING = 2;
+    SUCCEEDED = 3;
+    FAILED = 4;
+    CANCELLED = 5;
+  }
+  string command_id = 1;
+  string device_id = 2;
+  Status status = 3;
+  string message = 4;
+  optional google.protobuf.Struct data = 5;
+}
+
+// ===== Events =====
+
+message StreamEventsRequest {
+  // Optional filter: only deliver events whose `kind` is in this set.
+  // Empty means no filter.
+  repeated string kinds = 1;
+}
+
+// One event from the engine. The `kind` discriminator mirrors
+// osdl_core::OsdlEvent so clients can switch on it without parsing the
+// inner payload.
+message Event {
+  google.protobuf.Timestamp timestamp = 1;
+  oneof kind {
+    DeviceOnlineEvent device_online = 2;
+    DeviceOfflineEvent device_offline = 3;
+    DeviceStatusEvent device_status = 4;
+    CommandResultEvent command_result = 5;
+    UnknownNodeEvent unknown_node = 6;
+    MediaSourceOnlineEvent media_source_online = 7;
+    MediaGatewayDownEvent media_gateway_down = 8;
+    LaggedEvent lagged = 9;
+  }
+}
+
+message DeviceOnlineEvent {
+  Device device = 1;
+}
+
+message DeviceOfflineEvent {
+  string device_id = 1;
+}
+
+message DeviceStatusEvent {
+  string device_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  google.protobuf.Struct properties = 3;
+}
+
+message CommandResultEvent {
+  CommandResult result = 1;
+}
+
+message UnknownNodeEvent {
+  string node_id = 1;
+  string hardware_id = 2;
+}
+
+message MediaEndpoint {
+  string protocol = 1;
+  string location = 2;
+  string url = 3;
+}
+
+message MediaSourceOnlineEvent {
+  string id = 1;
+  string description = 2;
+  repeated MediaEndpoint endpoints = 3;
+}
+
+message MediaGatewayDownEvent {
+  string reason = 1;
+}
+
+// Synthetic — emitted when the server-side broadcast buffer dropped events
+// because this stream's subscriber fell behind. The client should refresh
+// any state it cached from prior events.
+message LaggedEvent {
+  uint64 dropped = 1;
+}
+
+// ===== Shutdown =====
+
+message ShutdownRequest {
+  // Reserved for a future `graceful` flag. Implementing it requires
+  // per-command lifecycle tracking (match each device reply back to its
+  // originating SendCommand) which doesn't exist yet — see the
+  // `SendCommand` notes in the architecture doc. Field number 1 is
+  // reserved so we can re-add it without breaking the wire format.
+  reserved 1;
+  reserved "graceful";
+}
+
+message ShutdownResponse {}

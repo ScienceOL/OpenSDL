@@ -1,3 +1,4 @@
+use crate::media::MediaEndpoint;
 use crate::protocol::*;
 use serde::Serialize;
 
@@ -18,4 +19,13 @@ pub enum OsdlEvent {
         node_id: String,
         hardware_id: String,
     },
+    /// A media source is online and reachable at the listed endpoints.
+    MediaSourceOnline {
+        id: String,
+        description: String,
+        endpoints: Vec<MediaEndpoint>,
+    },
+    /// The media gateway exited unexpectedly. All sources go offline; the
+    /// host can decide whether to restart.
+    MediaGatewayDown { reason: String },
 }

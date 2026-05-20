@@ -1,0 +1,30 @@
+# ONVIF camera as a media source.
+#
+# The engine spawns mediamtx and exposes the camera's RTSP feeds as
+# RTSP/HLS/WebRTC under the local gateway. Optionally republishes to a
+# remote SRS for off-site viewing.
+#
+# Credentials must NOT live in this file in production. Use environment
+# variables and a templating step at deploy time, or keep this YAML in a
+# secrets-managed location.
+
+mqtt: ~
+adapters: []
+
+media_gateway:
+  advertise_host: 127.0.0.1
+
+media_sources:
+  - kind: onvif_camera
+    id: cam1
+    description: ONVIF dev camera
+    rtsp_main: rtsp://USER:PASS@192.168.1.131:554/ch01.264
+    rtsp_sub: rtsp://USER:PASS@192.168.1.131:554/ch01_sub.264
+    h264_transcode: true
+    rtsp_transport_tcp: true
+    # Optional remote ingest:
+    # remote_rtmp:
+    #   base_url: rtmp://srs.example.com:1935/camera
+    #   stream: lab-1
+    #   http_host: srs.example.com
+    #   webrtc_host: srs.example.com
