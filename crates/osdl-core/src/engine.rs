@@ -16,7 +16,12 @@ use crate::transport::{Transport, TransportRx};
 use rumqttc::AsyncClient;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, watch, RwLock};
+
+/// Buffer size for the broadcast events channel. Slow subscribers that fall
+/// further behind than this start receiving `RecvError::Lagged(n)` so they
+/// can resync rather than wedging the engine.
+const EVENT_BROADCAST_CAP: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum OsdlStatus {
@@ -32,9 +37,18 @@ pub enum OsdlStatus {
     },
 }
 
-pub struct OsdlEngine {
-    config: OsdlConfig,
-    adapters: Vec<Box<dyn ProtocolAdapter>>,
+/// Cheap-to-clone, `Send + Sync` view of a running engine.
+///
+/// `EngineHandle` carries the shared state and channels needed to *interact*
+/// with the engine — list devices, send commands, subscribe to events,
+/// request shutdown — but **not** the per-loop receivers (`run` consumes
+/// those once). The gRPC server, the CLI, the orchestrator, and tests all
+/// hold their own clones of this handle. The engine task holds one too and
+/// operates on the same shared state.
+#[derive(Clone)]
+pub struct EngineHandle {
+    config: Arc<OsdlConfig>,
+    adapters: Arc<Vec<Box<dyn ProtocolAdapter>>>,
     store: Option<Arc<EventStore>>,
 
     /// Connected child nodes (node_id → Node). Specific to MQTT serial transport.
@@ -44,27 +58,210 @@ pub struct OsdlEngine {
     /// Active transports (transport_id → Transport).
     transports: Arc<RwLock<HashMap<String, Arc<dyn Transport>>>>,
 
-    /// Channel for transports to push received bytes back to the engine.
+    /// Sender for transports to push received bytes back to the engine.
     transport_rx_tx: mpsc::UnboundedSender<TransportRx>,
-    transport_rx_rx: Option<mpsc::UnboundedReceiver<TransportRx>>,
+    /// External command injection — drop a `DeviceCommand` in here and the
+    /// engine's main loop dispatches it via `send_command`.
+    cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
 
-    event_tx: mpsc::UnboundedSender<OsdlEvent>,
-    event_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<OsdlEvent>>>>,
+    /// Multi-consumer event channel. Each subscriber gets its own
+    /// `broadcast::Receiver`. Subscribers that fall behind get
+    /// `RecvError::Lagged(n)`.
+    events_tx: broadcast::Sender<OsdlEvent>,
 
     status_tx: watch::Sender<OsdlStatus>,
     status_rx: watch::Receiver<OsdlStatus>,
     stop_tx: watch::Sender<bool>,
-    stop_rx: watch::Receiver<bool>,
+}
 
-    mqtt_client: Option<AsyncClient>,
+impl EngineHandle {
+    // === Inspection ===
 
-    /// External command injection: callers clone the sender via
-    /// `command_sender()` before `run()` and push `DeviceCommand`s into it.
-    /// The engine's select! loop picks them up and dispatches via
-    /// `send_command`. Useful for tests, CLI, and demo harnesses that need
-    /// to drive the engine without going through MQTT.
-    cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
+    pub async fn list_devices(&self) -> Vec<Device> {
+        self.devices.read().await.values().cloned().collect()
+    }
+
+    pub async fn get_device(&self, device_id: &str) -> Option<Device> {
+        self.devices.read().await.get(device_id).cloned()
+    }
+
+    pub async fn list_nodes(&self) -> Vec<Node> {
+        self.nodes.read().await.values().cloned().collect()
+    }
+
+    /// Get a reference to the event store (for querying logs).
+    pub fn store(&self) -> Option<&Arc<EventStore>> {
+        self.store.as_ref()
+    }
+
+    pub fn config(&self) -> &OsdlConfig {
+        &self.config
+    }
+
+    pub fn status(&self) -> OsdlStatus {
+        self.status_rx.borrow().clone()
+    }
+
+    pub fn status_rx(&self) -> watch::Receiver<OsdlStatus> {
+        self.status_rx.clone()
+    }
+
+    /// Subscribe to engine events. Each call returns a fresh receiver — only
+    /// events sent *after* this call land in it.
+    pub fn subscribe_events(&self) -> broadcast::Receiver<OsdlEvent> {
+        self.events_tx.subscribe()
+    }
+
+    // === Channels ===
+
+    /// Sender for injecting commands into the engine's main loop.
+    pub fn command_sender(&self) -> mpsc::UnboundedSender<DeviceCommand> {
+        self.cmd_inject_tx.clone()
+    }
+
+    /// Sender for custom transports to push received bytes into the engine.
+    pub fn transport_rx_sender(&self) -> mpsc::UnboundedSender<TransportRx> {
+        self.transport_rx_tx.clone()
+    }
+
+    /// Request the engine's main loop to stop. The loop will drain pending
+    /// work, shut down media + ESP-NOW gateways, and return from `run()`.
+    pub fn request_stop(&self) {
+        let _ = self.stop_tx.send(true);
+    }
+
+    /// Stop signaller (kept for callers that want to retain the watch
+    /// sender directly; most should prefer `request_stop`).
+    pub fn stop_handle(&self) -> watch::Sender<bool> {
+        self.stop_tx.clone()
+    }
+
+    // === Mutation ===
+
+    /// Register a transport for direct serial / TCP devices.
+    ///
+    /// Multiple devices can share the same transport (shared bus).
+    /// The transport should already be `start()`ed before calling this.
+    pub async fn register_transport(&self, id: String, transport: Arc<dyn Transport>) {
+        log::info!("Transport registered: {} ({})", id, transport.description());
+        self.transports.write().await.insert(id, transport);
+    }
+
+    /// Register a device manually (for direct serial / TCP transports).
+    ///
+    /// Unlike MQTT node registration which auto-discovers devices, this
+    /// method explicitly registers a device with its transport. The device's
+    /// `transport_id` must match a previously registered transport.
+    pub async fn register_device(&self, device: Device) -> Result<(), String> {
+        let transport_id = device.transport_id.clone();
+        let device_id = device.id.clone();
+
+        if !self.transports.read().await.contains_key(&transport_id) {
+            return Err(format!(
+                "transport '{}' not registered — call register_transport() first",
+                transport_id
+            ));
+        }
+
+        self.devices
+            .write()
+            .await
+            .insert(device_id.clone(), device.clone());
+
+        log::info!(
+            "Device registered: {} ({}) on transport {}",
+            device_id,
+            device.device_type,
+            transport_id
+        );
+        self.emit(OsdlEvent::DeviceOnline(device));
+        self.broadcast_status().await;
+        Ok(())
+    }
+
+    /// Send a command to a device via its transport.
+    pub async fn send_command(&self, cmd: DeviceCommand) -> Result<CommandResult, String> {
+        if let Some(store) = &self.store {
+            store.log_command(&cmd);
+        }
+
+        let devices = self.devices.read().await;
+        let device = devices
+            .get(&cmd.device_id)
+            .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
+
+        let transport_id = device.transport_id.clone();
+        let device_type = device.device_type.clone();
+        let adapter_name = device.adapter.clone();
+        drop(devices);
+
+        let bytes = self
+            .adapters
+            .iter()
+            .find(|a| a.platform() == adapter_name)
+            .ok_or_else(|| format!("no adapter for platform: {}", adapter_name))?
+            .encode_command(&device_type, &cmd)?;
+
+        if let Some(store) = &self.store {
+            store.log_serial(&transport_id, "tx", &bytes);
+        }
+
+        let transports = self.transports.read().await;
+        let transport = transports
+            .get(&transport_id)
+            .ok_or_else(|| format!("no transport for: {}", transport_id))?;
+
+        transport.send(&bytes).await?;
+
+        Ok(CommandResult {
+            command_id: cmd.command_id.clone(),
+            device_id: cmd.device_id.clone(),
+            status: CommandStatus::Pending,
+            message: "command sent".into(),
+            data: None,
+        })
+    }
+
+    // === Internal helpers (used by engine loop and `register_device`) ===
+
+    /// Emit an event: log to store + broadcast to subscribers.
+    pub(crate) fn emit(&self, event: OsdlEvent) {
+        if let Some(store) = &self.store {
+            store.log_event(&event);
+        }
+        // No subscribers is the steady state for a freshly-booted engine —
+        // not an error.
+        let _ = self.events_tx.send(event);
+    }
+
+    /// Update the broadcast status snapshot from current state.
+    pub(crate) async fn broadcast_status(&self) {
+        let broker = self
+            .config
+            .mqtt
+            .as_ref()
+            .map(|c| format!("{}:{}", c.host, c.port))
+            .unwrap_or_else(|| "mqtt-disabled".into());
+        let node_count = self.nodes.read().await.len();
+        let device_count = self.devices.read().await.len();
+        let _ = self.status_tx.send(OsdlStatus::Connected {
+            broker,
+            node_count,
+            device_count,
+        });
+    }
+}
+
+pub struct OsdlEngine {
+    handle: EngineHandle,
+
+    /// Loop-only receivers — consumed once by `run()`.
+    transport_rx_rx: Option<mpsc::UnboundedReceiver<TransportRx>>,
     cmd_inject_rx: Option<mpsc::UnboundedReceiver<DeviceCommand>>,
+
+    /// MQTT client, populated in `run()` when MQTT is enabled. Used by
+    /// `handle_node_register` to construct an `MqttSerialTransport`.
+    mqtt_client: Option<AsyncClient>,
 
     /// ESP-NOW gateway boards kept alive for the lifetime of the engine.
     /// Indexed by serial port path; each owns a serial read loop.
@@ -79,99 +276,15 @@ pub struct OsdlEngine {
 }
 
 impl OsdlEngine {
-    pub fn new(config: OsdlConfig, adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (status_tx, status_rx) = watch::channel(OsdlStatus::Disconnected);
-        let (stop_tx, stop_rx) = watch::channel(false);
-        let (transport_rx_tx, transport_rx_rx) = mpsc::unbounded_channel();
-        let (cmd_inject_tx, cmd_inject_rx) = mpsc::unbounded_channel();
-        #[cfg(feature = "espnow")]
-        let (espnow_reg_tx, espnow_reg_rx) = mpsc::unbounded_channel();
-
-        Self {
-            config,
-            adapters,
-            store: None,
-            nodes: Arc::new(RwLock::new(HashMap::new())),
-            devices: Arc::new(RwLock::new(HashMap::new())),
-            transports: Arc::new(RwLock::new(HashMap::new())),
-            transport_rx_tx,
-            transport_rx_rx: Some(transport_rx_rx),
-            event_tx,
-            event_rx: Arc::new(Mutex::new(Some(event_rx))),
-            status_tx,
-            status_rx,
-            stop_tx,
-            stop_rx,
-            mqtt_client: None,
-            cmd_inject_tx,
-            cmd_inject_rx: Some(cmd_inject_rx),
-            #[cfg(feature = "espnow")]
-            espnow_gateways: Arc::new(RwLock::new(HashMap::new())),
-            #[cfg(feature = "espnow")]
-            espnow_reg_tx,
-            #[cfg(feature = "espnow")]
-            espnow_reg_rx: Some(espnow_reg_rx),
-        }
-    }
-
-    /// Attach an event store for safety logging. Must be called before `run()`.
-    pub fn with_store(mut self, store: EventStore) -> Self {
-        self.store = Some(Arc::new(store));
-        self
-    }
-
-    /// Get a reference to the event store (for querying logs).
-    pub fn store(&self) -> Option<&Arc<EventStore>> {
-        self.store.as_ref()
-    }
-
-    /// Clone of the command-injection sender. Drop commands into it and the
-    /// running engine's main loop will dispatch them via `send_command`
-    /// — handy when the caller doesn't have `&engine` (e.g. inside the event
-    /// consumer task spawned before `run()`).
-    pub fn command_sender(&self) -> mpsc::UnboundedSender<DeviceCommand> {
-        self.cmd_inject_tx.clone()
-    }
-
-    /// Take the event receiver. The host calls this once to forward events.
-    pub fn take_event_rx(&self) -> Arc<Mutex<Option<mpsc::UnboundedReceiver<OsdlEvent>>>> {
-        self.event_rx.clone()
-    }
-
-    /// Get the transport RX sender (for custom transports to push received bytes).
-    pub fn transport_rx_sender(&self) -> mpsc::UnboundedSender<TransportRx> {
-        self.transport_rx_tx.clone()
-    }
-
-    pub fn status_rx(&self) -> watch::Receiver<OsdlStatus> {
-        self.status_rx.clone()
-    }
-
-    pub fn stop_handle(&self) -> watch::Sender<bool> {
-        self.stop_tx.clone()
-    }
-
-    pub fn status(&self) -> OsdlStatus {
-        self.status_rx.borrow().clone()
-    }
-
-    /// Emit an event: send to channel + log to store.
-    fn emit(&self, event: OsdlEvent) {
-        if let Some(store) = &self.store {
-            store.log_event(&event);
-        }
-        let _ = self.event_tx.send(event);
-    }
-
-    /// Main loop: connect to MQTT, subscribe to node topics, process messages.
-    pub async fn run(&mut self) {
-        let _ = self.status_tx.send(OsdlStatus::Connecting);
-
-        // Load registries
-        for adapter_cfg in &self.config.adapters {
+    /// Build an engine. Loads adapter registries up-front so the resulting
+    /// adapters can be shared (read-only) via `Arc` between the engine loop
+    /// and `EngineHandle` clones. Registry load failures are logged but
+    /// don't fail construction — that matches the previous in-`run()`
+    /// behavior.
+    pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
-                for adapter in &mut self.adapters {
+                for adapter in adapters.iter_mut() {
                     if adapter.platform() == adapter_cfg.adapter_type {
                         if let Err(e) = adapter.load_registry(path) {
                             log::error!(
@@ -185,10 +298,118 @@ impl OsdlEngine {
             }
         }
 
+        let (events_tx, _) = broadcast::channel(EVENT_BROADCAST_CAP);
+        let (status_tx, status_rx) = watch::channel(OsdlStatus::Disconnected);
+        let (stop_tx, _) = watch::channel(false);
+        let (transport_rx_tx, transport_rx_rx) = mpsc::unbounded_channel();
+        let (cmd_inject_tx, cmd_inject_rx) = mpsc::unbounded_channel();
+        #[cfg(feature = "espnow")]
+        let (espnow_reg_tx, espnow_reg_rx) = mpsc::unbounded_channel();
+
+        let handle = EngineHandle {
+            config: Arc::new(config),
+            adapters: Arc::new(adapters),
+            store: None,
+            nodes: Arc::new(RwLock::new(HashMap::new())),
+            devices: Arc::new(RwLock::new(HashMap::new())),
+            transports: Arc::new(RwLock::new(HashMap::new())),
+            transport_rx_tx,
+            cmd_inject_tx,
+            events_tx,
+            status_tx,
+            status_rx,
+            stop_tx,
+        };
+
+        Self {
+            handle,
+            transport_rx_rx: Some(transport_rx_rx),
+            cmd_inject_rx: Some(cmd_inject_rx),
+            mqtt_client: None,
+            #[cfg(feature = "espnow")]
+            espnow_gateways: Arc::new(RwLock::new(HashMap::new())),
+            #[cfg(feature = "espnow")]
+            espnow_reg_tx,
+            #[cfg(feature = "espnow")]
+            espnow_reg_rx: Some(espnow_reg_rx),
+        }
+    }
+
+    /// Attach an event store for safety logging. Must be called before `run()`.
+    pub fn with_store(mut self, store: EventStore) -> Self {
+        self.handle.store = Some(Arc::new(store));
+        self
+    }
+
+    /// Cheap-to-clone handle exposing inspection / command / event APIs.
+    /// Most callers (gRPC server, orchestrator, CLI) talk to the engine
+    /// through this handle rather than `&OsdlEngine` directly.
+    pub fn handle(&self) -> EngineHandle {
+        self.handle.clone()
+    }
+
+    // === Convenience pass-throughs (kept for ergonomics; identical to `handle()` calls) ===
+
+    pub fn store(&self) -> Option<&Arc<EventStore>> {
+        self.handle.store()
+    }
+
+    pub fn command_sender(&self) -> mpsc::UnboundedSender<DeviceCommand> {
+        self.handle.command_sender()
+    }
+
+    pub fn transport_rx_sender(&self) -> mpsc::UnboundedSender<TransportRx> {
+        self.handle.transport_rx_sender()
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<OsdlEvent> {
+        self.handle.subscribe_events()
+    }
+
+    pub fn status_rx(&self) -> watch::Receiver<OsdlStatus> {
+        self.handle.status_rx()
+    }
+
+    pub fn status(&self) -> OsdlStatus {
+        self.handle.status()
+    }
+
+    pub fn stop_handle(&self) -> watch::Sender<bool> {
+        self.handle.stop_handle()
+    }
+
+    pub async fn list_devices(&self) -> Vec<Device> {
+        self.handle.list_devices().await
+    }
+
+    pub async fn get_device(&self, device_id: &str) -> Option<Device> {
+        self.handle.get_device(device_id).await
+    }
+
+    pub async fn list_nodes(&self) -> Vec<Node> {
+        self.handle.list_nodes().await
+    }
+
+    pub async fn register_transport(&self, id: String, transport: Arc<dyn Transport>) {
+        self.handle.register_transport(id, transport).await
+    }
+
+    pub async fn register_device(&self, device: Device) -> Result<(), String> {
+        self.handle.register_device(device).await
+    }
+
+    pub async fn send_command(&self, cmd: DeviceCommand) -> Result<CommandResult, String> {
+        self.handle.send_command(cmd).await
+    }
+
+    /// Main loop: connect to MQTT, subscribe to node topics, process messages.
+    pub async fn run(&mut self) {
+        let _ = self.handle.status_tx.send(OsdlStatus::Connecting);
+
         // Connect MQTT if configured. `None` means the MQTT serial bridge is
         // disabled — the engine runs without broker/subscriptions and the
         // MQTT arm of the select! loop stays pending forever.
-        let mut eventloop = if let Some(mqtt_cfg) = &self.config.mqtt {
+        let mut eventloop = if let Some(mqtt_cfg) = &self.handle.config.mqtt {
             let bridge = MqttBridge::new(mqtt_cfg);
             let (client, eventloop) = bridge.split();
             self.mqtt_client = Some(client.clone());
@@ -213,8 +434,9 @@ impl OsdlEngine {
         };
 
         // Emit initial Connected status (broker description reflects MQTT mode).
-        let _ = self.status_tx.send(OsdlStatus::Connected {
+        let _ = self.handle.status_tx.send(OsdlStatus::Connected {
             broker: self
+                .handle
                 .config
                 .mqtt
                 .as_ref()
@@ -239,7 +461,16 @@ impl OsdlEngine {
         let mut media_health = tokio::time::interval(std::time::Duration::from_secs(5));
         media_health.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-        let mut stop_rx = self.stop_rx.clone();
+        let mut stop_rx = self.handle.stop_tx.subscribe();
+        // `watch::subscribe()` marks the *current* value as already-seen,
+        // so a `request_stop()` issued before we get here would be lost
+        // and run() would block on the first `changed()`. Bail early in
+        // that case.
+        if *stop_rx.borrow() {
+            log::info!("OSDL engine stop already requested before run() entered the loop");
+            let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
+            return;
+        }
         let mut transport_rx = self.transport_rx_rx.take();
         let mut cmd_inject_rx = self.cmd_inject_rx.take();
         #[cfg(feature = "espnow")]
@@ -265,7 +496,7 @@ impl OsdlEngine {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("MQTT error: {}", e);
-                                let _ = self.status_tx.send(OsdlStatus::Error {
+                                let _ = self.handle.status_tx.send(OsdlStatus::Error {
                                     message: e.to_string(),
                                 });
                                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -294,7 +525,7 @@ impl OsdlEngine {
                             None => std::future::pending().await,
                         }
                     } => {
-                        match self.send_command(cmd).await {
+                        match self.handle.send_command(cmd).await {
                             Ok(res) => log::info!("injected command dispatched: {:?}", res),
                             Err(e)  => log::warn!("injected command failed: {}", e),
                         }
@@ -306,7 +537,7 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
-                                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                                 media_proc = None;
                             }
                         }
@@ -333,7 +564,7 @@ impl OsdlEngine {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("MQTT error: {}", e);
-                                let _ = self.status_tx.send(OsdlStatus::Error {
+                                let _ = self.handle.status_tx.send(OsdlStatus::Error {
                                     message: e.to_string(),
                                 });
                                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -354,7 +585,7 @@ impl OsdlEngine {
                             None => std::future::pending().await,
                         }
                     } => {
-                        match self.send_command(cmd).await {
+                        match self.handle.send_command(cmd).await {
                             Ok(res) => log::info!("injected command dispatched: {:?}", res),
                             Err(e)  => log::warn!("injected command failed: {}", e),
                         }
@@ -366,7 +597,7 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
-                                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                                 media_proc = None;
                             }
                         }
@@ -389,31 +620,32 @@ impl OsdlEngine {
             p.shutdown().await;
         }
 
-        let _ = self.status_tx.send(OsdlStatus::Disconnected);
+        let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
     }
 
     /// Spawn mediamtx if any media sources are configured. Emits
     /// `MediaSourceOnline` for each source so the host learns the URLs.
     /// Returns the process handle so the caller can shut it down.
     async fn start_media_gateway(&self) -> Option<MediamtxProcess> {
-        if self.config.media_sources.is_empty() {
+        let cfg = &self.handle.config;
+        if cfg.media_sources.is_empty() {
             return None;
         }
 
         // Validate all sources before spawning. Catches misconfigurations
         // like remote_rtmp without a transcode path that would otherwise
         // silently produce dead playback URLs.
-        for src in &self.config.media_sources {
+        for src in &cfg.media_sources {
             if let Err(reason) = src.validate() {
                 log::error!("Media source rejected: {reason}");
-                self.emit(OsdlEvent::MediaGatewayDown { reason });
+                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                 return None;
             }
         }
 
-        let gateway = &self.config.media_gateway;
+        let gateway = &cfg.media_gateway;
         let mut all_paths = Vec::new();
-        for src in &self.config.media_sources {
+        for src in &cfg.media_sources {
             all_paths.extend(src.paths());
         }
 
@@ -421,24 +653,21 @@ impl OsdlEngine {
             Ok(p) => p,
             Err(e) => {
                 log::error!("Failed to start media gateway: {}", e);
-                self.emit(OsdlEvent::MediaGatewayDown {
+                self.handle.emit(OsdlEvent::MediaGatewayDown {
                     reason: e.to_string(),
                 });
                 return None;
             }
         };
 
-        // No sleep needed — MediamtxProcess::spawn returns only after the
-        // RTSP listener is up.
-
-        for src in &self.config.media_sources {
+        for src in &cfg.media_sources {
             let endpoints = src.endpoints(&gateway.advertise_host, &gateway.ports);
             log::info!(
                 "Media source online: {} ({} endpoints)",
                 src.id(),
                 endpoints.len(),
             );
-            self.emit(OsdlEvent::MediaSourceOnline {
+            self.handle.emit(OsdlEvent::MediaSourceOnline {
                 id: src.id().to_string(),
                 description: src.description().to_string(),
                 endpoints,
@@ -483,7 +712,8 @@ impl OsdlEngine {
                 node_id.to_string(),
                 client.clone(),
             ));
-            self.transports
+            self.handle
+                .transports
                 .write()
                 .await
                 .insert(node_id.to_string(), transport);
@@ -491,7 +721,7 @@ impl OsdlEngine {
 
         // Try to match hardware_id across all adapters
         let mut matched = None;
-        for adapter in &self.adapters {
+        for adapter in self.handle.adapters.iter() {
             if let Some(m) = adapter.match_hardware(&reg.hardware_id) {
                 matched = Some((adapter.platform().to_string(), m));
                 break;
@@ -508,7 +738,11 @@ impl OsdlEngine {
             device_id: matched.as_ref().map(|_| device_id.clone()),
         };
 
-        self.nodes.write().await.insert(node_id.to_string(), node);
+        self.handle
+            .nodes
+            .write()
+            .await
+            .insert(node_id.to_string(), node);
 
         if let Some((platform, device_match)) = matched {
             let device = Device {
@@ -530,19 +764,20 @@ impl OsdlEngine {
                 device.device_type
             );
 
-            self.devices
+            self.handle
+                .devices
                 .write()
                 .await
                 .insert(device_id.clone(), device.clone());
-            self.emit(OsdlEvent::DeviceOnline(device));
-            self.broadcast_status().await;
+            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.handle.broadcast_status().await;
         } else {
             log::warn!(
                 "No driver found for hardware_id: {} (node: {})",
                 reg.hardware_id,
                 node_id
             );
-            self.emit(OsdlEvent::UnknownNode {
+            self.handle.emit(OsdlEvent::UnknownNode {
                 node_id: node_id.to_string(),
                 hardware_id: reg.hardware_id,
             });
@@ -551,7 +786,7 @@ impl OsdlEngine {
 
     /// Handle heartbeat — mark node as online, reset timeout.
     async fn handle_heartbeat(&self, node_id: &str) {
-        let mut nodes = self.nodes.write().await;
+        let mut nodes = self.handle.nodes.write().await;
         if let Some(node) = nodes.get_mut(node_id) {
             node.online = true;
         }
@@ -568,11 +803,11 @@ impl OsdlEngine {
     /// non-matching responses, so only the correct device gets updated.
     async fn handle_transport_rx(&self, transport_id: &str, bytes: &[u8]) {
         // Log raw bytes for forensic replay
-        if let Some(store) = &self.store {
+        if let Some(store) = &self.handle.store {
             store.log_serial(transport_id, "rx", bytes);
         }
 
-        let devices = self.devices.read().await;
+        let devices = self.handle.devices.read().await;
 
         // Collect all devices sharing this transport
         let matching: Vec<_> = devices
@@ -583,7 +818,7 @@ impl OsdlEngine {
 
         if matching.is_empty() {
             // Fallback: MQTT serial node → device_id mapping (one node = one device)
-            let nodes = self.nodes.read().await;
+            let nodes = self.handle.nodes.read().await;
             if let Some(node) = nodes.get(transport_id) {
                 if let Some(ref did) = node.device_id {
                     if let Some(d) = devices.get(did) {
@@ -616,7 +851,7 @@ impl OsdlEngine {
         adapter_name: &str,
         bytes: &[u8],
     ) {
-        for adapter in &self.adapters {
+        for adapter in self.handle.adapters.iter() {
             if adapter.platform() == adapter_name {
                 if let Some(properties) = adapter.decode_response(device_type, bytes) {
                     let status = DeviceStatus {
@@ -624,34 +859,16 @@ impl OsdlEngine {
                         timestamp: now_millis(),
                         properties,
                     };
-                    let mut devices_w = self.devices.write().await;
+                    let mut devices_w = self.handle.devices.write().await;
                     if let Some(dev) = devices_w.get_mut(device_id) {
                         for (k, v) in &status.properties {
                             dev.properties.insert(k.clone(), v.clone());
                         }
                     }
-                    self.emit(OsdlEvent::DeviceStatus(status));
+                    self.handle.emit(OsdlEvent::DeviceStatus(status));
                 }
                 break;
             }
-        }
-    }
-
-    fn broadcast_status(&self) -> impl std::future::Future<Output = ()> + '_ {
-        async {
-            let broker = self
-                .config
-                .mqtt
-                .as_ref()
-                .map(|c| format!("{}:{}", c.host, c.port))
-                .unwrap_or_else(|| "mqtt-disabled".into());
-            let node_count = self.nodes.read().await.len();
-            let device_count = self.devices.read().await.len();
-            let _ = self.status_tx.send(OsdlStatus::Connected {
-                broker,
-                node_count,
-                device_count,
-            });
         }
     }
 
@@ -660,11 +877,11 @@ impl OsdlEngine {
     /// any registrations that already arrived before the listener attached.
     #[cfg(feature = "espnow")]
     async fn start_espnow_gateways(&self) {
-        for gw_cfg in &self.config.espnow_gateways {
+        for gw_cfg in &self.handle.config.espnow_gateways {
             let client = Arc::new(EspNowGatewayClient::new(
                 gw_cfg.port.clone(),
                 gw_cfg.baud_rate,
-                self.transport_rx_tx.clone(),
+                self.handle.transport_rx_tx.clone(),
             ));
             if let Err(e) = client.start().await {
                 log::error!("Failed to start ESP-NOW gateway on {}: {}", gw_cfg.port, e);
@@ -723,7 +940,6 @@ impl OsdlEngine {
     /// the end of `run()`.
     #[cfg(feature = "espnow")]
     async fn stop_espnow_gateways(&self) {
-        // Take ownership of the map so callers can't observe half-stopped state.
         let gateways: Vec<_> = {
             let mut guard = self.espnow_gateways.write().await;
             guard.drain().collect()
@@ -762,7 +978,7 @@ impl OsdlEngine {
 
         let child: Arc<dyn Transport> = Arc::new(EspNowChildTransport::new(mac, client.clone()));
         {
-            let mut transports = self.transports.write().await;
+            let mut transports = self.handle.transports.write().await;
             transports.entry(transport_id.clone()).or_insert(child);
         }
 
@@ -772,6 +988,7 @@ impl OsdlEngine {
 
         // Path 1: bus manifest.
         let bus = self
+            .handle
             .config
             .buses
             .iter()
@@ -785,12 +1002,12 @@ impl OsdlEngine {
 
         // Path 2: legacy 1:1 registration.
         let device_id = transport_id.clone();
-        if self.devices.read().await.contains_key(&device_id) {
+        if self.handle.devices.read().await.contains_key(&device_id) {
             return;
         }
 
         let mut matched = None;
-        for adapter in &self.adapters {
+        for adapter in self.handle.adapters.iter() {
             if let Some(m) = adapter.match_hardware(&hardware_id) {
                 matched = Some((adapter.platform().to_string(), m));
                 break;
@@ -816,19 +1033,20 @@ impl OsdlEngine {
                 device.device_type,
                 mac_hex_flat(&mac),
             );
-            self.devices
+            self.handle
+                .devices
                 .write()
                 .await
                 .insert(device_id.clone(), device.clone());
-            self.emit(OsdlEvent::DeviceOnline(device));
-            self.broadcast_status().await;
+            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.handle.broadcast_status().await;
         } else {
             log::warn!(
                 "No driver found for ESP-NOW hardware_id: {} (MAC {})",
                 hardware_id,
                 mac_hex_flat(&mac),
             );
-            self.emit(OsdlEvent::UnknownNode {
+            self.handle.emit(OsdlEvent::UnknownNode {
                 node_id: transport_id,
                 hardware_id,
             });
@@ -859,12 +1077,12 @@ impl OsdlEngine {
 
         for entry in &bus.devices {
             let device_id = format!("{}:{}", transport_id, entry.local_id);
-            if self.devices.read().await.contains_key(&device_id) {
+            if self.handle.devices.read().await.contains_key(&device_id) {
                 continue;
             }
 
             let mut matched = None;
-            for adapter in &self.adapters {
+            for adapter in self.handle.adapters.iter() {
                 if let Some(m) = adapter.match_hardware(&entry.device_type) {
                     matched = Some((adapter.platform().to_string(), m));
                     break;
@@ -906,113 +1124,14 @@ impl OsdlEngine {
                     .map(|r| format!(" role={}", r))
                     .unwrap_or_default(),
             );
-            self.devices.write().await.insert(device_id, device.clone());
-            self.emit(OsdlEvent::DeviceOnline(device));
+            self.handle
+                .devices
+                .write()
+                .await
+                .insert(device_id, device.clone());
+            self.handle.emit(OsdlEvent::DeviceOnline(device));
         }
-        self.broadcast_status().await;
-    }
-
-    // === Request-response API (called by host) ===
-
-    pub async fn list_devices(&self) -> Vec<Device> {
-        self.devices.read().await.values().cloned().collect()
-    }
-
-    pub async fn get_device(&self, device_id: &str) -> Option<Device> {
-        self.devices.read().await.get(device_id).cloned()
-    }
-
-    pub async fn list_nodes(&self) -> Vec<Node> {
-        self.nodes.read().await.values().cloned().collect()
-    }
-
-    /// Register a transport for direct serial / TCP devices.
-    ///
-    /// Multiple devices can share the same transport (shared bus).
-    /// The transport should already be `start()`ed before calling this.
-    pub async fn register_transport(&self, id: String, transport: Arc<dyn Transport>) {
-        log::info!("Transport registered: {} ({})", id, transport.description());
-        self.transports.write().await.insert(id, transport);
-    }
-
-    /// Register a device manually (for direct serial / TCP transports).
-    ///
-    /// Unlike MQTT node registration which auto-discovers devices,
-    /// this method explicitly registers a device with its transport.
-    /// The device's `transport_id` must match a previously registered transport.
-    pub async fn register_device(&self, device: Device) -> Result<(), String> {
-        let transport_id = device.transport_id.clone();
-        let device_id = device.id.clone();
-
-        // Verify transport exists
-        if !self.transports.read().await.contains_key(&transport_id) {
-            return Err(format!(
-                "transport '{}' not registered — call register_transport() first",
-                transport_id
-            ));
-        }
-
-        self.devices
-            .write()
-            .await
-            .insert(device_id.clone(), device.clone());
-
-        log::info!(
-            "Device registered: {} ({}) on transport {}",
-            device_id,
-            device.device_type,
-            transport_id
-        );
-        self.emit(OsdlEvent::DeviceOnline(device));
-        self.broadcast_status().await;
-        Ok(())
-    }
-
-    /// Send a command to a device via its transport.
-    pub async fn send_command(&self, cmd: DeviceCommand) -> Result<CommandResult, String> {
-        // Log the command
-        if let Some(store) = &self.store {
-            store.log_command(&cmd);
-        }
-
-        let devices = self.devices.read().await;
-        let device = devices
-            .get(&cmd.device_id)
-            .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
-
-        let transport_id = device.transport_id.clone();
-        let device_type = device.device_type.clone();
-        let adapter_name = device.adapter.clone();
-        drop(devices);
-
-        // Find the adapter and encode command to serial bytes
-        let bytes = self
-            .adapters
-            .iter()
-            .find(|a| a.platform() == adapter_name)
-            .ok_or_else(|| format!("no adapter for platform: {}", adapter_name))?
-            .encode_command(&device_type, &cmd)?;
-
-        // Log outgoing bytes
-        if let Some(store) = &self.store {
-            store.log_serial(&transport_id, "tx", &bytes);
-        }
-
-        // Send via the device's transport
-        let transports = self.transports.read().await;
-        let transport = transports
-            .get(&transport_id)
-            .ok_or_else(|| format!("no transport for: {}", transport_id))?;
-
-        transport.send(&bytes).await?;
-
-        Ok(CommandResult {
-            command_id: cmd.command_id.clone(),
-            device_id: cmd.device_id.clone(),
-            status: CommandStatus::Pending,
-            message: "command sent".into(),
-            data: None,
-        })
+        self.handle.broadcast_status().await;
     }
 }
 

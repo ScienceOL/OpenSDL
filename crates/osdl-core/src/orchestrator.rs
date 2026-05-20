@@ -10,21 +10,20 @@
 //!
 //! Does NOT modify the engine core — purely a composition layer.
 
-use crate::engine::OsdlEngine;
+use crate::engine::EngineHandle;
 use crate::protocol::DeviceCommand;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 100;
 
 pub struct Orchestrator {
-    engine: Arc<OsdlEngine>,
+    engine: EngineHandle,
     /// Interval between status polls.
     poll_interval: Duration,
 }
 
 impl Orchestrator {
-    pub fn new(engine: Arc<OsdlEngine>) -> Self {
+    pub fn new(engine: EngineHandle) -> Self {
         Self {
             engine,
             poll_interval: Duration::from_millis(DEFAULT_POLL_INTERVAL_MS),

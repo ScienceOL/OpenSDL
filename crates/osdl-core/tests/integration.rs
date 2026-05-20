@@ -104,7 +104,7 @@ fn test_engine_creation() {
     let engine = OsdlEngine::new(config, adapters).with_store(store);
 
     assert_eq!(engine.status(), OsdlStatus::Disconnected);
-    let _rx = engine.take_event_rx();
+    let _rx = engine.subscribe_events();
 }
 
 #[test]

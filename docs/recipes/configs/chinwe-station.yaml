@@ -1,0 +1,61 @@
+# ChinWe separator station — bus manifest.
+#
+# One ESP-NOW child fronts a shared RS-485 bus carrying 5 addressable
+# devices: 3 syringe pumps (Runze SY-03B at addresses 1/2/3) and 2 Emm V5.0
+# stepper motors (device_id 4/5, used as the stirrer and drain valve).
+#
+# The child REGs as `syringe_pump_with_valve.runze.SY03B-T06` (its
+# hardware_id, baked into the firmware). The bus manifest below tells the
+# engine that this single child should expose 5 distinct devices, each
+# addressable by a `local_id` (pump-1 … motor-5).
+#
+# Use with:
+#   osdl serve --config docs/recipes/configs/chinwe-station.yaml \
+#              --registry $(pwd)/registry/unilabos \
+#              --espnow-port /dev/cu.usbserial-XXXX
+
+mqtt: ~  # No MQTT bridge needed — ESP-NOW only.
+
+adapters:
+  - type: unilabos
+    # `--registry` overrides this; if you launch from the workspace root
+    # without that flag the relative `registry/unilabos` resolves correctly.
+    registry_path: registry/unilabos
+
+buses:
+  - match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06
+    devices:
+      - local_id: pump-1
+        device_type: syringe_pump.chinwe.pump1
+        role: syringe_pump
+        description: |
+          pump-1 (Runze SY-03B T08, 8-port valve):
+            port 1 = inlet  → beaker
+            port 8 = outlet → separatory funnel
+          Other ports unused. `initialize` aspirates one full stroke
+          from port 1 then dispenses through port 8 as part of its
+          homing routine — incidentally moves beaker fluid into the
+          funnel. If a station shouldn't be drained on init, don't
+          connect the beaker to the inlet until after homing.
+
+          Note: device_type still says "T06" but the physical head is
+          a T08; the codec accepts ports 1–8 either way, so it works
+          but the registry naming is technically inaccurate.
+      - local_id: pump-2
+        device_type: syringe_pump.chinwe.pump2
+        role: syringe_pump
+      - local_id: pump-3
+        device_type: syringe_pump.chinwe.pump3
+        role: syringe_pump
+      - local_id: motor-4
+        device_type: stepper_motor.chinwe.emm4
+        role: stirrer
+        description: |
+          Stirrer motor above separatory funnel.
+          Use run_speed for continuous stirring.
+      - local_id: motor-5
+        device_type: stepper_motor.chinwe.emm5
+        role: drain_valve
+        description: |
+          Drain valve on separatory funnel.
+          run_position ~800 pulses dir=0 opens; dir=1 closes.

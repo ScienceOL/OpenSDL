@@ -13,7 +13,7 @@ use osdl_core::event::OsdlEvent;
 use osdl_core::{EmbeddedBroker, EventStore, OsdlEngine, OsdlStatus};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 // ── Test Harness ──────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ fn free_port() -> u16 {
 struct TestHarness {
     port: u16,
     _broker: EmbeddedBroker,
-    event_rx: Option<mpsc::UnboundedReceiver<OsdlEvent>>,
+    event_rx: Option<broadcast::Receiver<OsdlEvent>>,
     status_rx: tokio::sync::watch::Receiver<OsdlStatus>,
     stop: tokio::sync::watch::Sender<bool>,
     engine_handle: tokio::task::JoinHandle<()>,
@@ -63,7 +63,7 @@ impl TestHarness {
             OsdlEngine::new(config, adapters)
         };
 
-        let event_rx_arc = engine.take_event_rx();
+        let event_rx = Some(engine.subscribe_events());
         let mut status_rx = engine.status_rx();
         let stop = engine.stop_handle();
 
@@ -78,8 +78,6 @@ impl TestHarness {
             3000,
         )
         .await;
-
-        let event_rx = event_rx_arc.lock().await.take();
 
         Self {
             port,
@@ -113,7 +111,7 @@ impl TestHarness {
         let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![];
         let mut engine = OsdlEngine::new(config, adapters);
 
-        let event_rx_arc = engine.take_event_rx();
+        let event_rx = Some(engine.subscribe_events());
         let mut status_rx = engine.status_rx();
         let stop = engine.stop_handle();
 
@@ -127,8 +125,6 @@ impl TestHarness {
             3000,
         )
         .await;
-
-        let event_rx = event_rx_arc.lock().await.take();
 
         Self {
             port,
@@ -201,16 +197,20 @@ impl TestHarness {
     }
 
     /// Take the event receiver (can only be called once).
-    fn take_event_rx(&mut self) -> mpsc::UnboundedReceiver<OsdlEvent> {
+    fn take_event_rx(&mut self) -> broadcast::Receiver<OsdlEvent> {
         self.event_rx.take().expect("event_rx already taken")
     }
 
-    /// Receive next event with timeout.
-    async fn recv_event(rx: &mut mpsc::UnboundedReceiver<OsdlEvent>) -> OsdlEvent {
-        tokio::time::timeout(Duration::from_secs(3), rx.recv())
-            .await
-            .expect("should receive event within timeout")
-            .expect("channel should not be closed")
+    /// Receive next event with timeout. Skips lag-warnings.
+    async fn recv_event(rx: &mut broadcast::Receiver<OsdlEvent>) -> OsdlEvent {
+        loop {
+            match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+                Ok(Ok(ev)) => return ev,
+                Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(broadcast::error::RecvError::Closed)) => panic!("event channel closed"),
+                Err(_) => panic!("should receive event within timeout"),
+            }
+        }
     }
 
     async fn shutdown(self) {

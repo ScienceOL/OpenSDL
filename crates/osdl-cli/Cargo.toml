@@ -9,54 +9,18 @@ description = "CLI for OpenSDL — standalone lab hardware bridge"
 name = "osdl"
 path = "src/main.rs"
 
+# Raw-transport probes — kept as Rust binaries because they bypass the
+# engine and write arbitrary bytes for hardware bring-up. They'll be
+# replaced when an `osdl probe` RPC lands. Engine-based examples have
+# moved to docs/recipes/ as CLI scripts.
 [[example]]
 name = "espnow_probe"
 path = "examples/espnow_probe.rs"
 required-features = ["osdl-core/espnow"]
 
 [[example]]
-name = "runze_via_espnow"
-path = "examples/runze_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "runze_three_pumps_via_espnow"
-path = "examples/runze_three_pumps_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
 name = "emm_motors_probe_via_espnow"
 path = "examples/emm_motors_probe_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "emm_motor_nudge_via_espnow"
-path = "examples/emm_motor_nudge_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "emm_motor_roundtrip_via_espnow"
-path = "examples/emm_motor_roundtrip_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "bus_manifest_live"
-path = "examples/bus_manifest_live.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "drain_funnel_via_espnow"
-path = "examples/drain_funnel_via_espnow.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "drain_funnel_nudge_more"
-path = "examples/drain_funnel_nudge_more.rs"
-required-features = ["osdl-core/espnow"]
-
-[[example]]
-name = "stir_10s"
-path = "examples/stir_10s.rs"
 required-features = ["osdl-core/espnow"]
 
 [[example]]
@@ -78,7 +42,23 @@ espnow = ["osdl-core/espnow"]
 
 [dependencies]
 osdl-core = { path = "../osdl-core" }
+osdl-proto = { path = "../osdl-proto" }
+osdl-server = { path = "../osdl-server" }
 tokio.workspace = true
+tokio-stream.workspace = true
 log.workspace = true
 env_logger = "0.11"
+serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
+clap.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+hyper-util.workspace = true
+tower.workspace = true
+anyhow = "1"
+
+[target.'cfg(unix)'.dependencies]
+daemonize = { workspace = true }

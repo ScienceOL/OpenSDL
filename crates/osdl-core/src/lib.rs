@@ -15,7 +15,7 @@ pub mod transport;
 pub use broker::EmbeddedBroker;
 pub use config::OsdlConfig;
 pub use mdns::MdnsAdvertiser;
-pub use engine::{OsdlEngine, OsdlStatus};
+pub use engine::{EngineHandle, OsdlEngine, OsdlStatus};
 pub use event::OsdlEvent;
 pub use protocol::{
     CommandResult, CommandStatus, Device, DeviceCommand, DeviceStatus, Node, NodeRegistration,

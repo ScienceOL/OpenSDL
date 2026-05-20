@@ -1,0 +1,16 @@
+[package]
+name = "osdl-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "gRPC wire schema for OpenSDL — protobuf definitions, generated client + server stubs"
+
+[dependencies]
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
+protoc-bin-vendored = "3"
