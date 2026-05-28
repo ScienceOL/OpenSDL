@@ -1,19 +1,23 @@
 //! Per-platform storage layout for OpenSDL.
 //!
 //! We follow the platform's standard conventions via the `directories`
-//! crate (XDG on Linux, Apple's `~/Library/...` on macOS) so files land
-//! where users / sysadmins / backup tools expect them. The mapping:
+//! crate (XDG on Linux, Apple's `~/Library/...` on macOS, `%APPDATA%`
+//! / `%LOCALAPPDATA%` on Windows) so files land where users /
+//! sysadmins / backup tools expect them. The mapping:
 //!
-//! | Purpose       | Linux ($XDG_*)   | macOS                                  |
-//! | ------------- | ---------------- | -------------------------------------- |
-//! | config        | CONFIG_HOME      | ~/Library/Application Support/osdl     |
-//! | state (db)    | STATE_HOME       | ~/Library/Application Support/osdl     |
-//! | cache         | CACHE_HOME       | ~/Library/Caches/com.scienceol.osdl    |
-//! | runtime (sock)| RUNTIME_DIR      | /tmp/osdl-$UID/run (no Apple equivalent) |
+//! | Purpose       | Linux ($XDG_*)   | macOS                                    | Windows                                       |
+//! | ------------- | ---------------- | ---------------------------------------- | --------------------------------------------- |
+//! | config        | CONFIG_HOME      | ~/Library/Application Support/osdl       | %APPDATA%\scienceol\osdl\config               |
+//! | state (db)    | STATE_HOME       | ~/Library/Application Support/osdl       | %LOCALAPPDATA%\scienceol\osdl\data            |
+//! | cache         | CACHE_HOME       | ~/Library/Caches/com.scienceol.osdl      | %LOCALAPPDATA%\scienceol\osdl\cache           |
+//! | runtime       | RUNTIME_DIR      | /tmp/osdl-$UID/run (no Apple equivalent) | %LOCALAPPDATA%\scienceol\osdl\run             |
 //!
-//! The runtime dir is the trickiest: macOS has no `XDG_RUNTIME_DIR` analog,
-//! so we synthesize a per-UID directory under `$TMPDIR` (or `/tmp`). UDS
-//! paths over ~104 chars fail to bind on darwin, so we keep it short.
+//! The runtime dir is the trickiest: macOS / Windows have no
+//! `XDG_RUNTIME_DIR` analog, so we synthesize a per-user directory
+//! under `$TMPDIR` (Unix) or `data_local_dir` (Windows). UDS paths
+//! over ~104 chars fail to bind on darwin, so we keep it short.
+//! On Windows the runtime dir holds lockfiles only — there are no
+//! Unix domain sockets to worry about.
 
 use directories::ProjectDirs;
 use std::path::PathBuf;
@@ -89,6 +93,7 @@ impl Paths {
     }
 }
 
+#[cfg(unix)]
 fn fallback_runtime_dir() -> PathBuf {
     let base = std::env::var_os("TMPDIR")
         .map(PathBuf::from)
@@ -97,15 +102,32 @@ fn fallback_runtime_dir() -> PathBuf {
     base.join(format!("osdl-{uid}"))
 }
 
+/// Windows fallback. `directories::ProjectDirs::runtime_dir()` is `None`
+/// on Windows by design, so we co-locate runtime state under
+/// `%LOCALAPPDATA%\scienceol\osdl\run` (the same parent as `state_dir`).
+/// No need for a UID/username segment — `%LOCALAPPDATA%` is already
+/// per-user.
+#[cfg(not(unix))]
+fn fallback_runtime_dir() -> PathBuf {
+    let dirs = directories::ProjectDirs::from(QUALIFIER, ORG, APP);
+    match dirs {
+        Some(d) => d.data_local_dir().join("run"),
+        // Last-resort: `directories` couldn't find a home. Fall back to
+        // the env var directly. `LOCALAPPDATA` is set on every modern
+        // Windows install; if it isn't, we have bigger problems.
+        None => {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            base.join("scienceol").join("osdl").join("run")
+        }
+    }
+}
+
 #[cfg(unix)]
 fn current_uid() -> u32 {
     // SAFETY: getuid is always-safe.
     unsafe { libc::getuid() }
-}
-
-#[cfg(not(unix))]
-fn current_uid() -> u32 {
-    0
 }
 
 #[cfg(unix)]

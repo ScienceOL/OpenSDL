@@ -34,9 +34,14 @@ pub use service::{OsdlService, ServerIdentity};
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Where to listen.
+///
+/// `socket_path` is a Unix-only Unix domain socket. On Windows it is
+/// silently ignored (the field exists so the struct shape is identical
+/// across platforms — Windows builds always use the TCP listener).
 #[derive(Debug, Clone, Default)]
 pub struct ListenConfig {
     /// Path to a Unix domain socket. If `None`, no UDS listener is started.
+    /// On Windows this field is ignored.
     pub socket_path: Option<PathBuf>,
     /// TCP socket address. If `None`, no TCP listener is started.
     pub tcp_addr: Option<SocketAddr>,
@@ -44,7 +49,17 @@ pub struct ListenConfig {
 
 impl ListenConfig {
     pub fn is_empty(&self) -> bool {
-        self.socket_path.is_none() && self.tcp_addr.is_none()
+        // On Windows `socket_path` is always ignored, so an "empty" listen
+        // config is one with no TCP address regardless of whether the
+        // caller bothered to None out socket_path.
+        #[cfg(unix)]
+        {
+            self.socket_path.is_none() && self.tcp_addr.is_none()
+        }
+        #[cfg(not(unix))]
+        {
+            self.tcp_addr.is_none()
+        }
     }
 }
 
@@ -119,9 +134,15 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         .as_ref()
         .and_then(|l| l.local_addr().ok());
 
-    let socket_path_str = cfg
-        .listen
-        .socket_path
+    // UDS is Unix-only. On Windows the field is ignored — even if a
+    // caller hands us a `socket_path` we drop it from the lockfile so
+    // discovery doesn't advertise an unreachable endpoint.
+    #[cfg(unix)]
+    let effective_socket_path = cfg.listen.socket_path.clone();
+    #[cfg(not(unix))]
+    let effective_socket_path: Option<PathBuf> = None;
+
+    let socket_path_str = effective_socket_path
         .as_ref()
         .map(|p| p.display().to_string());
     let listen_addr_str = bound_tcp_addr.as_ref().map(|a| a.to_string());
@@ -136,7 +157,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         cfg.instance.clone(),
         pid,
         SERVER_VERSION,
-        cfg.listen.socket_path.clone(),
+        effective_socket_path.clone(),
         listen_addr_str.clone(),
     );
     let _lock = lockfile::write(&cfg.lock_dir, &record).map_err(ServeError::Lock)?;
@@ -144,14 +165,14 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     // Now safe to unlink the UDS path (it's stale by definition — no
     // live server has the lock), then bind. Failures here propagate
     // naturally; the lockfile guard will clean up on drop.
-    let unix_listener = if let Some(ref socket_path) = cfg.listen.socket_path {
+    #[cfg(unix)]
+    let unix_listener = if let Some(ref socket_path) = effective_socket_path {
         match std::fs::remove_file(socket_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(ServeError::Io(e)),
         }
         let listener = tokio::net::UnixListener::bind(socket_path).map_err(ServeError::Io)?;
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o600);
@@ -225,10 +246,9 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         );
     }
 
+    #[cfg(unix)]
     if let Some(listener) = unix_listener {
-        let socket_path = cfg
-            .listen
-            .socket_path
+        let socket_path = effective_socket_path
             .clone()
             .expect("listener implies path");
         let shutdown = shutdown.clone();
@@ -244,6 +264,10 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         }));
         log::info!("gRPC UDS listening at {}", socket_path.display());
     }
+    // On non-Unix the original `service` was cloned into the TCP branch
+    // and the original is now unused — silence the warning.
+    #[cfg(not(unix))]
+    let _ = service;
 
     // Wait for stop signal — engine stop OR Ctrl-C.
     let mut stop = engine.stop_handle().subscribe();
@@ -276,8 +300,9 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         }
     }
 
-    // Best-effort cleanup of UDS file.
-    if let Some(ref p) = cfg.listen.socket_path {
+    // Best-effort cleanup of UDS file (Unix only).
+    #[cfg(unix)]
+    if let Some(ref p) = effective_socket_path {
         match std::fs::remove_file(p) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

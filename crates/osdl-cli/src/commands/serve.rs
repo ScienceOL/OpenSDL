@@ -235,13 +235,38 @@ fn resolve_log_path(args: &ServeArgs, paths: &Paths) -> anyhow::Result<PathBuf> 
 pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     let paths = Paths::discover().map_err(|e| anyhow!("paths: {e}"))?;
 
+    // UDS is Unix-only. On Windows we can't bind one even if the user
+    // asks for it, so we always set socket_path = None and fall back to
+    // a TCP loopback default if --listen wasn't passed.
+    #[cfg(unix)]
     let socket_path = match args.socket.as_deref() {
         Some("disabled") | Some("none") | Some("off") => None,
         Some(s) => Some(PathBuf::from(s)),
         None => Some(paths.default_socket_path(&args.instance)),
     };
+    #[cfg(not(unix))]
+    let socket_path: Option<PathBuf> = None;
+    #[cfg(not(unix))]
+    if let Some(s) = args.socket.as_deref() {
+        if !matches!(s, "disabled" | "none" | "off") {
+            log::warn!(
+                "--socket={s} ignored on this platform (Unix domain sockets are not supported); \
+                 using TCP loopback instead"
+            );
+        }
+    }
 
-    if socket_path.is_none() && args.listen.is_none() {
+    // On Windows we don't have UDS to fall back to, so default to TCP
+    // loopback with a kernel-assigned port. The chosen port is recorded
+    // in the lockfile, so clients can still discover us by --instance.
+    #[cfg(not(unix))]
+    let listen_addr = args.listen.or_else(|| {
+        Some(SocketAddr::from(([127, 0, 0, 1], 0)))
+    });
+    #[cfg(unix)]
+    let listen_addr = args.listen;
+
+    if socket_path.is_none() && listen_addr.is_none() {
         return Err(anyhow!(
             "no listener configured: pass --listen ADDR or remove --socket=disabled"
         ));
@@ -251,7 +276,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     // broker / engine / event store — failing fast on a misconfiguration
     // is the whole point of this guard. (osdl_server::serve also rejects
     // it, but only after we've already started the heavy machinery.)
-    if let Some(addr) = args.listen {
+    if let Some(addr) = listen_addr {
         if args.auth_token.is_none() && !addr.ip().is_loopback() {
             return Err(anyhow!(
                 "TCP listener {addr} is non-loopback but no --auth-token is configured. \
@@ -299,7 +324,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         instance: args.instance.clone(),
         listen: ListenConfig {
             socket_path,
-            tcp_addr: args.listen,
+            tcp_addr: listen_addr,
         },
         lock_dir: paths.lock_dir(),
         auth_token: args.auth_token.clone(),

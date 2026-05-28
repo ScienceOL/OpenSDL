@@ -8,6 +8,7 @@
 //!      connect to it; if zero, error with a hint; if multiple, list them
 //!      and require disambiguation.
 
+#[cfg(unix)]
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
@@ -28,7 +29,10 @@ pub type Client = OsdlClient<InterceptedService<Channel, AuthInterceptor>>;
 pub enum Resolved {
     /// Connect over the given URI (typically `http://host:port`).
     Tcp(Uri),
-    /// Connect over the given Unix domain socket path.
+    /// Connect over the given Unix domain socket path. Unix-only — on
+    /// Windows this variant is never constructed (the resolver maps
+    /// any UDS-only lockfile to an error explaining the situation).
+    #[cfg(unix)]
     Uds(PathBuf),
 }
 
@@ -102,14 +106,25 @@ pub fn resolve(opts: &ClientOpts, paths: &Paths) -> anyhow::Result<Resolved> {
 }
 
 fn parse_explicit(ep: &str) -> anyhow::Result<Resolved> {
-    if let Some(rest) = ep.strip_prefix("unix:") {
-        return Ok(Resolved::Uds(PathBuf::from(rest)));
+    if let Some(_rest) = ep.strip_prefix("unix:") {
+        #[cfg(unix)]
+        {
+            return Ok(Resolved::Uds(PathBuf::from(_rest)));
+        }
+        #[cfg(not(unix))]
+        return Err(anyhow!(
+            "unix domain sockets are not supported on this platform — \
+             use a TCP endpoint like `http://127.0.0.1:PORT` instead"
+        ));
     }
     let uri: Uri = ep.parse().with_context(|| format!("invalid endpoint: {ep}"))?;
     Ok(Resolved::Tcp(uri))
 }
 
 fn record_to_resolved(rec: &lockfile::InstanceRecord) -> anyhow::Result<Resolved> {
+    // Prefer UDS on Unix when both are advertised — it's the same machine,
+    // and the perms-based auth model is simpler than the bearer token.
+    #[cfg(unix)]
     if let Some(p) = &rec.socket_path {
         return Ok(Resolved::Uds(p.clone()));
     }
@@ -118,6 +133,18 @@ fn record_to_resolved(rec: &lockfile::InstanceRecord) -> anyhow::Result<Resolved
             .parse()
             .with_context(|| format!("listen_addr {addr} is not a valid URI"))?;
         return Ok(Resolved::Tcp(uri));
+    }
+    // No TCP advertised. On Windows this is the case where an old UDS-only
+    // lockfile from a Unix-built server is sitting around; surface a
+    // useful error instead of pretending the instance is unreachable.
+    #[cfg(not(unix))]
+    if rec.socket_path.is_some() {
+        return Err(anyhow!(
+            "instance '{}' is bound to a Unix domain socket which Windows cannot \
+             connect to. Restart the server with a TCP listener (e.g. \
+             `osdl serve --listen 127.0.0.1:0`).",
+            rec.instance
+        ));
     }
     Err(anyhow!(
         "instance '{}' lockfile has no listener info — server may be misconfigured",
@@ -140,6 +167,7 @@ pub async fn connect(resolved: &Resolved, opts: &ClientOpts) -> anyhow::Result<C
                 .await
                 .with_context(|| format!("connect to {uri}"))?
         }
+        #[cfg(unix)]
         Resolved::Uds(path) => {
             let path_for_err = path.clone();
             let path_for_connector = path.clone();

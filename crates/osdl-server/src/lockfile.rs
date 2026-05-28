@@ -221,10 +221,43 @@ fn pid_alive(pid: u32) -> bool {
     err.raw_os_error() == Some(libc::EPERM)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn pid_alive(pid: u32) -> bool {
+    // Open the process with the minimum access we need (just to query
+    // exit code), then peek at GetExitCodeProcess: STILL_ACTIVE
+    // (259 / 0x103) means the process is running. If OpenProcess fails
+    // with ERROR_INVALID_PARAMETER (87) the PID doesn't exist — gone.
+    // ACCESS_DENIED (5) means it exists but belongs to another user;
+    // treat as alive (something is there).
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, FALSE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    if pid == 0 {
+        return false;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if handle.is_null() {
+            return GetLastError() == ERROR_ACCESS_DENIED;
+        }
+        let mut exit_code: u32 = 0;
+        let ok = GetExitCodeProcess(handle, &mut exit_code as *mut u32);
+        CloseHandle(handle);
+        // STILL_ACTIVE is 259. If the call fails, fall back to "alive"
+        // since we know the handle opened — better to refuse a startup
+        // and have a human investigate than to clobber a live server.
+        if ok == 0 {
+            return true;
+        }
+        exit_code == 259
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn pid_alive(_pid: u32) -> bool {
-    // No portable check; conservatively assume alive. Windows support is
-    // out of scope for the initial cut.
+    // No portable check on this platform; conservatively assume alive.
     true
 }
 
