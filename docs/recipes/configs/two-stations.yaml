@@ -1,0 +1,45 @@
+# Two-station setup: chinwe + laiyu_xyz on one mother, one gateway.
+# Demonstrates that `buses` is an array — each child REG independently
+# matches its own entry, no fallback collision.
+
+mqtt: ~
+
+adapters:
+  - type: unilabos
+    registry_path: registry/unilabos
+
+buses:
+  # Station 1: ChinWe (Runze syringes + Emm steppers) — LilyGO T-Connect Pro.
+  - match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06
+    devices:
+      - local_id: pump-1
+        device_type: syringe_pump.chinwe.pump1
+        role: syringe_pump
+      - local_id: pump-2
+        device_type: syringe_pump.chinwe.pump2
+        role: syringe_pump
+      - local_id: pump-3
+        device_type: syringe_pump.chinwe.pump3
+        role: syringe_pump
+      - local_id: motor-4
+        device_type: stepper_motor.chinwe.emm4
+        role: stirrer
+      - local_id: motor-5
+        device_type: stepper_motor.chinwe.emm5
+        role: drain_valve
+
+  # Station 2: LaiYu XYZ + SOPA pipette — standard ESP32 + MAX485.
+  - match_hardware_id: bus.laiyu_xyz.station1
+    devices:
+      - local_id: axis-x
+        device_type: stepper_motor.laiyu_xyz.X
+        role: stepper_motor
+      - local_id: axis-y
+        device_type: stepper_motor.laiyu_xyz.Y
+        role: stepper_motor
+      - local_id: axis-z
+        device_type: stepper_motor.laiyu_xyz.Z
+        role: stepper_motor
+      - local_id: pipette
+        device_type: pipette.sopa.YYQ
+        role: pipette

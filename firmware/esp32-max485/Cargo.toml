@@ -1,0 +1,39 @@
+# Sibling firmware crate for boards built around a standard ESP32-D0WD
+# (Tensilica LX6) with an external MAX485 RS-485 transceiver. Kept separate
+# from `firmware/esp32-rs` because esp-idf-template / embuild / esp-idf-sys
+# expect one Cargo project per Xtensa MCU target.
+[workspace]
+
+[package]
+name = "osdl-esp32-max485-firmware"
+version = "0.1.0"
+authors = ["xinquiry <100398322+xinquiry@users.noreply.github.com>"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.82"
+
+[[bin]]
+name = "espnow-child"
+path = "src/bin/espnow_child.rs"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
+
+[dependencies]
+log = "0.4"
+anyhow = "1"
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+
+[build-dependencies]
+embuild = "0.33"
