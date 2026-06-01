@@ -22,17 +22,17 @@ Transport:                                  ▼            (HOW bytes travel)
 ### System Overview
 
 ```
-Mother Node (RPi / PC)                    Child Node (ESP32, ~$5)
-┌────────────────────────────┐           ┌──────────────────┐
-│ OsdlEngine (Rust)          │   MQTT    │ Firmware (C++)    │
-│  ├── Transport layer       │◄═════════►│ Serial ↔ MQTT    │
-│  ├── ProtocolAdapter layer │           │ transparent bridge│
-│  ├── MQTT Broker (embedded)│           └────────┬─────────┘
-│  ├── mDNS Advertiser       │                    │ 485/232/USB
-│  ├── Event Store (SQLite)  │                 Device
-│  └── Registry (YAML)       │
-└────────────────────────────┘
-         │              │
+Mother (RPi / PC)                          Node (ESP32, ~$5)
+┌────────────────────────────┐            ┌──────────────────┐
+│ OsdlEngine (Rust)          │   MQTT     │ Firmware (Rust)   │
+│  ├── Transport layer       │◄══════════►│ Serial ↔ MQTT    │
+│  ├── ProtocolAdapter layer │            │ transparent bridge│
+│  ├── MQTT Broker (embedded)│            └────────┬─────────┘
+│  ├── mDNS Advertiser       │  USB-CDC            │ 485/232/USB
+│  ├── Event Store (SQLite)  │◄══════════►Dongle ──┴─ ESP-NOW ─┐
+│  └── Registry (YAML)       │  (ESP32 USB)                    │
+└────────────────────────────┘                                 ▼
+         │              │                              Node ─ Device
     /dev/ttyUSB0    TCP socket
          │              │
     Direct USB      Network
@@ -49,7 +49,7 @@ Mother Node (RPi / PC)                    Child Node (ESP32, ~$5)
 | `OsdlEngine` | Main loop: MQTT events, transport RX, command routing |
 | `EventStore` | Append-only SQLite log (events, commands, serial bytes) |
 | `EmbeddedBroker` | rumqttd MQTT broker in a background thread |
-| `MdnsAdvertiser` | Advertises `_osdl._tcp.local` for child auto-discovery |
+| `MdnsAdvertiser` | Advertises `_osdl._tcp.local` for node auto-discovery |
 
 ### Data Flow
 
@@ -57,9 +57,17 @@ Mother Node (RPi / PC)                    Child Node (ESP32, ~$5)
 
 **Response**: device responds → transport receives → `handle_transport_rx()` → adapter decodes → `OsdlEvent::DeviceStatus` emitted
 
-**Registration** (MQTT serial): child publishes register → engine creates `MqttSerialTransport` → matches hardware via adapters → creates `Device` → `OsdlEvent::DeviceOnline`
+**Registration** (MQTT serial): node publishes register → engine creates `MqttSerialTransport` → matches hardware via adapters → creates `Device` → `OsdlEvent::DeviceOnline`
 
-### Child Node (ESP32)
+### Terminology
+
+- **Dongle** — the ESP32 board plugged into the **host** (Mac/PC) via USB-CDC.
+  Owns the host-side serial port and bridges Mac ↔ ESP-NOW broadcast.
+- **Node** — an ESP32 board plugged into the **lab device** (RS-485 / serial).
+  One per physical bus or device. Filters ESP-NOW frames by its own MAC and
+  bridges payloads to/from the device.
+
+### Node firmware (ESP32)
 
 Minimal firmware (~220 lines C++):
 - Boot → WiFi → mDNS discover mother → MQTT connect
@@ -70,10 +78,10 @@ Minimal firmware (~220 lines C++):
 ### MQTT Topic Convention
 
 ```
-osdl/nodes/{node_id}/register     # child → mother: hardware ID, baud rate
-osdl/nodes/{node_id}/heartbeat    # child → mother: alive ping
-osdl/serial/{node_id}/tx          # mother → child: bytes to write to UART
-osdl/serial/{node_id}/rx          # child → mother: bytes read from UART
+osdl/nodes/{node_id}/register     # node → mother: hardware ID, baud rate
+osdl/nodes/{node_id}/heartbeat    # node → mother: alive ping
+osdl/serial/{node_id}/tx          # mother → node: bytes to write to UART
+osdl/serial/{node_id}/rx          # node → mother: bytes read from UART
 ```
 
 ## Project Structure
@@ -95,7 +103,7 @@ crates/
 │   └── integration.rs       # 6 integration tests (adapters, store, engine)
 ├── osdl-cli/src/main.rs     # Standalone binary
 registry/unilabos/           # Device YAML schemas
-firmware/esp32/              # Child node firmware (PlatformIO, ESP32-S3)
+firmware/esp32/              # Node firmware (PlatformIO, ESP32-S3)
 ```
 
 ## Code Style

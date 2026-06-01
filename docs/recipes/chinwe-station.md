@@ -17,7 +17,7 @@ osdl serve --detach \
   --instance chinwe \
   --config docs/recipes/configs/chinwe-station.yaml \
   --registry $(pwd)/registry/unilabos \
-  --espnow-port /dev/cu.usbserial-A5069RR4
+  --dongle-port /dev/cu.usbserial-A5069RR4
 
 osdl --instance chinwe device wait id:'espnow:30EDA0B65B38:pump-1' --timeout 25s
 osdl --instance chinwe device list

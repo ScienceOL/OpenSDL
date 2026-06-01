@@ -65,7 +65,7 @@ OpenSDL connects laboratory hardware to your application through a unified contr
 
 - **Transport** — How bytes reach a device (MQTT serial, direct USB, TCP socket). Each device has one transport. The engine doesn't care which kind.
 - **ProtocolAdapter** — What bytes mean. Adapts a device driver ecosystem's description standard. Encodes commands to bytes, decodes responses to status. First supported: UniLabOS.
-- **Lightweight child (~$5)** — ESP32 as a serial-to-MQTT bridge. No OS, no drivers, no Docker. ~220 lines of firmware with mDNS auto-discovery.
+- **Lightweight node (~$5)** — ESP32 as a serial-to-MQTT bridge. No OS, no drivers, no Docker. ~220 lines of firmware with mDNS auto-discovery.
 - **Event Store** — Append-only SQLite log of all events, commands, and raw serial bytes for forensic replay and debugging.
 - **Embeddable** — Use `osdl-core` as a Rust library in your application, or run `osdl-cli` as a standalone process.
 

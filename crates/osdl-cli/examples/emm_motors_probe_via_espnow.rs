@@ -1,6 +1,6 @@
 //! Safe read-only probe for the two Emm V5.0 rotor motors (device_id 4, 5)
 //! sharing the same RS-485 bus as the three Runze pumps, behind one ESP-NOW
-//! child.
+//! node.
 //!
 //! This example sends **non-moving** commands only:
 //!   1. `get_position`  — pure query, motor does not move.
@@ -16,9 +16,9 @@
 //! Success criterion: both motors 4 and 5 return an 8-byte frame starting
 //! with their own device_id in response to `get_position`. Anything shorter
 //! or a timeout means the motor didn't answer — most commonly a baud-rate
-//! mismatch (child firmware UART is 9600) or wiring/power issue.
+//! mismatch (node firmware UART is 9600) or wiring/power issue.
 //!
-//! Caveat on baud rate: `espnow_child.rs` hard-codes UART1 at 9600, which
+//! Caveat on baud rate: `espnow_node.rs` hard-codes UART1 at 9600, which
 //! matches the Runze pumps we just verified. Emm V5.0 modules can also be
 //! ordered/configured at 115200 — if motors 4/5 don't answer but the pumps
 //! do, that's the first thing to check.
@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use osdl_core::driver::builtins::emm::{self, EmmConfig};
 use osdl_core::protocol::DeviceCommand;
-use osdl_core::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient};
+use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -39,9 +39,9 @@ const REPLY_WINDOW: Duration = Duration::from_millis(600);
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_GATEWAY_PORT")
+    let port = env::var("OSDL_DONGLE_PORT")
         .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
-    let child_id = env::var("OSDL_CHILD_ID")
+    let node_id = env::var("OSDL_NODE_ID")
         .unwrap_or_else(|_| "syringe_pump_with_valve.runze.SY03B-T06".to_string());
 
     let motors: Vec<(u8, EmmConfig)> = [4u8, 5u8]
@@ -50,21 +50,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     log::info!("configured 2 Emm codecs at device_id 4, 5 (read-only probe)");
 
-    // --- Gateway + child transport (shared bus with the pumps) ---
+    // --- Dongle + node transport (shared bus with the pumps) ---
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
-    let client = Arc::new(EspNowGatewayClient::new(port.clone(), 115200, tx));
+    let client = Arc::new(EspNowDongleClient::new(port.clone(), 115200, tx));
     client.start().await.map_err(|e| e.to_string())?;
 
-    log::info!("waiting up to 15s for REG <{}> ...", child_id);
+    log::info!("waiting up to 15s for REG <{}> ...", node_id);
     let mac = client
-        .wait_for_registration(&child_id, Duration::from_secs(15))
+        .wait_for_registration(&node_id, Duration::from_secs(15))
         .await?;
     log::info!(
         "discovered {} = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-        child_id, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        node_id, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
-    let child = EspNowChildTransport::new(mac, client.clone());
-    child.start().await.map_err(|e| e.to_string())?;
+    let node = EspNowNodeTransport::new(mac, client.clone());
+    node.start().await.map_err(|e| e.to_string())?;
 
     drain(&mut rx, Duration::from_millis(50)).await;
 
@@ -87,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let bytes = emm::encode(cfg, &cmd)
                 .map_err(|e| format!("encode motor {} {}: {}", id, action, e))?;
             log::info!("[motor {}] send {}: {}", id, action, hex(&bytes));
-            child.send(&bytes).await?;
+            node.send(&bytes).await?;
 
             let replies = collect(&mut rx, REPLY_WINDOW).await;
             if replies.is_empty() {
@@ -98,12 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
             for frame in replies {
-                // 8-byte child heartbeat (counter + uptime) — skip.
+                // 8-byte node heartbeat (counter + uptime) — skip.
                 if frame.data.len() == 8 && frame.data[0] <= 0x7F {
                     // Heuristic: Emm get_position reply is also 8 bytes and
                     // starts with the device_id (4 or 5). If first byte is 4
                     // or 5 we fall through to the decoder; otherwise assume
-                    // it's the child's heartbeat and drop it.
+                    // it's the node's heartbeat and drop it.
                     if frame.data[0] != *id {
                         log::debug!("[motor {}] heartbeat: {}", id, hex(&frame.data));
                         continue;

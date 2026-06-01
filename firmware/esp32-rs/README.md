@@ -1,75 +1,82 @@
 # osdl-esp32-firmware
 
-Rust firmware for the ESP32-S3 side of the OpenSDL lab-automation bridge.
+Rust firmware for the ESP32-S3 boards used in OpenSDL's two roles:
+
+- **Dongle** — plugs into the host (Mac/PC) over USB-CDC. Bridges the
+  host's serial line protocol to ESP-NOW broadcasts.
+- **Node** — plugs into a lab device's RS-485 / serial bus. Filters
+  ESP-NOW frames by its own MAC, forwards payloads to the device, and
+  ships replies back over ESP-NOW.
 
 ```
-┌─── Mac (OpenSDL host) ─────────────────────┐
+┌─── Mac / PC (OpenSDL host) ────────────────┐
 │                                              │
 │   writes `TX <mac> <hex>\n` / reads `RX ...` │
-│   over USB-CDC (CH343, 115200)               │
+│   over USB-CDC (115200, native USB)          │
 └─────────┼────────────────────────────────────┘
           │ USB-C
           ▼
-   Gateway  (YD-ESP32-S3)
+   Dongle  (ESP32-S3, e.g. Pocket-Dongle-S3)
           │
           │ ESP-NOW, channel 1, broadcast
           ▼
-   Child   (LilyGO T-Connect Pro)
-          │ UART1 @ GPIO17/18 → TD501D485H-A transceiver
+   Node    (LilyGO T-Connect Pro or ESP32 + MAX485)
+          │ UART → RS-485 transceiver
           ▼
-   RS-485 bus → lab device (Runze syringe pump, etc.)
+   RS-485 bus → lab device (Runze pump, stepper motor, …)
 ```
 
-The **gateway** speaks a simple ASCII line protocol over USB to the host;
-the **child** filters ESP-NOW frames by its own MAC and bridges them to
-RS-485. UART replies from the device go back up the same path.
+The wire protocol between dongle and node is identical regardless of
+hardware variant; the host-side `EspNowDongleClient` doesn't care which
+board it talks to.
 
 ## Hardware
 
-| Board                 | Role    | USB path (macOS, typical)       | Chip              |
-|-----------------------|---------|---------------------------------|-------------------|
-| YD-ESP32-S3 (N16R8)   | Gateway | `/dev/cu.usbserial-*` (CH343)   | ESP32-S3, 16 MB   |
-| LilyGO T-Connect Pro  | Child   | `/dev/cu.usbmodem*` (native USB)| ESP32-S3, 16 MB   |
+| Role   | Reference board                | Host USB path (macOS, typical) | Chip            |
+|--------|--------------------------------|--------------------------------|-----------------|
+| Dongle | Pocket-Dongle-S3 (with screen) | `/dev/cu.usbmodem*` (native)   | ESP32-S3, 16 MB |
+| Node   | LilyGO T-Connect Pro           | `/dev/cu.usbmodem*` (native)   | ESP32-S3, 16 MB |
+| Node   | ESP32 + external MAX485        | (sibling crate `firmware/esp32-max485`) | ESP32, 4 MB |
 
 Confirm the paths on your machine with `ls /dev/cu.usb*`.
 
-YD-ESP32-S3 note: use the **USB** port (native-USB) for flashing. The **COM**
-port (CH343) is where serial logs come out, and is also where the gateway
-accepts host commands on UART0.
+The dongle uses the ESP32-S3's **built-in USB-Serial-JTAG**, so it
+enumerates as `/dev/cu.usbmodem*` rather than `/dev/cu.usbserial-*`.
+There's no external FTDI/CH340 chip in the path.
 
-## Wire protocol (host ↔ gateway, over USB-CDC)
+## Wire protocol (host ↔ dongle, over USB-CDC)
 
-Host → gateway:
+Host → dongle:
 
 ```
 TX <dst_mac_hex> <hex_bytes>\n
 ```
 
-Gateway → host:
+Dongle → host:
 
 ```
 RX <src_mac_hex> <hex_bytes>\n
 ER <reason>\n
 ```
 
-Example — send `/1ZR\r\n` (Runze init) to the child at MAC `30EDA0B65B38`:
+Example — send `/1ZR\r\n` (Runze init) to a node at MAC `30EDA0B65B38`:
 
 ```
 TX 30EDA0B65B38 2F315A520D0A
 ```
 
-The child strips the MAC prefix, writes the remaining 6 bytes to UART1,
-and whatever comes back on the RS-485 bus is broadcast back as an
+The node strips the MAC prefix, writes the remaining 6 bytes to its
+RS-485 UART, and whatever comes back on the bus is broadcast back as an
 `RX …` line.
 
 ## Bins
 
-| `cargo run --bin …`        | Purpose                                                          |
-|----------------------------|-------------------------------------------------------------------|
-| `espnow-gateway`           | Runs on YD-ESP32-S3. Bridges Mac USB-CDC ↔ ESP-NOW.              |
-| `espnow-child`             | Runs on LilyGO T-Connect Pro. Bridges ESP-NOW ↔ RS-485 (UART1).  |
-| `uart-count`               | Minimal UART1 TX sanity check. Emits an incrementing integer.    |
-| `espnow-mac` / `espnow-diag` | Early ESP-NOW probes kept for reference.                       |
+| `cargo run --bin …`        | Purpose                                                                |
+|----------------------------|------------------------------------------------------------------------|
+| `espnow-dongle`            | Runs on the dongle. Bridges Mac USB-CDC ↔ ESP-NOW.                     |
+| `espnow-node`              | Runs on the node. Bridges ESP-NOW ↔ RS-485 (UART1).                    |
+| `uart-count`               | Minimal UART1 TX sanity check. Emits an incrementing integer.          |
+| `espnow-mac` / `espnow-diag` | Early ESP-NOW probes kept for reference.                             |
 
 ## Prerequisites
 
@@ -101,11 +108,7 @@ espup install
 
 This pulls ~500 MB of Xtensa LLVM + a custom Rust channel named `esp`, and
 writes an **export script** to your home directory — by default
-`~/export-esp.sh`. From `espup install --help`:
-
-> `-f, --export-file <EXPORT_FILE>`  Relative or full path for the export
-> file that will be generated. **If no path is provided, the file will be
-> generated under home directory.**
+`~/export-esp.sh`.
 
 ### 4. Source the export script in every shell that builds firmware
 
@@ -117,29 +120,7 @@ The script sets `PATH` and `LIBCLANG_PATH` so cargo can find the Xtensa
 toolchain and bindgen can find libclang. **Forgetting this step is the #1
 cause of confusing build errors** (missing target, missing libclang, etc.).
 
-You can put `source ~/export-esp.sh` in your `~/.zshrc` / `~/.bashrc` for
-convenience, but it affects every shell — fine in a dedicated firmware-dev
-box, less fine if you use the same terminal for other Rust projects.
-
-### 5. Verify the install
-
-```bash
-# All three should resolve to ~/.cargo/bin/
-which espup espflash ldproxy
-
-# Must exist and look like below — points at the toolchain you just installed:
-cat ~/export-esp.sh
-# export LIBCLANG_PATH="$HOME/.rustup/toolchains/esp/xtensa-esp32-elf-clang/.../esp-clang/lib"
-# export PATH="$HOME/.rustup/toolchains/esp/xtensa-esp-elf/.../xtensa-esp-elf/bin:$PATH"
-
-# After `source ~/export-esp.sh`, this should print the Xtensa path:
-echo "$LIBCLANG_PATH"
-```
-
-If `~/export-esp.sh` doesn't exist, `espup install` was interrupted — rerun
-it, or write a custom path with `espup install -f /some/path/export-esp.sh`.
-
-### 6. Copy the config template and fill in real values
+### 5. Copy the config template and fill in real values
 
 ```bash
 cp src/config.example.rs src/config.rs
@@ -147,7 +128,7 @@ cp src/config.example.rs src/config.rs
 ```
 
 `src/config.rs` is `.gitignore`d so credentials never land in a commit. The
-ESP-NOW bins (`espnow-gateway` / `espnow-child`) don't actually use WiFi,
+ESP-NOW bins (`espnow-dongle` / `espnow-node`) don't actually use WiFi,
 but the file still has to exist because `src/main.rs` references it.
 
 ## Build & flash
@@ -155,31 +136,32 @@ but the file still has to exist because `src/main.rs` references it.
 ```bash
 source ~/export-esp.sh
 
-# Gateway (YD-ESP32-S3)
-cargo build --release --bin espnow-gateway
-espflash flash --port /dev/cu.usbserial-XXXX --flash-size 16mb \
-    target/xtensa-esp32s3-espidf/release/espnow-gateway
+# Dongle
+cargo build --release --bin espnow-dongle
+espflash flash --port /dev/cu.usbmodem-XXXX \
+    target/xtensa-esp32s3-espidf/release/espnow-dongle
 
-# Child (LilyGO T-Connect Pro)
-cargo build --release --bin espnow-child
-espflash flash --port /dev/cu.usbmodem-XXXX --flash-size 16mb \
-    target/xtensa-esp32s3-espidf/release/espnow-child
+# Node (LilyGO T-Connect Pro)
+cargo build --release --bin espnow-node
+espflash flash --port /dev/cu.usbmodem-XXXX \
+    target/xtensa-esp32s3-espidf/release/espnow-node
 
 # Monitor logs (read-only)
 espflash monitor --port /dev/cu.usbmodem-XXXX --non-interactive
 ```
 
-`--flash-size 16mb` is required for the YD board; auto-detect sometimes
-reports 4 MB incorrectly.
+`espflash` auto-detects flash size on these boards. If it gets it wrong,
+pass `--flash-size 16mb` (or 4mb for plain ESP32 nodes via the sibling
+crate).
 
 ## Quick test — is the RS-485 link alive?
 
 Plug both boards in, then from the host:
 
 ```bash
-OSDL_GATEWAY_PORT=/dev/cu.usbserial-XXXX \
-OSDL_CHILD_PORT=/dev/cu.usbmodem-XXXX   \
-OSDL_CHILD_MAC=30EDA0B65B38             \
+OSDL_DONGLE_PORT=/dev/cu.usbmodem-XXXX \
+OSDL_NODE_PORT=/dev/cu.usbmodem-XXXX   \
+OSDL_NODE_MAC=30EDA0B65B38             \
     uv run --with pyserial python3 scripts/send_1zr.py
 ```
 
@@ -187,18 +169,18 @@ This sends `/1ZR\r\n` (Runze pump-1 init) through the full path and prints
 what each hop saw. A healthy run looks like:
 
 ```
-[mac->gw] b'TX 30EDA0B65B38 2F315A520D0A\n'
+[mac->dongle] b'TX 30EDA0B65B38 2F315A520D0A\n'
 
-====== GATEWAY log (tx->radio / ER / RX from child) ======
-  I ... espnow_gateway: [tx->radio] to=30EDA0B65B38 len=6
-  I ... espnow_gateway: RX 30EDA0B65B38 FF2F3040030D0A
+====== DONGLE log (tx->radio / ER / RX from node) ======
+  I ... espnow_dongle: [tx->radio] to=30EDA0B65B38 len=6
+  I ... espnow_dongle: RX 30EDA0B65B38 FF2F3040030D0A
 
-====== CHILD log (rx-for-me + any uart rx) ======
-  I ... espnow_child: [rx-for-me] 6 bytes -> UART: [2F, 31, 5A, 52, 0D, 0A]
-  I ... espnow_child: [uart rx -> radio] 7 bytes: [FF, 2F, 30, 40, 03, 0D, 0A]
+====== NODE log (rx-for-me + any uart rx) ======
+  I ... espnow_node: [rx-for-me] 6 bytes -> UART: [2F, 31, 5A, 52, 0D, 0A]
+  I ... espnow_node: [uart rx -> radio] 7 bytes: [FF, 2F, 30, 40, 03, 0D, 0A]
 ```
 
-The `FF 2F 30 40 03 0D 0A` in both the gateway RX line and the child
+The `FF 2F 30 40 03 0D 0A` in both the dongle RX line and the node
 `uart rx -> radio` log is the pump's reply.
 
 ## Common errors
@@ -210,7 +192,6 @@ The `FF 2F 30 40 03 0D 0A` in both the gateway RX line and the child
 | `toolchain 'esp' is not installed`               | `espup install` not completed                 | Rerun `espup install`                                |
 | `~/export-esp.sh: No such file`                  | `espup install` was interrupted               | Rerun, or `espup install -f <path>` to choose a path |
 | `espflash: port is busy`                         | Another `espflash monitor` is still attached  | `pkill espflash` or close the other terminal         |
-| Board boot-loops after flashing                  | Wrong flash size                              | Always pass `--flash-size 16mb`                      |
 | `cargo check` fails with main-workspace errors   | CWD isn't `firmware/esp32-rs`                 | `cd` into this directory first                       |
 | First build sits in `esp-idf-sys` for minutes    | Normal — embuild is fetching ESP-IDF v5.5.3   | Wait 3–5 minutes; subsequent builds are cached       |
 
@@ -218,10 +199,12 @@ The `FF 2F 30 40 03 0D 0A` in both the gateway RX line and the child
 
 - `espflash monitor` holds the serial port exclusively. Kill it before
   running `send_1zr.py` or any tool that writes to the same tty.
-- Gateway log output goes out of UART0 (CH343 / the "COM" USB-C port),
-  **not** the native-USB port. `cat /dev/cu.usbserial-*` on macOS can
-  behave poorly with CH343 — prefer `espflash monitor --non-interactive`.
-- If the child writes the command to UART1 (`[rx-for-me]` fires) but no
+- The dongle's logs and the host-side line protocol share the same
+  USB-CDC. `log::info!` lines (boot info, `[tx->radio]`, `RX ...`) and
+  the host's `TX ...\n` writes go through the same pipe — the line
+  parser on the host matches `RX ` anywhere in the line so log noise
+  doesn't break it.
+- If the node writes the command to UART (`[rx-for-me]` fires) but no
   `uart rx -> radio` comes back, look at the RS-485 wiring first:
   A/B polarity is commonly swapped, and the isolated-side ground (SGND)
   must be connected to the bus signal ground — NOT the MCU DGND.
@@ -242,8 +225,8 @@ firmware/esp32-rs/
     ├── main.rs
     ├── config.example.rs     # copy to config.rs and fill in
     └── bin/
-        ├── espnow_gateway.rs # YD gateway firmware
-        ├── espnow_child.rs   # LilyGO child firmware
+        ├── espnow_dongle.rs  # Dongle firmware (Mac USB-CDC ↔ ESP-NOW)
+        ├── espnow_node.rs    # Node firmware (ESP-NOW ↔ RS-485)
         ├── uart_count.rs     # UART1 TX sanity check
         ├── espnow_mac.rs     # early MAC print helper
         └── espnow_diag.rs    # early ESP-NOW receive diag

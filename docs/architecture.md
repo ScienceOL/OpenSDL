@@ -2,7 +2,7 @@
 
 ## System Overview
 
-OpenSDL is a mother-child mesh network for laboratory hardware control, with a pluggable transport layer that supports multiple communication paths.
+OpenSDL is a mother-node mesh network for laboratory hardware control, with a pluggable transport layer that supports multiple communication paths.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ OpenSDL is a mother-child mesh network for laboratory hardware control, with a p
      │            │              │            (future)
 ┌────▼────┐  ┌───▼────┐   ┌────▼────┐
 │  ESP32  │  │ Direct │   │ Network │
-│  Child  │  │ Device │   │ Device  │
+│  Node   │  │ Device │   │ Device  │
 │  Node   │  │        │   │         │
 └────┬────┘  └───┬────┘   └─────────┘
      │ 485/232   │ USB
@@ -76,11 +76,11 @@ Each `Device` has a `transport_id` that identifies its transport:
 | **MqttSerial** | 5-20ms | RS-485/232 devices via ESP32 WiFi bridge | ESP32 (\$3) + transceiver (\$1) |
 | **DirectSerial** | < 1ms | USB devices plugged into mother node | None |
 | **TCP** | 1-5ms | Modbus TCP, SCPI over TCP, network instruments | None |
-| **ESP-NOW** (future) | 1-3ms | Low-latency wireless, no WiFi needed | ESP32 USB gateway ($3) |
+| **ESP-NOW** (future) | 1-3ms | Low-latency wireless, no WiFi needed | ESP32 USB dongle ($3) |
 
-## Child Node (ESP32)
+## Node (ESP32)
 
-Child nodes are **dumb serial-to-MQTT bridges**. No drivers, no protocol parsing, no OS.
+Nodes are **dumb serial-to-MQTT bridges**. No drivers, no protocol parsing, no OS.
 
 Minimal firmware (~220 lines C++):
 - Boot → WiFi connect → mDNS discover mother → MQTT connect
@@ -93,15 +93,15 @@ Hardware: ESP32-S3 (~\$3) + RS-485 transceiver (~\$1) + PCB. Can be built as a s
 
 ### mDNS Auto-Discovery
 
-Child nodes automatically discover the mother node via mDNS:
+Nodes automatically discover the mother node via mDNS:
 
 ```
 Mother advertises: _osdl._tcp.local  (port 1883)
-Child queries:     _osdl._tcp.local  → gets mother IP
+Node queries:     _osdl._tcp.local  → gets mother IP
                    → connects to MQTT broker
 ```
 
-No hardcoded IPs needed. If mDNS fails, the child falls back to a static IP from config.
+No hardcoded IPs needed. If mDNS fails, the node falls back to a static IP from config.
 
 ## ProtocolAdapter Design
 
@@ -149,10 +149,10 @@ Device sends response bytes
   → Host application receives via event channel
 ```
 
-### Child Node Registration (first boot, MQTT serial only)
+### Node Registration (first boot, MQTT serial only)
 
 ```
-Child boots
+Node boots
   → WiFi connect → mDNS discover → MQTT connect
   → Publish: osdl/nodes/{node_id}/register { hardware_id, baud_rate }
   → Engine creates MqttSerialTransport for this node
@@ -175,12 +175,12 @@ Queryable by event type, device ID, and time range.
 
 ```
 # Node management
-osdl/nodes/{node_id}/register              # child → mother: hardware ID, baud rate
-osdl/nodes/{node_id}/heartbeat             # child → mother: alive ping
+osdl/nodes/{node_id}/register              # node → mother: hardware ID, baud rate
+osdl/nodes/{node_id}/heartbeat             # node → mother: alive ping
 
 # Serial byte tunneling
-osdl/serial/{node_id}/tx                   # mother → child: bytes to write to UART
-osdl/serial/{node_id}/rx                   # child → mother: bytes read from UART
+osdl/serial/{node_id}/tx                   # mother → node: bytes to write to UART
+osdl/serial/{node_id}/rx                   # node → mother: bytes read from UART
 
 # Device-level (after mother parses serial responses via driver)
 osdl/devices/{device_id}/status            # mother publishes parsed device status
@@ -202,7 +202,7 @@ Xyzen Cloud → WebSocket → Runner → OsdlEngine → Transport → Device
 
 ## Wireless Communication Options
 
-### Current: WiFi + MQTT (via ESP32 child node)
+### Current: WiFi + MQTT (via ESP32 node)
 
 | Component | Typical Latency | Worst Case |
 |-----------|----------------|------------|
@@ -225,7 +225,7 @@ ESP-NOW:   [802.11] → [ESP-NOW header] → payload        (~30B overhead, stat
 - **1-3ms latency**, minimal jitter
 - No WiFi router, no broker, no TCP connections
 - 250 bytes/packet (plenty for serial commands)
-- Requires one ESP32 as USB gateway on the mother node
+- Requires one ESP32 as USB dongle on the mother node
 
 Architecture with ESP-NOW:
 
@@ -249,5 +249,5 @@ Architecture with ESP-NOW:
 
 - MQTT broker should use TLS + authentication in production
 - Driver code is from the local registry — mother controls what gets loaded
-- Child nodes are minimal firmware with no attack surface beyond MQTT
+- Nodes are minimal firmware with no attack surface beyond MQTT
 - Event store provides complete audit trail of all commands and responses

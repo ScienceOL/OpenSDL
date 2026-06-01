@@ -1,5 +1,5 @@
-# Two-station setup: chinwe + laiyu_xyz on one mother, one gateway.
-# Demonstrates that `buses` is an array — each child REG independently
+# Two-station setup: chinwe + laiyu_xyz on one mother, one dongle.
+# Demonstrates that `buses` is an array — each node REG independently
 # matches its own entry, no fallback collision.
 
 mqtt: ~

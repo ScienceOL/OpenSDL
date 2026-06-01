@@ -1,14 +1,14 @@
-//! Minimal probe: prove `EspNowGatewayClient` + `EspNowChildTransport` work
-//! end-to-end against a real gateway board.
+//! Minimal probe: prove `EspNowDongleClient` + `EspNowNodeTransport` work
+//! end-to-end against a real dongle board.
 //!
-//! Discovery is now REG-based: the probe waits for the child to announce
+//! Discovery is now REG-based: the probe waits for the node to announce
 //! itself via `REG <hardware_id>` on the radio, then uses the MAC it
-//! learned to set up a per-child transport. No hard-coded MAC needed.
+//! learned to set up a per-node transport. No hard-coded MAC needed.
 //!
 //! What it does:
-//!   1. Opens the gateway serial port (default `/dev/cu.usbserial-A5069RR4`).
-//!   2. Waits up to 15s for a REG frame matching `OSDL_CHILD_ID` (default "pump-01").
-//!   3. Listens for inbound telemetry from that child for 5 seconds.
+//!   1. Opens the dongle serial port (default `/dev/cu.usbserial-A5069RR4`).
+//!   2. Waits up to 15s for a REG frame matching `OSDL_NODE_ID` (default "pump-01").
+//!   3. Listens for inbound telemetry from that node for 5 seconds.
 //!   4. Sends one downstream test frame (`DE AD BE EF CA FE`).
 //!   5. Listens 2 more seconds for follow-up frames.
 //!
@@ -16,15 +16,15 @@
 //!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
 //!
 //! Override via env vars:
-//!   OSDL_GATEWAY_PORT=/dev/cu.usbserial-XXXX \
-//!   OSDL_CHILD_ID=pump-01 \
+//!   OSDL_DONGLE_PORT=/dev/cu.usbserial-XXXX \
+//!   OSDL_NODE_ID=pump-01 \
 //!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
 
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-use osdl_core::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient};
+use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -32,30 +32,30 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_GATEWAY_PORT")
+    let port = env::var("OSDL_DONGLE_PORT")
         .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
-    let child_id = env::var("OSDL_CHILD_ID").unwrap_or_else(|_| "pump-01".to_string());
+    let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
-    let client = Arc::new(EspNowGatewayClient::new(port.clone(), 115200, tx));
+    let client = Arc::new(EspNowDongleClient::new(port.clone(), 115200, tx));
     client.start().await.map_err(|e| e.to_string())?;
 
-    log::info!("waiting up to 15s for REG <{}> ...", child_id);
+    log::info!("waiting up to 15s for REG <{}> ...", node_id);
     let mac = client
-        .wait_for_registration(&child_id, Duration::from_secs(15))
+        .wait_for_registration(&node_id, Duration::from_secs(15))
         .await?;
     log::info!(
         "discovered {} = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-        child_id,
+        node_id,
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
-    let child = EspNowChildTransport::new(mac, client.clone());
-    child.start().await.map_err(|e| e.to_string())?;
+    let node = EspNowNodeTransport::new(mac, client.clone());
+    node.start().await.map_err(|e| e.to_string())?;
 
     log::info!(
         "probe ready — listening for frames from {} for 5s ...",
-        child_id
+        node_id
     );
 
     // Phase 1: passive listen
@@ -77,20 +77,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if rx_count == 0 {
         log::warn!(
-            "no frames received in 5s. Is the child board powered + on channel 1? \
-             Is the gateway flashed with `espnow_gateway`?"
+            "no frames received in 5s. Is the node board powered + on channel 1? \
+             Is the dongle flashed with `espnow_dongle`?"
         );
     }
 
     // Phase 2: downstream send
     let payload = [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
     log::info!(
-        "sending downstream {}B to {} via gateway: {}",
+        "sending downstream {}B to {} via dongle: {}",
         payload.len(),
-        child_id,
+        node_id,
         hex(&payload)
     );
-    child.send(&payload).await?;
+    node.send(&payload).await?;
 
     // Phase 3: listen again for follow-up frames
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);

@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
 
     thread::sleep(Duration::from_secs(3));
 
-    log::info!("=== OpenSDL child node (Rust) — Phase 1b: mDNS + MQTT ===");
+    log::info!("=== OpenSDL node (Rust) — Phase 1b: mDNS + MQTT ===");
     log::info!("node_id={} hardware_id={}", config::NODE_ID, config::HARDWARE_ID);
 
     let peripherals = Peripherals::take()?;

@@ -1,18 +1,18 @@
 # ChinWe separator station — bus manifest.
 #
-# One ESP-NOW child fronts a shared RS-485 bus carrying 5 addressable
+# One ESP-NOW node fronts a shared RS-485 bus carrying 5 addressable
 # devices: 3 syringe pumps (Runze SY-03B at addresses 1/2/3) and 2 Emm V5.0
 # stepper motors (device_id 4/5, used as the stirrer and drain valve).
 #
-# The child REGs as `syringe_pump_with_valve.runze.SY03B-T06` (its
+# The node REGs as `syringe_pump_with_valve.runze.SY03B-T06` (its
 # hardware_id, baked into the firmware). The bus manifest below tells the
-# engine that this single child should expose 5 distinct devices, each
+# engine that this single node should expose 5 distinct devices, each
 # addressable by a `local_id` (pump-1 … motor-5).
 #
 # Use with:
 #   osdl serve --config docs/recipes/configs/chinwe-station.yaml \
 #              --registry $(pwd)/registry/unilabos \
-#              --espnow-port /dev/cu.usbserial-XXXX
+#              --dongle-port /dev/cu.usbserial-XXXX
 
 mqtt: ~  # No MQTT bridge needed — ESP-NOW only.
 

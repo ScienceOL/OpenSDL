@@ -2,7 +2,7 @@
 //!
 //! The ChinWe station runs three Runze SY-03B pumps at addresses 1/2/3 on an
 //! internal RS-485 bus whose master is normally a WiFi+TCP bridge module.
-//! We've replaced that master with the LilyGO ESP-NOW child, so the bus
+//! We've replaced that master with the LilyGO ESP-NOW node, so the bus
 //! protocol is the same — Runze ASCII — but line endings are `\r` (not `\r\n`).
 //!
 //! Sends `/<addr>?0\r` to addresses 1..=3 and prints any reply.
@@ -14,7 +14,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-use osdl_core::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient};
+use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -22,20 +22,20 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_GATEWAY_PORT")
+    let port = env::var("OSDL_DONGLE_PORT")
         .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
-    let child_id = env::var("OSDL_CHILD_ID").unwrap_or_else(|_| "pump-01".to_string());
+    let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
-    let client = Arc::new(EspNowGatewayClient::new(port.clone(), 115200, tx));
+    let client = Arc::new(EspNowDongleClient::new(port.clone(), 115200, tx));
     client.start().await.map_err(|e| e.to_string())?;
 
-    log::info!("waiting up to 15s for REG <{}> ...", child_id);
+    log::info!("waiting up to 15s for REG <{}> ...", node_id);
     let mac = client
-        .wait_for_registration(&child_id, Duration::from_secs(15))
+        .wait_for_registration(&node_id, Duration::from_secs(15))
         .await?;
-    let child = EspNowChildTransport::new(mac, client.clone());
-    child.start().await.map_err(|e| e.to_string())?;
+    let node = EspNowNodeTransport::new(mac, client.clone());
+    node.start().await.map_err(|e| e.to_string())?;
 
     // Drain buffered telemetry
     let drain_deadline = tokio::time::Instant::now() + Duration::from_millis(300);
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for bytes in &test_patterns {
         log::info!("→ pattern ({} B): {}", bytes.len(), escape(bytes));
-        child.send(bytes).await?;
+        node.send(bytes).await?;
 
         // Listen for 2s — anything appearing here is either a pump reply OR
         // our own TX echoing back through the transceiver's RX path.

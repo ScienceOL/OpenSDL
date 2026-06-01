@@ -1,23 +1,23 @@
-//! ESP-NOW gateway transport — one USB-CDC gateway multiplexing N ESP-NOW children.
+//! ESP-NOW dongle transport — one USB-CDC dongle multiplexing N ESP-NOW nodes.
 //!
-//! Architecture (Option B — "per-child transport over a shared gateway client"):
+//! Architecture (Option B — "per-node transport over a shared dongle client"):
 //! ```text
 //!   engine device "pump-01"  ─┐
-//!   engine device "pump-02"  ─┤ Arc<EspNowGatewayClient>  ──USB──  Gateway ESP32
+//!   engine device "pump-02"  ─┤ Arc<EspNowDongleClient>  ──USB──  Dongle ESP32
 //!   engine device "balance-1" ─┘    (owns serial I/O)                  ↕ ESP-NOW
-//!                                                                    children
+//!                                                                       nodes
 //! ```
 //!
-//! The shared `EspNowGatewayClient` owns the serial port and parses the line
-//! protocol emitted by `espnow_gateway.rs` on the YD board:
-//!   `I (123) espnow_gateway: RX <mac_hex> <hex_bytes>\n`
+//! The shared `EspNowDongleClient` owns the serial port and parses the line
+//! protocol emitted by the dongle firmware (`espnow_dongle.rs` on-board):
+//!   `I (123) espnow_dongle: RX <mac_hex> <hex_bytes>\n`
 //! Outbound frames become:
 //!   `TX <mac_hex> <hex_bytes>\n`
 //!
-//! Each child is exposed to the engine as its own `EspNowChildTransport` whose
+//! Each node is exposed to the engine as its own `EspNowNodeTransport` whose
 //! `transport_id` is derived from its MAC (`"espnow:<MAC_HEX>"`). Using the MAC
 //! — which is guaranteed unique per board — avoids collisions when two
-//! children run the same firmware / announce the same `hardware_id`. The
+//! nodes run the same firmware / announce the same `hardware_id`. The
 //! client also tracks an auxiliary `MAC ↔ hardware_id` table so callers that
 //! care (e.g. `wait_for_registration`) can still look up by hardware_id.
 //!
@@ -34,27 +34,27 @@ use tokio::task::JoinHandle;
 
 pub type Mac = [u8; 6];
 
-/// Marker prefix in ESP-NOW payloads used by children to announce their
-/// hardware_id. Keep in sync with firmware (`espnow_child.rs::send_reg`).
+/// Marker prefix in ESP-NOW payloads used by nodes to announce their
+/// hardware_id. Keep in sync with firmware (the node bins' `send_reg`).
 const REG_PREFIX: &[u8] = b"REG ";
 
-/// Emitted by the gateway read loop every time a REG frame arrives. Consumers
-/// (e.g. `OsdlEngine`) subscribe to build per-child transports and devices.
+/// Emitted by the dongle read loop every time a REG frame arrives. Consumers
+/// (e.g. `OsdlEngine`) subscribe to build per-node transports and devices.
 #[derive(Debug, Clone)]
 pub struct RegEvent {
     pub hardware_id: String,
     pub mac: Mac,
-    /// True the first time this MAC is seen on this gateway; false if the
-    /// child is re-announcing (e.g. after a reboot).
+    /// True the first time this MAC is seen on this dongle; false if the
+    /// node is re-announcing (e.g. after a reboot).
     pub is_new: bool,
 }
 
-/// Shared owner of the USB-CDC connection to a gateway board. Holds the
+/// Shared owner of the USB-CDC connection to a dongle board. Holds the
 /// `MAC ↔ hardware_id` table used to route inbound frames and exposes a
-/// `send_to_mac` entrypoint for per-child transports to call. Children
-/// announce themselves via `REG <hardware_id>` broadcasts which the client
-/// parses to keep the table up to date (no static config required).
-pub struct EspNowGatewayClient {
+/// `send_to_mac` entrypoint for per-node transports to call. Nodes announce
+/// themselves via `REG <hardware_id>` broadcasts which the client parses
+/// to keep the table up to date (no static config required).
+pub struct EspNowDongleClient {
     port_path: String,
     baud_rate: u32,
     rx_tx: mpsc::UnboundedSender<TransportRx>,
@@ -62,7 +62,7 @@ pub struct EspNowGatewayClient {
     /// Fires whenever a new REG arrives, so `wait_for_registration` can wake up.
     reg_notify: Notify,
     /// Broadcasts every REG frame so multiple subscribers (engine, tests, …)
-    /// can react to child registration independently.
+    /// can react to node registration independently.
     reg_tx: broadcast::Sender<RegEvent>,
     connected: Arc<AtomicBool>,
     writer: Arc<Mutex<Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>>,
@@ -86,7 +86,7 @@ impl Routes {
     }
 }
 
-impl EspNowGatewayClient {
+impl EspNowDongleClient {
     pub fn new(
         port_path: String,
         baud_rate: u32,
@@ -106,7 +106,7 @@ impl EspNowGatewayClient {
         }
     }
 
-    /// Subscribe to REG events from this gateway. Each new subscription gets
+    /// Subscribe to REG events from this dongle. Each new subscription gets
     /// future events only (broadcast semantics); call `register_device` or
     /// iterate `known_registrations()` if you need the current state.
     pub fn subscribe_reg(&self) -> broadcast::Receiver<RegEvent> {
@@ -126,7 +126,7 @@ impl EspNowGatewayClient {
     }
 
     /// Register a hardware_id ↔ MAC binding manually. Normally unnecessary —
-    /// children announce themselves via REG frames — but useful for tests or
+    /// nodes announce themselves via REG frames — but useful for tests or
     /// to pre-seed the table before a device has booted.
     pub async fn register_device(&self, hardware_id: String, mac: Mac) {
         let is_new = {
@@ -148,9 +148,9 @@ impl EspNowGatewayClient {
         self.routes.read().await.id_to_mac.get(hardware_id).copied()
     }
 
-    /// Block until a child announces (or has already announced) `hardware_id`
+    /// Block until a node announces (or has already announced) `hardware_id`
     /// via REG. Returns its MAC. Useful for callers that want to construct an
-    /// `EspNowChildTransport` without knowing the MAC in advance.
+    /// `EspNowNodeTransport` without knowing the MAC in advance.
     pub async fn wait_for_registration(
         &self,
         hardware_id: &str,
@@ -170,7 +170,7 @@ impl EspNowGatewayClient {
                 Ok(()) => continue,
                 Err(_) => {
                     return Err(format!(
-                        "timed out waiting for REG <{}> on gateway {}",
+                        "timed out waiting for REG <{}> on dongle {}",
                         hardware_id, self.port_path
                     ))
                 }
@@ -182,17 +182,17 @@ impl EspNowGatewayClient {
         self.connected.load(Ordering::Relaxed)
     }
 
-    /// Send a payload to one child, identified by MAC. Formats as
-    /// `TX <mac_hex> <hex_bytes>\n` on the gateway's UART.
+    /// Send a payload to one node, identified by MAC. Formats as
+    /// `TX <mac_hex> <hex_bytes>\n` on the dongle's USB-CDC.
     pub async fn send_to_mac(&self, mac: Mac, bytes: &[u8]) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let line = format!("TX {} {}\n", mac_hex(&mac), bytes_hex(bytes));
         let mut guard = self.writer.lock().await;
-        let writer = guard.as_mut().ok_or("Gateway serial port not open")?;
+        let writer = guard.as_mut().ok_or("Dongle serial port not open")?;
         writer
             .write_all(line.as_bytes())
             .await
-            .map_err(|e| format!("Gateway serial write error: {}", e))
+            .map_err(|e| format!("Dongle serial write error: {}", e))
     }
 
     #[cfg(feature = "espnow")]
@@ -201,14 +201,14 @@ impl EspNowGatewayClient {
         use tokio_serial::SerialPortBuilderExt;
 
         log::info!(
-            "ESP-NOW gateway: opening {} @ {} baud",
+            "ESP-NOW dongle: opening {} @ {} baud",
             self.port_path,
             self.baud_rate
         );
 
         let stream = tokio_serial::new(&self.port_path, self.baud_rate)
             .open_native_async()
-            .map_err(|e| format!("Gateway open {} failed: {}", self.port_path, e))?;
+            .map_err(|e| format!("Dongle open {} failed: {}", self.port_path, e))?;
 
         let (reader, writer) = tokio::io::split(stream);
         *self.writer.lock().await = Some(Box::new(writer));
@@ -236,13 +236,13 @@ impl EspNowGatewayClient {
                     };
                     if is_new {
                         log::info!(
-                            "gateway registered {} = {}",
+                            "dongle registered {} = {}",
                             hardware_id,
                             mac_hex(&mac)
                         );
                     } else {
                         log::debug!(
-                            "gateway re-REG {} = {}",
+                            "dongle re-REG {} = {}",
                             hardware_id,
                             mac_hex(&mac)
                         );
@@ -257,7 +257,7 @@ impl EspNowGatewayClient {
                 }
 
                 // Route by MAC — every distinct board gets its own transport_id,
-                // so two children running identical firmware don't collide.
+                // so two nodes running identical firmware don't collide.
                 // Frames from MACs we've never seen a REG for are dropped: the
                 // engine has no Device keyed on them yet and the convention is
                 // REG-first anyway.
@@ -269,19 +269,19 @@ impl EspNowGatewayClient {
                     });
                 } else {
                     log::debug!(
-                        "gateway RX from unregistered MAC {} ({} bytes) — dropping",
+                        "dongle RX from unregistered MAC {} ({} bytes) — dropping",
                         mac_hex(&mac),
                         payload.len()
                     );
                 }
             }
             connected.store(false, Ordering::Relaxed);
-            log::info!("ESP-NOW gateway read loop ended for {}", port_path);
+            log::info!("ESP-NOW dongle read loop ended for {}", port_path);
         });
 
         *self.read_task.lock().await = Some(handle);
         log::info!(
-            "ESP-NOW gateway: opened {} @ {} baud",
+            "ESP-NOW dongle: opened {} @ {} baud",
             self.port_path,
             self.baud_rate
         );
@@ -302,28 +302,28 @@ impl EspNowGatewayClient {
             handle.abort();
         }
         self.connected.store(false, Ordering::Relaxed);
-        log::info!("ESP-NOW gateway: closed {}", self.port_path);
+        log::info!("ESP-NOW dongle: closed {}", self.port_path);
         Ok(())
     }
 }
 
-/// Canonical engine-facing transport id for a child, keyed on its MAC so
+/// Canonical engine-facing transport id for a node, keyed on its MAC so
 /// that two boards running identical firmware don't collide. Shared between
-/// the gateway read loop (which stamps inbound frames) and the engine (which
+/// the dongle read loop (which stamps inbound frames) and the engine (which
 /// looks them up).
 pub fn transport_id_for(mac: &Mac) -> String {
     format!("espnow:{}", mac_hex(mac))
 }
 
-/// Per-child transport. Delegates all I/O to a shared `EspNowGatewayClient`.
-/// Transport id is derived from the child's MAC (see [`transport_id_for`]).
-pub struct EspNowChildTransport {
+/// Per-node transport. Delegates all I/O to a shared `EspNowDongleClient`.
+/// Transport id is derived from the node's MAC (see [`transport_id_for`]).
+pub struct EspNowNodeTransport {
     mac: Mac,
-    client: Arc<EspNowGatewayClient>,
+    client: Arc<EspNowDongleClient>,
 }
 
-impl EspNowChildTransport {
-    pub fn new(mac: Mac, client: Arc<EspNowGatewayClient>) -> Self {
+impl EspNowNodeTransport {
+    pub fn new(mac: Mac, client: Arc<EspNowDongleClient>) -> Self {
         Self { mac, client }
     }
 
@@ -337,13 +337,13 @@ impl EspNowChildTransport {
 }
 
 #[async_trait]
-impl Transport for EspNowChildTransport {
+impl Transport for EspNowNodeTransport {
     fn transport_type(&self) -> &str {
         "espnow"
     }
 
     fn description(&self) -> String {
-        format!("ESP-NOW {} via gateway", mac_hex(&self.mac))
+        format!("ESP-NOW {} via dongle", mac_hex(&self.mac))
     }
 
     async fn send(&self, bytes: &[u8]) -> Result<(), String> {
@@ -365,9 +365,9 @@ impl Transport for EspNowChildTransport {
 
 // ---------- Line parsing ----------
 
-/// Parse `<stuff> RX <mac_hex12> <hex_bytes>` out of a gateway UART log line.
-/// The gateway emits frames through ESP-IDF's logger, which prefixes them with
-/// `I (ts) espnow_gateway:` and a timestamp — we skip that prefix and match on
+/// Parse `<stuff> RX <mac_hex12> <hex_bytes>` out of a dongle USB-CDC log line.
+/// The dongle emits frames through ESP-IDF's logger, which prefixes them with
+/// `I (ts) espnow_dongle:` and a timestamp — we skip that prefix and match on
 /// `RX ` appearing anywhere in the line.
 pub(crate) fn parse_rx_line(line: &str) -> Option<(Mac, Vec<u8>)> {
     let idx = line.find("RX ")?;
@@ -439,8 +439,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_typical_gateway_log_line() {
-        let line = "I (782) espnow_gateway: RX 30EDA0B65B38 26000000E5950000";
+    fn parses_typical_dongle_log_line() {
+        let line = "I (782) espnow_dongle: RX 30EDA0B65B38 26000000E5950000";
         let (mac, data) = parse_rx_line(line).unwrap();
         assert_eq!(mac, [0x30, 0xED, 0xA0, 0xB6, 0x5B, 0x38]);
         assert_eq!(data, vec![0x26, 0x00, 0x00, 0x00, 0xE5, 0x95, 0x00, 0x00]);
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn ignores_non_rx_lines() {
-        assert!(parse_rx_line("I (123) espnow_gateway: [tx->radio] to=... len=6").is_none());
+        assert!(parse_rx_line("I (123) espnow_dongle: [tx->radio] to=... len=6").is_none());
         assert!(parse_rx_line("some random noise").is_none());
     }
 

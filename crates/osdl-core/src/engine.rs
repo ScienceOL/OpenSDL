@@ -6,8 +6,8 @@ use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
 #[cfg(feature = "espnow")]
-use crate::transport::espnow_gateway::{
-    transport_id_for as espnow_transport_id, EspNowChildTransport, EspNowGatewayClient, Mac,
+use crate::transport::espnow_dongle::{
+    transport_id_for as espnow_transport_id, EspNowNodeTransport, EspNowDongleClient, Mac,
     RegEvent,
 };
 use crate::transport::mqtt_serial::MqttSerialTransport;
@@ -266,13 +266,13 @@ pub struct OsdlEngine {
     /// ESP-NOW gateway boards kept alive for the lifetime of the engine.
     /// Indexed by serial port path; each owns a serial read loop.
     #[cfg(feature = "espnow")]
-    espnow_gateways: Arc<RwLock<HashMap<String, Arc<EspNowGatewayClient>>>>,
+    espnow_dongles: Arc<RwLock<HashMap<String, Arc<EspNowDongleClient>>>>,
     /// REG events from all gateways, multiplexed into one stream for the
     /// main select! loop to react to.
     #[cfg(feature = "espnow")]
-    espnow_reg_tx: mpsc::UnboundedSender<(Arc<EspNowGatewayClient>, RegEvent)>,
+    espnow_reg_tx: mpsc::UnboundedSender<(Arc<EspNowDongleClient>, RegEvent)>,
     #[cfg(feature = "espnow")]
-    espnow_reg_rx: Option<mpsc::UnboundedReceiver<(Arc<EspNowGatewayClient>, RegEvent)>>,
+    espnow_reg_rx: Option<mpsc::UnboundedReceiver<(Arc<EspNowDongleClient>, RegEvent)>>,
 }
 
 impl OsdlEngine {
@@ -327,7 +327,7 @@ impl OsdlEngine {
             cmd_inject_rx: Some(cmd_inject_rx),
             mqtt_client: None,
             #[cfg(feature = "espnow")]
-            espnow_gateways: Arc::new(RwLock::new(HashMap::new())),
+            espnow_dongles: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "espnow")]
             espnow_reg_tx,
             #[cfg(feature = "espnow")]
@@ -450,7 +450,7 @@ impl OsdlEngine {
         // serial read loop and emits REG events for registration-driven
         // device discovery.
         #[cfg(feature = "espnow")]
-        self.start_espnow_gateways().await;
+        self.start_espnow_dongles().await;
 
         // Start the media gateway (mediamtx) when any media sources are
         // configured. Failures here don't abort the engine — devices and
@@ -611,10 +611,10 @@ impl OsdlEngine {
         }
 
         // Explicitly stop every ESP-NOW gateway so the read tasks (which hold
-        // `Arc<EspNowGatewayClient>`) can drop — otherwise they'd live on
+        // `Arc<EspNowDongleClient>`) can drop — otherwise they'd live on
         // until their serial port EOFs.
         #[cfg(feature = "espnow")]
-        self.stop_espnow_gateways().await;
+        self.stop_espnow_dongles().await;
 
         if let Some(p) = media_proc.take() {
             p.shutdown().await;
@@ -872,27 +872,27 @@ impl OsdlEngine {
         }
     }
 
-    /// Spin up every gateway in `config.espnow_gateways`, subscribe to their
+    /// Spin up every dongle in `config.espnow_dongles`, subscribe to their
     /// REG streams, and forward events into the engine's main loop. Replays
     /// any registrations that already arrived before the listener attached.
     #[cfg(feature = "espnow")]
-    async fn start_espnow_gateways(&self) {
-        for gw_cfg in &self.handle.config.espnow_gateways {
-            let client = Arc::new(EspNowGatewayClient::new(
-                gw_cfg.port.clone(),
-                gw_cfg.baud_rate,
+    async fn start_espnow_dongles(&self) {
+        for cfg in &self.handle.config.espnow_dongles {
+            let client = Arc::new(EspNowDongleClient::new(
+                cfg.port.clone(),
+                cfg.baud_rate,
                 self.handle.transport_rx_tx.clone(),
             ));
             if let Err(e) = client.start().await {
-                log::error!("Failed to start ESP-NOW gateway on {}: {}", gw_cfg.port, e);
+                log::error!("Failed to start ESP-NOW dongle on {}: {}", cfg.port, e);
                 continue;
             }
-            self.espnow_gateways
+            self.espnow_dongles
                 .write()
                 .await
-                .insert(gw_cfg.port.clone(), client.clone());
+                .insert(cfg.port.clone(), client.clone());
 
-            // Pump REG events from this gateway into the engine's unified
+            // Pump REG events from this dongle into the engine's unified
             // select! loop via the shared espnow_reg channel.
             let mut reg_rx = client.subscribe_reg();
             let forward_tx = self.espnow_reg_tx.clone();
@@ -914,7 +914,7 @@ impl OsdlEngine {
             });
 
             // Replay any registrations that arrived between start() and
-            // subscribe_reg() — otherwise a fast-booting child could register
+            // subscribe_reg() — otherwise a fast-booting node could register
             // before we're listening.
             for (hardware_id, mac) in client.known_registrations().await {
                 let _ = self.espnow_reg_tx.send((
@@ -928,47 +928,47 @@ impl OsdlEngine {
             }
 
             log::info!(
-                "ESP-NOW gateway listening on {} @ {} baud",
-                gw_cfg.port,
-                gw_cfg.baud_rate
+                "ESP-NOW dongle listening on {} @ {} baud",
+                cfg.port,
+                cfg.baud_rate
             );
         }
     }
 
-    /// Stop every ESP-NOW gateway this engine started, so their read tasks
+    /// Stop every ESP-NOW dongle this engine started, so their read tasks
     /// can drop and the engine shuts down cleanly. Called automatically at
     /// the end of `run()`.
     #[cfg(feature = "espnow")]
-    async fn stop_espnow_gateways(&self) {
-        let gateways: Vec<_> = {
-            let mut guard = self.espnow_gateways.write().await;
+    async fn stop_espnow_dongles(&self) {
+        let dongles: Vec<_> = {
+            let mut guard = self.espnow_dongles.write().await;
             guard.drain().collect()
         };
-        for (port, client) in gateways {
+        for (port, client) in dongles {
             if let Err(e) = client.stop().await {
-                log::warn!("ESP-NOW gateway {} stop failed: {}", port, e);
+                log::warn!("ESP-NOW dongle {} stop failed: {}", port, e);
             }
         }
     }
 
-    /// Handle a REG announcement from an ESP-NOW child.
+    /// Handle a REG announcement from an ESP-NOW node.
     ///
     /// Two registration paths:
     ///
-    /// 1. **Bus manifest** (`config.buses`): the child's `hardware_id`
+    /// 1. **Bus manifest** (`config.buses`): the node's `hardware_id`
     ///    matches a `BusConfig.match_hardware_id`. We register one
-    ///    `Device` per entry in `devices`, all sharing the child's
-    ///    transport — this is how one ESP-NOW child bridging a shared
+    ///    `Device` per entry in `devices`, all sharing the node's
+    ///    transport — this is how one ESP-NOW node bridging a shared
     ///    RS-485 bus exposes multiple addressable devices to the engine.
     ///
     /// 2. **Legacy 1:1**: no bus manifest matches. Fall back to the old
     ///    behavior — look up the hardware_id directly in the adapter
     ///    registry and create a single Device keyed on the MAC.
     ///
-    /// Idempotent: re-REG (child reboot) is a no-op once transport + any
+    /// Idempotent: re-REG (node reboot) is a no-op once transport + any
     /// devices exist.
     #[cfg(feature = "espnow")]
-    async fn handle_espnow_reg(&self, client: Arc<EspNowGatewayClient>, reg: RegEvent) {
+    async fn handle_espnow_reg(&self, client: Arc<EspNowDongleClient>, reg: RegEvent) {
         let RegEvent {
             hardware_id,
             mac,
@@ -976,10 +976,10 @@ impl OsdlEngine {
         } = reg;
         let transport_id = espnow_transport_id(&mac);
 
-        let child: Arc<dyn Transport> = Arc::new(EspNowChildTransport::new(mac, client.clone()));
+        let node: Arc<dyn Transport> = Arc::new(EspNowNodeTransport::new(mac, client.clone()));
         {
             let mut transports = self.handle.transports.write().await;
-            transports.entry(transport_id.clone()).or_insert(child);
+            transports.entry(transport_id.clone()).or_insert(node);
         }
 
         if !is_new {

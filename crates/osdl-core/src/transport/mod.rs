@@ -18,7 +18,7 @@ pub mod mqtt_serial;
 pub mod direct_serial;
 pub mod tcp;
 #[cfg_attr(not(feature = "espnow"), allow(dead_code))]
-pub mod espnow_gateway;
+pub mod espnow_dongle;
 
 use async_trait::async_trait;
 

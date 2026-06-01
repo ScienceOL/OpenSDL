@@ -13,8 +13,8 @@ resolver = "2"
 rust-version = "1.82"
 
 [[bin]]
-name = "espnow-child"
-path = "src/bin/espnow_child.rs"
+name = "espnow-node"
+path = "src/bin/espnow_node.rs"
 harness = false
 
 [profile.release]
