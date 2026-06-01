@@ -11,7 +11,7 @@ hardware path) and then come back here.
 ## Why C/S
 
 The engine has always been a long-running, async, stateful thing —
-broker, mDNS, mediamtx, ESP-NOW gateways, SQLite event store, dozens of
+broker, mDNS, mediamtx, ESP-NOW dongles, SQLite event store, dozens of
 in-flight devices. We needed three deployment shapes:
 
 1. **Local box** — engine + client on the same lab machine.
@@ -168,7 +168,7 @@ Resolved per platform via the `directories` crate:
 ```
 osdl serve [--instance NAME] [--config PATH] [--listen ADDR]
            [--socket PATH|disabled] [--data-dir PATH] [--log-file PATH]
-           [--detach] [--registry PATH] [--espnow-port PORT]
+           [--detach] [--registry PATH] [--dongle-port PORT]
 osdl status
 osdl device list [--adapter X] [--type Y] [--role Z] [--json]
 osdl device get DEVICE_ID [--json]

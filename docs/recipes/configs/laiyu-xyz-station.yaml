@@ -1,19 +1,19 @@
 # LaiYu XYZ station — bus manifest.
 #
-# One ESP-NOW child (standard ESP32 + external MAX485, MAC F4:65:0B:47:B8:88)
+# One ESP-NOW node (standard ESP32 + external MAX485, MAC F4:65:0B:47:B8:88)
 # fronts a shared RS-485 bus at 115200 8N1 carrying 4 addressable devices:
 #   - 3 LaiYu XYZ stepper motors (Modbus RTU, slave_ids 1/2/3 = X/Y/Z axes)
 #   - 1 SOPA YYQ pneumatic pipette (ASCII protocol, address 4)
 #
-# The child REGs as `bus.laiyu_xyz.station1` (set in the firmware
-# `espnow_child_max485.rs`). The bus manifest below tells the engine that
-# this single child should expose 4 distinct devices, each addressable by
+# The node REGs as `bus.laiyu_xyz.station1` (set in the firmware
+# `espnow_node_max485.rs`). The bus manifest below tells the engine that
+# this single node should expose 4 distinct devices, each addressable by
 # a `local_id` (axis-x / axis-y / axis-z / pipette).
 #
 # Use with:
 #   osdl serve --config docs/recipes/configs/laiyu-xyz-station.yaml \
 #              --registry $(pwd)/registry/unilabos \
-#              --espnow-port /dev/cu.usbserial-A5069RR4
+#              --dongle-port /dev/cu.usbserial-A5069RR4
 
 mqtt: ~  # No MQTT bridge needed — ESP-NOW only.
 

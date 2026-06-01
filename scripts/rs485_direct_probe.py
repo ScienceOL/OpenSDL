@@ -2,9 +2,9 @@
 """Direct RS-485 probe via the USB-RS485 dongle on /dev/cu.usbserial-130.
 Bypasses the ESP-NOW path entirely — talks straight to the bus.
 
-Use this to isolate "is it the device, or the child firmware?" failures.
+Use this to isolate "is it the device, or the node firmware?" failures.
 
-⚠️ IMPORTANT: stop `osdl serve` first. The ESP-NOW child also writes to the
+⚠️ IMPORTANT: stop `osdl serve` first. The ESP-NOW node also writes to the
 same RS-485 bus on incoming commands; two masters at once will collide.
 
 Default action: scan slave addresses 1..16 with Modbus 03 (read holding
@@ -123,7 +123,7 @@ def main():
         print("  - RS-485 A/B not swapped?")
         print("  - Dongle GND tied to the bus signal ground (not just USB shield)?")
         print("  - Baud / parity / stop bits match the device (try --baud 9600)?")
-        print("  - osdl serve stopped? (if not, child contends as a second master)")
+        print("  - osdl serve stopped? (if not, node contends as a second master)")
     s.close()
 
 if __name__ == "__main__":

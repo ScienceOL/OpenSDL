@@ -11,9 +11,9 @@ this crate builds for ESP32. The two share no code (the firmware here
 intentionally has no LCD/SPI/board-specific peripherals), so the
 duplication is small.
 
-Wire protocol with the gateway is identical to the LilyGO child in
-`firmware/esp32-rs/src/bin/espnow_child.rs`, so the Mac side
-(`EspNowGatewayClient`) needs no changes.
+Wire protocol with the dongle is identical to the LilyGO node in
+`firmware/esp32-rs/src/bin/espnow_node.rs`, so the Mac side
+(`EspNowDongleClient`) needs no changes.
 
 ## Hardware
 
@@ -29,7 +29,7 @@ cd firmware/esp32-max485
 
 cargo build --release
 espflash flash --port /dev/cu.usbserial-XXXX \
-    target/xtensa-esp32-espidf/release/espnow-child
+    target/xtensa-esp32-espidf/release/espnow-node
 ```
 
 First build pulls esp-idf v5.5.3 for the ESP32 target; allow 10–20 minutes.
@@ -58,5 +58,5 @@ firmware/esp32-max485/
 ├── sdkconfig.defaults
 ├── build.rs
 └── src/bin/
-    └── espnow_child.rs
+    └── espnow_node.rs
 ```

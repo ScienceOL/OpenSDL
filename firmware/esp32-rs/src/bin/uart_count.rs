@@ -1,12 +1,12 @@
 //! Minimal UART/RS-485 TX diagnostic.
 //!
 //! Configures UART1 on GPIO17 (TX) / GPIO18 (RX) at 9600 8N1 — identical to
-//! `espnow_child.rs` — and then prints an incrementing integer once per
+//! `espnow_node.rs` — and then prints an incrementing integer once per
 //! second, *without* the open-drain GPIO override. On the bus sniffer
 //! (USB-RS485 adapter at 9600 baud) you should see "1\n2\n3\n..." appearing.
 //!
 //! If this shows up on the sniffer → our UART config is fine and the
-//! open-drain override is what was killing TX in the ESP-NOW child.
+//! open-drain override is what was killing TX in the ESP-NOW node.
 //!
 //! If this shows nothing → something more fundamental is wrong with how
 //! we're driving UART1 from ESP-IDF-HAL.

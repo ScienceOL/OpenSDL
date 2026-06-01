@@ -1,10 +1,10 @@
-//! ESP-NOW child — broadcasts telemetry + REG, listens for commands
+//! ESP-NOW node — broadcasts telemetry + REG, listens for commands
 //! addressed to its MAC, bridges those commands to the on-board RS-485
 //! transceiver, forwards any RS-485 replies back via ESP-NOW, and
 //! mirrors traffic on the on-board ST7796 LCD.
 //!
 //! Inbound ESP-NOW frame format: [dst_mac(6) | payload(...)]
-//! Child filters by checking dst_mac matches its own MAC.
+//! Node filters by checking dst_mac matches its own MAC.
 //!
 //! RS-485 bridge:
 //!   * LilyGO T-Connect Pro has a built-in TD501D485H-A transceiver wired to
@@ -16,7 +16,7 @@
 //!   * 9600 baud, 8N1 (Runze SY-03B default).
 //!   * RX frames are coalesced with a 50 ms idle timeout — same scheme as
 //!     `DirectSerialTransport` on the Mac side — then broadcast to the
-//!     gateway with the usual dst_mac = broadcast header.
+//!     dongle with the usual dst_mac = broadcast header.
 //!
 //! LilyGO T-Connect Pro ST7796 pins (SPI2, no MISO):
 //!   SCLK=12  MOSI=11  CS=21  DC=41  BL=46  RST=none (tied to EN)
@@ -74,7 +74,7 @@ fn main() -> anyhow::Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     thread::sleep(Duration::from_secs(2));
-    log::info!("[child] boot");
+    log::info!("[node] boot");
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -132,7 +132,7 @@ fn main() -> anyhow::Result<()> {
     unsafe {
         esp_idf_svc::sys::esp!(esp_read_mac(my_mac.as_mut_ptr(), esp_mac_type_t_ESP_MAC_WIFI_STA))?;
     }
-    log::info!("[child] my MAC = {:02X?}", my_mac);
+    log::info!("[node] my MAC = {:02X?}", my_mac);
 
     let espnow = Arc::new(EspNow::take()?);
     let mut peer = PeerInfo::default();
@@ -215,7 +215,7 @@ fn main() -> anyhow::Result<()> {
 
     // -------- UART RX → ESP-NOW TX side --------
     // Reads bytes with idle-timeout framing, broadcasts each frame via ESP-NOW
-    // so the gateway picks it up as a normal RX line. Mother's
+    // so the dongle picks it up as a normal RX line. Mother's
     // `EspNowChildTransport` receives under transport_id=hardware_id.
     let uart_for_reader = Arc::clone(&uart);
     let espnow_for_reader = Arc::clone(&espnow);
@@ -224,7 +224,7 @@ fn main() -> anyhow::Result<()> {
         .spawn(move || uart_reader_task(uart_for_reader, espnow_for_reader))?;
 
     // -------- TX loop --------
-    // Send REG once immediately so the gateway/mother learns us fast, then every
+    // Send REG once immediately so the dongle/mother learns us fast, then every
     // REG_INTERVAL_TICKS as a heartbeat so late-booting mothers still pick us up.
     let _ = send_reg(&*espnow);
 
@@ -254,7 +254,7 @@ fn main() -> anyhow::Result<()> {
 /// frame via ESP-NOW. Frames are coalesced with a UART_FRAME_TIMEOUT_MS idle
 /// gap — same scheme the Mac-side DirectSerialTransport uses. Payloads above
 /// ESPNOW_MAX_PAYLOAD (244 B) are split into successive broadcasts; the
-/// gateway's line protocol doesn't carry a length field, so each broadcast
+/// dongle's line protocol doesn't carry a length field, so each broadcast
 /// surfaces to the mother as its own `RX <mac> <hex>` line.
 fn uart_reader_task(uart: Arc<UartDriver<'static>>, espnow: Arc<EspNow>) {
     let mut read_buf = [0u8; 256];
@@ -317,7 +317,7 @@ fn pdms_to_ticks(ms: u32) -> u32 {
 /// Broadcast a registration frame so the mother can build its MAC -> hardware_id
 /// table without any hard-coded config. Format: ASCII `REG <hardware_id>`.
 /// Mother parses this in `EspNowGatewayClient` — see
-/// `OpenSDL/crates/osdl-core/src/transport/espnow_gateway.rs`.
+/// `OpenSDL/crates/osdl-core/src/transport/espnow_dongle.rs`.
 fn send_reg(espnow: &EspNow) -> Result<(), anyhow::Error> {
     let mut payload = Vec::with_capacity(4 + HARDWARE_ID.len());
     payload.extend_from_slice(b"REG ");

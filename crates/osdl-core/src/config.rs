@@ -5,22 +5,22 @@ use serde::{Deserialize, Serialize};
 pub struct OsdlConfig {
     /// MQTT configuration. `None` disables the MQTT serial bridge entirely —
     /// engine runs without broker/subscriptions, and MQTT-backed features
-    /// (child node register/heartbeat, `handle_mqtt_message`) are inert.
+    /// (node register/heartbeat, `handle_mqtt_message`) are inert.
     /// Use this when only ESP-NOW / direct-serial / TCP transports are needed.
     #[serde(default)]
     pub mqtt: Option<MqttConfig>,
     #[serde(default)]
     pub adapters: Vec<AdapterConfig>,
-    /// ESP-NOW gateway boards plugged into this host (USB-CDC). Each entry
-    /// owns one serial port and routes frames to/from its ESP-NOW children.
+    /// ESP-NOW dongle boards plugged into this host (USB-CDC). Each entry
+    /// owns one serial port and routes frames to/from its ESP-NOW nodes.
     #[serde(default)]
-    pub espnow_gateways: Vec<EspNowGatewayConfig>,
+    pub espnow_dongles: Vec<EspNowDongleConfig>,
     /// Bus manifests: declares which devices hang off a single transport
-    /// (shared RS-485 bus, etc.) when one child announces one hardware_id
+    /// (shared RS-485 bus, etc.) when one node announces one hardware_id
     /// but physically bridges multiple addressed devices.
     ///
-    /// When a child registers with `match_hardware_id`, the engine creates
-    /// one `Device` per entry in `devices`, all sharing the child's
+    /// When a node registers with `match_hardware_id`, the engine creates
+    /// one `Device` per entry in `devices`, all sharing the node's
     /// transport. Without a matching bus entry, the legacy 1:1 behavior
     /// applies (one Device per REG).
     #[serde(default)]
@@ -36,11 +36,11 @@ pub struct OsdlConfig {
 }
 
 /// One physical bus (e.g., RS-485) reached through a single transport,
-/// typically an ESP-NOW child. `match_hardware_id` is the ID the child
-/// announces via REG; `devices` is the manifest of what the child bridges.
+/// typically an ESP-NOW node. `match_hardware_id` is the ID the node
+/// announces via REG; `devices` is the manifest of what the node bridges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BusConfig {
-    /// Child's announced hardware_id (must match `device_type` in one of
+    /// Node's announced hardware_id (must match `device_type` in one of
     /// the registry YAMLs — that's how REG matching works today).
     pub match_hardware_id: String,
     pub devices: Vec<BusDeviceConfig>,
@@ -80,8 +80,10 @@ pub struct MqttConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EspNowGatewayConfig {
-    /// Serial device path of the gateway board, e.g. `/dev/cu.usbserial-A5069RR4`.
+pub struct EspNowDongleConfig {
+    /// Serial device path of the dongle board, e.g. `/dev/cu.usbmodem*`
+    /// (native USB on the Pocket-Dongle-S3) or `/dev/cu.usbserial-*` (older
+    /// boards with an external USB-UART chip).
     pub port: String,
     #[serde(default = "default_espnow_baud")]
     pub baud_rate: u32,

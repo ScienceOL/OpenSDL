@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context};
 use clap::Args;
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
-use osdl_core::config::{AdapterConfig, EspNowGatewayConfig, MqttConfig, OsdlConfig};
+use osdl_core::config::{AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 use osdl_server::{paths::Paths, ListenConfig, ServeConfig};
@@ -47,13 +47,13 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_REGISTRY_PATH")]
     pub registry: Option<PathBuf>,
 
-    /// ESP-NOW gateway port (USB-CDC). Optional.
-    #[arg(long, env = "OSDL_ESPNOW_PORT")]
-    pub espnow_port: Option<String>,
+    /// ESP-NOW dongle port (USB-CDC). Optional.
+    #[arg(long, env = "OSDL_DONGLE_PORT")]
+    pub dongle_port: Option<String>,
 
-    /// ESP-NOW baud rate (default 115200).
-    #[arg(long, env = "OSDL_ESPNOW_BAUD", default_value_t = 115200)]
-    pub espnow_baud: u32,
+    /// ESP-NOW dongle baud rate (default 115200).
+    #[arg(long, env = "OSDL_DONGLE_BAUD", default_value_t = 115200)]
+    pub dongle_baud: u32,
 
     /// Run in the background as a Unix daemon. Stdout/stderr are
     /// redirected to `--log-file`. The current process forks twice,
@@ -357,7 +357,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
             .with_context(|| format!("parse config {}", path.display()))?
     } else {
         // No config: ship a sensible default — MQTT broker on, unilabos
-        // adapter, optional ESP-NOW gateway.
+        // adapter, optional ESP-NOW dongle.
         OsdlConfig {
             mqtt: Some(MqttConfig::default()),
             adapters: vec![AdapterConfig {
@@ -369,7 +369,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
     };
 
     // CLI/env-var overrides take precedence over YAML so the same recipe
-    // config can be shared across machines that have different gateway
+    // config can be shared across machines that have different dongle
     // ports or registry paths.
     if let Some(reg) = &args.registry {
         let reg_str = reg.display().to_string();
@@ -394,15 +394,15 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
         }
     }
 
-    if let Some(port) = &args.espnow_port {
+    if let Some(port) = &args.dongle_port {
         if !port.is_empty() {
-            // Replace any YAML-configured gateways: `--espnow-port` is the
+            // Replace any YAML-configured dongles: `--dongle-port` is the
             // authoritative answer for "which serial device is plugged in
             // *right now*", and shipping multiple at once would just
             // confuse the engine.
-            cfg.espnow_gateways = vec![EspNowGatewayConfig {
+            cfg.espnow_dongles = vec![EspNowDongleConfig {
                 port: port.clone(),
-                baud_rate: args.espnow_baud,
+                baud_rate: args.dongle_baud,
             }];
         }
     }

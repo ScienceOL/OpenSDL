@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-"""Verify the Mac -> gateway -> ESP-NOW broadcast path WITHOUT touching any
+"""Verify the Mac -> dongle -> ESP-NOW broadcast path WITHOUT touching any
 real device.
 
 Strategy:
-  - Send a TX line addressed to a sink MAC that no child uses (default
-    FFFFFFFFFFFE). Gateway still broadcasts the frame on ESP-NOW and logs
-    `[tx->radio]`, but every child filters it out because dst_mac != my_mac.
-  - Concurrently listen on the gateway's UART log to capture:
-      * `[tx->radio] to=... len=...`  -> Mac -> gateway USB path works
-      * any incoming `RX <mac> ...`    -> child -> gateway return path works
+  - Send a TX line addressed to a sink MAC that no node uses (default
+    FFFFFFFFFFFE). Dongle still broadcasts the frame on ESP-NOW and logs
+    `[tx->radio]`, but every node filters it out because dst_mac != my_mac.
+  - Concurrently listen on the dongle's UART log to capture:
+      * `[tx->radio] to=... len=...`  -> Mac -> dongle USB path works
+      * any incoming `RX <mac> ...`    -> node -> dongle return path works
 
 Usage:
-    uv run --with pyserial python3 scripts/probe_gateway.py
-    uv run --with pyserial python3 scripts/probe_gateway.py --dst FFFFFFFFFFFE --hex DEADBEEF
+    uv run --with pyserial python3 scripts/probe_dongle.py
+    uv run --with pyserial python3 scripts/probe_dongle.py --dst FFFFFFFFFFFE --hex DEADBEEF
 """
 import argparse, serial, sys, threading, time
 
-GW_PORT_DEFAULT = "/dev/cu.usbserial-A5069RR4"
-SINK_MAC = "FFFFFFFFFFFE"  # one bit off broadcast — no real child matches
-DEFAULT_HEX = "DEADBEEF"   # arbitrary 4 bytes; harmless, no child will act
+DONGLE_PORT_DEFAULT = "/dev/cu.usbmodem111301"
+SINK_MAC = "FFFFFFFFFFFE"  # one bit off broadcast — no real node matches
+DEFAULT_HEX = "DEADBEEF"   # arbitrary 4 bytes; harmless, no node will act
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", default=GW_PORT_DEFAULT, help=f"gateway UART (default {GW_PORT_DEFAULT})")
-    ap.add_argument("--dst",  default=SINK_MAC,        help=f"target MAC hex12 (default {SINK_MAC} — sink, no child matches)")
+    ap.add_argument("--port", default=DONGLE_PORT_DEFAULT, help=f"dongle UART (default {DONGLE_PORT_DEFAULT})")
+    ap.add_argument("--dst",  default=SINK_MAC,        help=f"target MAC hex12 (default {SINK_MAC} — sink, no node matches)")
     ap.add_argument("--hex",  default=DEFAULT_HEX,     help=f"payload hex (default {DEFAULT_HEX})")
     ap.add_argument("--listen-sec", type=float, default=4.0)
     args = ap.parse_args()
@@ -52,24 +52,24 @@ def main():
     time.sleep(1.5)  # capture some baseline log first
 
     # Open a *separate* handle to write the TX line. Listener stays open.
-    gw = serial.Serial(args.port, 115200, timeout=0.1)
+    dongle = serial.Serial(args.port, 115200, timeout=0.1)
     line = f"TX {args.dst} {args.hex}\n".encode()
-    gw.write(line); gw.flush()
-    gw.close()
-    print(f"[mac->gw] sent: {line!r}")
-    print(f"  dst MAC  = {args.dst}  (sink: no child should match)")
+    dongle.write(line); dongle.flush()
+    dongle.close()
+    print(f"[mac->dongle] sent: {line!r}")
+    print(f"  dst MAC  = {args.dst}  (sink: no node should match)")
     print(f"  payload  = {args.hex}  ({len(args.hex)//2} bytes)")
 
     time.sleep(args.listen_sec)
     stop.set(); t.join(timeout=1.0)
 
     if log_chunks and isinstance(log_chunks[0][0], str) and log_chunks[0][0] == "OPEN_FAIL":
-        sys.exit(f"could not open gateway port {args.port}: {log_chunks[0][1]}")
+        sys.exit(f"could not open dongle port {args.port}: {log_chunks[0][1]}")
 
     raw = b"".join(c for _, c in log_chunks if not isinstance(c, str))
     txt = raw.decode("utf-8", "replace")
 
-    print("\n----- gateway log (filtered) -----")
+    print("\n----- dongle log (filtered) -----")
     seen_tx_radio = False
     seen_parse_err = False
     rx_macs = set()
@@ -88,12 +88,12 @@ def main():
                 pass
 
     print("\n----- summary -----")
-    print(f"  Mac->gateway USB write   : {'OK' if seen_tx_radio else 'NOT SEEN'}  ({'tx->radio logged' if seen_tx_radio else 'no [tx->radio] line — gateway did not see our TX'})")
+    print(f"  Mac->dongle USB write   : {'OK' if seen_tx_radio else 'NOT SEEN'}  ({'tx->radio logged' if seen_tx_radio else 'no [tx->radio] line — dongle did not see our TX'})")
     print(f"  parse / ER lines         : {'YES (check above)' if seen_parse_err else 'none'}")
     if rx_macs:
-        print(f"  child(ren) heard via RX  : {sorted(rx_macs)}")
+        print(f"  node(s) heard via RX     : {sorted(rx_macs)}")
     else:
-        print("  child(ren) heard via RX  : none (no children broadcasting in this window)")
+        print("  node(s) heard via RX     : none (no nodes broadcasting in this window)")
 
 if __name__ == "__main__":
     main()

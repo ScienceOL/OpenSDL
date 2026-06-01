@@ -1,7 +1,7 @@
-//! ESP-NOW child for boards built around a standard ESP32-D0WD with an
+//! ESP-NOW node for boards built around a standard ESP32-D0WD with an
 //! external MAX485 transceiver. Sibling crate to `firmware/esp32-rs`; the
-//! wire protocol with the gateway is identical so the Mac side
-//! (`EspNowGatewayClient`) needs no changes.
+//! wire protocol with the dongle is identical so the Mac side
+//! (`EspNowDongleClient`) needs no changes.
 //!
 //! RS-485 sits on UART2 (TX=GPIO17 / RX=GPIO16, 115200 8N1). MAX485 DE/RE
 //! on GPIO22 is driven HIGH for transmit and LOW for receive; we call
@@ -9,7 +9,7 @@
 //! register before we drop back to RX. Half-duplex turn-around timing is
 //! the most common foot-gun on this kind of board.
 //!
-//! Inbound ESP-NOW frame format: `[dst_mac(6) | payload(...)]`. Child
+//! Inbound ESP-NOW frame format: `[dst_mac(6) | payload(...)]`. Node
 //! filters by checking `dst_mac == my_mac`; everything else is dropped.
 //! HARDWARE_ID announces the bus (not an individual device); the mother's
 //! `BusConfig.match_hardware_id` fans this single REG out into the X/Y/Z
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     thread::sleep(Duration::from_secs(2));
-    log::info!("[child-max485] boot");
+    log::info!("[node-max485] boot");
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -78,7 +78,7 @@ fn main() -> anyhow::Result<()> {
         esp_idf_svc::sys::esp!(esp_read_mac(my_mac.as_mut_ptr(), esp_mac_type_t_ESP_MAC_WIFI_STA))?;
     }
     log::info!(
-        "[child-max485] my MAC = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        "[node-max485] my MAC = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         my_mac[0], my_mac[1], my_mac[2], my_mac[3], my_mac[4], my_mac[5]
     );
 
@@ -222,7 +222,7 @@ fn write_rs485(
 }
 
 /// Read from UART2 in a blocking loop and broadcast each completed frame
-/// via ESP-NOW. Same idle-timeout coalescing as the LilyGO child. DE/RE
+/// via ESP-NOW. Same idle-timeout coalescing as the LilyGO node. DE/RE
 /// stays low (RX) the whole time except briefly during writes — the writer
 /// re-acquires the mutex every TX. We do NOT need to touch DE/RE here.
 fn uart_reader_task(uart: Arc<UartDriver<'static>>, espnow: Arc<EspNow>) {

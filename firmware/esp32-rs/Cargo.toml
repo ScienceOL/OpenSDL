@@ -22,13 +22,13 @@ path = "src/bin/espnow_mac.rs"
 harness = false
 
 [[bin]]
-name = "espnow-gateway"
-path = "src/bin/espnow_gateway.rs"
+name = "espnow-dongle"
+path = "src/bin/espnow_dongle.rs"
 harness = false
 
 [[bin]]
-name = "espnow-child"
-path = "src/bin/espnow_child.rs"
+name = "espnow-node"
+path = "src/bin/espnow_node.rs"
 harness = false
 
 [[bin]]

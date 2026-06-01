@@ -14,7 +14,7 @@ pub trait ProtocolAdapter: Send + Sync {
     /// Load device definitions from the local registry directory.
     fn load_registry(&mut self, path: &str) -> Result<(), String>;
 
-    /// Given a hardware_id from a child node registration, try to match it
+    /// Given a hardware_id from a node registration, try to match it
     /// to a known device type. Returns device metadata if matched.
     fn match_hardware(&self, hardware_id: &str) -> Option<DeviceMatch>;
 

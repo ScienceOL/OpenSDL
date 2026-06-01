@@ -14,7 +14,7 @@ use std::time::Duration;
 use osdl_core::adapter::{unilabos::UniLabOsAdapter, ProtocolAdapter};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::protocol::DeviceCommand;
-use osdl_core::transport::espnow_gateway::{EspNowChildTransport, EspNowGatewayClient};
+use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -22,9 +22,9 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_GATEWAY_PORT")
+    let port = env::var("OSDL_DONGLE_PORT")
         .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
-    let child_id = env::var("OSDL_CHILD_ID").unwrap_or_else(|_| "pump-01".to_string());
+    let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let mut adapter = UniLabOsAdapter::new(DriverRegistry::with_builtins());
     adapter
@@ -32,15 +32,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("load_registry: {}", e))?;
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
-    let client = Arc::new(EspNowGatewayClient::new(port.clone(), 115200, tx));
+    let client = Arc::new(EspNowDongleClient::new(port.clone(), 115200, tx));
     client.start().await.map_err(|e| e.to_string())?;
 
-    log::info!("waiting up to 15s for REG <{}> ...", child_id);
+    log::info!("waiting up to 15s for REG <{}> ...", node_id);
     let mac = client
-        .wait_for_registration(&child_id, Duration::from_secs(15))
+        .wait_for_registration(&node_id, Duration::from_secs(15))
         .await?;
-    let child = EspNowChildTransport::new(mac, client.clone());
-    child.start().await.map_err(|e| e.to_string())?;
+    let node = EspNowNodeTransport::new(mac, client.clone());
+    node.start().await.map_err(|e| e.to_string())?;
 
     // Drain buffered telemetry
     let drain_deadline = tokio::time::Instant::now() + Duration::from_millis(300);
@@ -65,12 +65,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .encode_command(device_type, &cmd)
             .map_err(|e| format!("encode {}: {}", label, e))?;
         log::info!("→ axis {}: {} B  hex={}", label, bytes.len(), hex(&bytes));
-        child.send(&bytes).await?;
+        node.send(&bytes).await?;
 
         let deadline = tokio::time::Instant::now() + Duration::from_millis(2000);
         while let Ok(Some(frame)) = tokio::time::timeout_at(deadline, rx.recv()).await {
             if frame.data.len() == 8 {
-                continue; // child telemetry heartbeat
+                continue; // node telemetry heartbeat
             }
             total_replies += 1;
             log::info!("    ← {} B  hex={}", frame.data.len(), hex(&frame.data));

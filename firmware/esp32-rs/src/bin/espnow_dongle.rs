@@ -1,14 +1,19 @@
-//! ESP-NOW gateway — forwards traffic between Mac (via UART0 line protocol)
-//! and child ESP32 nodes (via ESP-NOW broadcast).
+//! ESP-NOW dongle — forwards traffic between Mac (via USB-Serial-JTAG)
+//! and node ESP32 boards (via ESP-NOW broadcast).
 //!
 //! Uses broadcast (FF:FF:FF:FF:FF:FF) in both directions so we don't have to
-//! maintain a peer list. Child nodes filter inbound by their own MAC.
+//! maintain a peer list. Nodes filter inbound by their own MAC.
 //!
-//! Line protocol over UART0:
-//!   gateway → Mac:  `RX <src_mac_hex> <hex_bytes>\n`
-//!                   `ER <reason>\n`
-//!   Mac → gateway:  `TX <dst_mac_hex> <hex_bytes>\n`
-//!                     (dst_mac is embedded in payload so child can filter)
+//! Line protocol over USB-Serial-JTAG (the ESP32-S3 native-USB CDC):
+//!   dongle → Mac:  `RX <src_mac_hex> <hex_bytes>\n`
+//!                  `ER <reason>\n`
+//!   Mac → dongle:  `TX <dst_mac_hex> <hex_bytes>\n`
+//!                    (dst_mac is embedded in payload so the node can filter)
+//!
+//! The host link runs over the chip's built-in USB-Serial-JTAG, which works
+//! identically on the YD-ESP32-S3 USB-C port and the Pocket-Dongle-S3 (the
+//! latter has no external USB-UART chip). Output goes through the default
+//! ESP-IDF console; input goes through the dedicated USJ driver.
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -17,16 +22,24 @@ use std::time::Duration;
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::espnow::{EspNow, PeerInfo};
-use esp_idf_svc::hal::gpio::AnyIOPin;
 use esp_idf_svc::hal::peripherals::Peripherals;
-use esp_idf_svc::hal::uart::{config::Config as UartConfig, UartDriver};
-use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::sys::{esp_mac_type_t_ESP_MAC_WIFI_STA, esp_read_mac};
+use esp_idf_svc::sys::{
+    esp_mac_type_t_ESP_MAC_WIFI_STA, esp_read_mac, usb_serial_jtag_driver_config_t,
+    usb_serial_jtag_driver_install, usb_serial_jtag_read_bytes,
+};
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, EspWifi};
 
 const BROADCAST: [u8; 6] = [0xFF; 6];
 const CHANNEL: u8 = 1;
+
+// USB-Serial-JTAG ring buffers. The default config gives 256 B which can drop
+// lines under bursty Mac-side writers (e.g., probe scripts). 2 KiB rx is
+// plenty for our single-line protocol; tx_buffer_size only affects calls into
+// `usb_serial_jtag_write_bytes` (we don't use that — log goes through the
+// default console path), but the field must be > 0 or driver install fails.
+const USJ_RX_BUF: u32 = 2048;
+const USJ_TX_BUF: u32 = 256;
 
 enum GwEvent {
     Rx { src: [u8; 6], data: Vec<u8> },
@@ -37,27 +50,23 @@ fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    log::info!("[gateway] boot");
+    log::info!("[dongle] boot");
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
 
-    // UART0 = CH343 "COM" port. ESP-IDF's default `stdin` goes through newlib +
-    // VFS and silently drops most lines on this sdkconfig (line-discipline
-    // issues — most `TX ...\n` writes from Mac never surface to `read_line`).
-    // Take UART0 directly so we read raw bytes ourselves. `log::info!` output
-    // still works because the logger writes TX bytes via register writes that
-    // bypass the driver's RX path.
-    let uart0 = UartDriver::new(
-        peripherals.uart0,
-        peripherals.pins.gpio43,
-        peripherals.pins.gpio44,
-        Option::<AnyIOPin>::None,
-        Option::<AnyIOPin>::None,
-        &UartConfig::new().baudrate(Hertz(115_200)),
-    )?;
-    let uart0 = Arc::new(uart0);
+    // Install the USB-Serial-JTAG driver so we can do interrupt-driven reads
+    // from the host. Output (logs, RX/ER lines emitted via `log::info!`) keeps
+    // going through the default ESP-IDF console hooks, which are wired to the
+    // same USJ peripheral and continue to work after install.
+    unsafe {
+        let mut cfg = usb_serial_jtag_driver_config_t {
+            tx_buffer_size: USJ_TX_BUF,
+            rx_buffer_size: USJ_RX_BUF,
+        };
+        esp_idf_svc::sys::esp!(usb_serial_jtag_driver_install(&mut cfg as *mut _))?;
+    }
 
     let mut wifi = EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?;
     wifi.set_configuration(&Configuration::Client(ClientConfiguration::default()))?;
@@ -74,7 +83,7 @@ fn main() -> anyhow::Result<()> {
     unsafe {
         esp_idf_svc::sys::esp!(esp_read_mac(my_mac.as_mut_ptr(), esp_mac_type_t_ESP_MAC_WIFI_STA))?;
     }
-    log::info!("[gateway] my MAC = {}", mac_hex(&my_mac));
+    log::info!("[dongle] my MAC = {}", mac_hex(&my_mac));
 
     let espnow = Arc::new(EspNow::take()?);
 
@@ -95,15 +104,16 @@ fn main() -> anyhow::Result<()> {
         let _ = tx_for_rx_cb.send(GwEvent::Rx { src, data: data.to_vec() });
     })?;
 
-    // UART0 reader thread — byte-level accumulate until `\n`, then parse.
-    // Replaces the old `io::stdin().read_line()` approach which lost most lines.
-    let tx_for_uart = tx.clone();
-    let uart0_for_reader = Arc::clone(&uart0);
+    // Host reader thread — pull bytes out of the USJ driver's RX ring buffer,
+    // accumulate until `\n`, then parse and dispatch. Replaces the old UART0
+    // path used on YD boards via the CH343 chip; this works identically on
+    // both YD's USB-C port and the Pocket-Dongle-S3.
+    let tx_for_host = tx.clone();
     thread::Builder::new()
         .stack_size(4 * 1024)
-        .spawn(move || uart0_reader_task(uart0_for_reader, tx_for_uart))?;
+        .spawn(move || host_reader_task(tx_for_host))?;
 
-    log::info!("[gateway] ready (broadcast mode, channel {})", CHANNEL);
+    log::info!("[dongle] ready (broadcast mode, channel {})", CHANNEL);
 
     loop {
         match rx.recv_timeout(Duration::from_secs(10)) {
@@ -138,8 +148,11 @@ fn bytes_hex(data: &[u8]) -> String {
 }
 
 fn emit_line(s: &str) {
-    // Use log::info! which goes to the same UART0 as everything else.
-    // Mac-side parser can match against a known prefix like `espnow_gateway: RX `.
+    // Use log::info! which goes through the default ESP-IDF console hook
+    // (USB-Serial-JTAG). The Mac-side parser (`EspNowDongleClient::parse_rx_line`)
+    // matches `RX ` anywhere in the line, so the ESP-IDF logger's
+    // `I (ts) <module>:` prefix doesn't matter — module name follows the bin
+    // name (`espnow_dongle`) but parsing is prefix-agnostic on purpose.
     log::info!("{}", s);
 }
 
@@ -175,46 +188,54 @@ fn parse_hex_bytes(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Block-read bytes from UART0 (CH343 link to Mac), accumulate until `\n`,
+/// Block-read bytes from the USB-Serial-JTAG driver, accumulate until `\n`,
 /// then dispatch parsed `TX ...` lines onto the event channel. Lines over
 /// 1 KiB are dropped with an `ER overflow` reply. Treats `\r` as whitespace
 /// so CRLF works too.
-fn uart0_reader_task(uart: Arc<UartDriver<'static>>, tx: Sender<GwEvent>) {
+fn host_reader_task(tx: Sender<GwEvent>) {
     const MAX_LINE: usize = 1024;
     let mut buf = [0u8; 128];
     let mut line = Vec::<u8>::with_capacity(128);
 
     loop {
-        // portMAX_DELAY — block until something arrives.
-        match uart.read(&mut buf, u32::MAX) {
-            Ok(0) => continue,
-            Ok(n) => {
-                for &b in &buf[..n] {
-                    if b == b'\n' {
-                        let trimmed = trim_cr(&line);
-                        if !trimmed.is_empty() {
-                            match std::str::from_utf8(trimmed) {
-                                Ok(s) => match parse_tx_line(s) {
-                                    Ok((dst, data)) => {
-                                        let _ = tx.send(GwEvent::TxRequest { dst, data });
-                                    }
-                                    Err(e) => emit_line(&format!("ER parse: {}", e)),
-                                },
-                                Err(_) => emit_line("ER parse: non-utf8"),
+        // portMAX_DELAY — block until something arrives. The driver returns
+        // the count of bytes copied into `buf`; 0 means timeout (won't happen
+        // with portMAX_DELAY, but be defensive).
+        let n = unsafe {
+            usb_serial_jtag_read_bytes(
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
+                buf.len() as u32,
+                u32::MAX, // portMAX_DELAY
+            )
+        };
+
+        if n <= 0 {
+            // Negative = error (rare); 0 = no data. Sleep a tick so we don't
+            // hot-spin on a misbehaving driver.
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        let n = n as usize;
+        for &b in &buf[..n] {
+            if b == b'\n' {
+                let trimmed = trim_cr(&line);
+                if !trimmed.is_empty() {
+                    match std::str::from_utf8(trimmed) {
+                        Ok(s) => match parse_tx_line(s) {
+                            Ok((dst, data)) => {
+                                let _ = tx.send(GwEvent::TxRequest { dst, data });
                             }
-                        }
-                        line.clear();
-                    } else if line.len() >= MAX_LINE {
-                        emit_line("ER overflow");
-                        line.clear();
-                    } else {
-                        line.push(b);
+                            Err(e) => emit_line(&format!("ER parse: {}", e)),
+                        },
+                        Err(_) => emit_line("ER parse: non-utf8"),
                     }
                 }
-            }
-            Err(e) => {
-                log::warn!("[uart0 rx] read error: {:?}", e);
-                thread::sleep(Duration::from_millis(100));
+                line.clear();
+            } else if line.len() >= MAX_LINE {
+                emit_line("ER overflow");
+                line.clear();
+            } else {
+                line.push(b);
             }
         }
     }

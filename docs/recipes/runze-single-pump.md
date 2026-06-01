@@ -2,17 +2,17 @@
 
 Replaces the original `runze_via_espnow.rs` example. Drives one Runze
 SY-03B pump that's the **only** device on its RS-485 bus, fronted by an
-ESP-NOW child whose firmware advertises `hardware_id =
+ESP-NOW node whose firmware advertises `hardware_id =
 syringe_pump_with_valve.runze.SY03B-T06`.
 
 This is the simplest path: no bus manifest, the engine takes the legacy
-1:1 registration route and creates one device keyed on the child's MAC.
+1:1 registration route and creates one device keyed on the node's MAC.
 
 ## Prerequisites
 
-- ESP-NOW gateway plugged into a serial port. We use
+- ESP-NOW dongle plugged into a serial port. We use
   `/dev/cu.usbserial-A5069RR4` below; substitute yours.
-- ESP-NOW child + Runze pump powered on.
+- ESP-NOW node + Runze pump powered on.
 
 ## Walk-through
 
@@ -22,7 +22,7 @@ This is the simplest path: no bus manifest, the engine takes the legacy
 osdl serve --detach \
   --instance pump \
   --registry $(pwd)/registry/unilabos \
-  --espnow-port /dev/cu.usbserial-A5069RR4
+  --dongle-port /dev/cu.usbserial-A5069RR4
 ```
 
 The detach flag forks a background daemon and prints the log file path.

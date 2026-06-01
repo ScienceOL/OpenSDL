@@ -94,7 +94,7 @@ fn test_engine_creation() {
             adapter_type: "unilabos".into(),
             registry_path: Some("../../registry/unilabos".into()),
         }],
-        espnow_gateways: vec![],
+        espnow_dongles: vec![],
         buses: vec![],
         ..Default::default()
     };
