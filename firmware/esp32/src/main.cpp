@@ -22,8 +22,8 @@
 // MQTT topics (built from NODE_ID)
 static char topic_register[64];
 static char topic_heartbeat[64];
-static char topic_tx[64];  // subscribe: mother → child
-static char topic_rx[64];  // publish:   child → mother
+static char topic_tx[64];  // subscribe: mother → node
+static char topic_rx[64];  // publish:   node → mother
 
 // Discovered mother node address
 static IPAddress mqtt_ip;
@@ -142,7 +142,7 @@ void mqtt_connect() {
         if (mqtt.connect(NODE_ID)) {
             Serial.println("[MQTT] Connected");
 
-            // Subscribe to TX topic (mother → child serial bytes)
+            // Subscribe to TX topic (mother → node serial bytes)
             mqtt.subscribe(topic_tx);
             Serial.printf("[MQTT] Subscribed: %s\n", topic_tx);
 

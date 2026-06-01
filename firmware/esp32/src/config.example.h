@@ -8,13 +8,13 @@
 #define WIFI_PASSWORD "YourPassword"
 
 // MQTT broker discovery
-// The child node will auto-discover the mother node via mDNS (_osdl._tcp.local).
+// The node will auto-discover the mother via mDNS (_osdl._tcp.local).
 // Set MQTT_HOST to "" to enable auto-discovery (recommended).
 // Set a specific IP to skip mDNS and connect directly (fallback).
 #define MQTT_HOST     ""        // "" = auto-discover via mDNS
 #define MQTT_PORT     1883      // only used when MQTT_HOST is set
 
-// Node identity — unique per physical child node
+// Node identity — unique per physical node
 #define NODE_ID       "pump-01"
 
 // Hardware ID — must match a device_type in the registry YAML

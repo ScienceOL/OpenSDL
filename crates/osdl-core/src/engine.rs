@@ -125,7 +125,7 @@ impl EngineHandle {
     }
 
     /// Request the engine's main loop to stop. The loop will drain pending
-    /// work, shut down media + ESP-NOW gateways, and return from `run()`.
+    /// work, shut down the media gateway + ESP-NOW dongles, and return from `run()`.
     pub fn request_stop(&self) {
         let _ = self.stop_tx.send(true);
     }

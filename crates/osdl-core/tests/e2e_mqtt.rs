@@ -1,6 +1,6 @@
 //! End-to-end integration tests with a real embedded MQTT broker.
 //!
-//! These tests start an EmbeddedBroker + OsdlEngine, then simulate a child
+//! These tests start an EmbeddedBroker + OsdlEngine, then simulate a node
 //! node (ESP32) by publishing registration and serial RX messages via a
 //! second MQTT client. This exercises the full flow:
 //!   broker ↔ engine ↔ adapter ↔ runze codec ↔ store
@@ -136,8 +136,8 @@ impl TestHarness {
         }
     }
 
-    /// Create a simulated child node MQTT client connected to this harness.
-    async fn child_client(&self, client_id: &str) -> ChildNode {
+    /// Create a simulated node MQTT client connected to this harness.
+    async fn node_client(&self, client_id: &str) -> NodeSim {
         let mut opts = MqttOptions::new(client_id, "localhost", self.port);
         opts.set_keep_alive(Duration::from_secs(5));
         let (client, eventloop) = AsyncClient::new(opts, 64);
@@ -154,15 +154,15 @@ impl TestHarness {
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        ChildNode { client, pump }
+        NodeSim { client, pump }
     }
 
-    /// Create a child node that captures TX messages published to its serial topic.
-    async fn child_client_with_tx_capture(
+    /// Create a node that captures TX messages published to its serial topic.
+    async fn node_client_with_tx_capture(
         &self,
         client_id: &str,
         node_id: &str,
-    ) -> (ChildNode, mpsc::UnboundedReceiver<Vec<u8>>) {
+    ) -> (NodeSim, mpsc::UnboundedReceiver<Vec<u8>>) {
         let mut opts = MqttOptions::new(client_id, "localhost", self.port);
         opts.set_keep_alive(Duration::from_secs(5));
         let (client, eventloop) = AsyncClient::new(opts, 64);
@@ -193,7 +193,7 @@ impl TestHarness {
             .await
             .unwrap();
 
-        (ChildNode { client, pump }, tx_msg_rx)
+        (NodeSim { client, pump }, tx_msg_rx)
     }
 
     /// Take the event receiver (can only be called once).
@@ -219,13 +219,13 @@ impl TestHarness {
     }
 }
 
-/// A simulated child node (ESP32) connected via MQTT.
-struct ChildNode {
+/// A simulated node (ESP32) connected via MQTT.
+struct NodeSim {
     client: AsyncClient,
     pump: tokio::task::JoinHandle<()>,
 }
 
-impl ChildNode {
+impl NodeSim {
     /// Publish a node registration message (like ESP32 does on boot).
     async fn register(&self, node_id: &str, hardware_id: &str, baud_rate: u32) {
         let payload = serde_json::json!({
@@ -315,8 +315,8 @@ async fn test_node_registration_and_device_discovery() {
     let mut harness = TestHarness::start("osdl-test-reg", true).await;
     let mut rx = harness.take_event_rx();
 
-    let child = harness.child_client("pump-01-sim").await;
-    child.register("pump-01", RUNZE_T06, 9600).await;
+    let node = harness.node_client("pump-01-sim").await;
+    node.register("pump-01", RUNZE_T06, 9600).await;
 
     let event = TestHarness::recv_event(&mut rx).await;
 
@@ -349,7 +349,7 @@ async fn test_node_registration_and_device_discovery() {
         other => panic!("Expected Connected, got {:?}", other),
     }
 
-    child.shutdown().await;
+    node.shutdown().await;
     harness.shutdown().await;
 }
 
@@ -358,16 +358,16 @@ async fn test_serial_rx_decoding() {
     let mut harness = TestHarness::start("osdl-test-rx", true).await;
     let mut rx = harness.take_event_rx();
 
-    let child = harness.child_client("pump-02-sim").await;
+    let node = harness.node_client("pump-02-sim").await;
 
     // Step 1: Register
-    child.register("pump-02", RUNZE_T06, 9600).await;
+    node.register("pump-02", RUNZE_T06, 9600).await;
     let event = TestHarness::recv_event(&mut rx).await;
     assert!(matches!(event, OsdlEvent::DeviceOnline(_)));
 
     // Step 2: Simulate serial response (pump replies with position)
     tokio::time::sleep(Duration::from_millis(100)).await;
-    child.publish_serial_rx("pump-02", b"`3000\n").await;
+    node.publish_serial_rx("pump-02", b"`3000\n").await;
 
     let event = TestHarness::recv_event(&mut rx).await;
     match event {
@@ -379,7 +379,7 @@ async fn test_serial_rx_decoding() {
         other => panic!("Expected DeviceStatus, got {:?}", other),
     }
 
-    child.shutdown().await;
+    node.shutdown().await;
     harness.shutdown().await;
 }
 
@@ -388,16 +388,16 @@ async fn test_send_command_publishes_serial_tx() {
     let mut harness = TestHarness::start("osdl-test-cmd", true).await;
     let mut rx = harness.take_event_rx();
 
-    let (child, mut tx_msg_rx) =
-        harness.child_client_with_tx_capture("pump-03-sim", "pump-03").await;
+    let (node, mut tx_msg_rx) =
+        harness.node_client_with_tx_capture("pump-03-sim", "pump-03").await;
 
     // Register
-    child.register("pump-03", RUNZE_T06, 9600).await;
+    node.register("pump-03", RUNZE_T06, 9600).await;
     let _ = TestHarness::recv_event(&mut rx).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Publish TX bytes via a separate client (simulating the engine's TX path)
-    let test_pub = harness.child_client("test-publisher").await;
+    let test_pub = harness.node_client("test-publisher").await;
     test_pub
         .client
         .publish(
@@ -417,7 +417,7 @@ async fn test_send_command_publishes_serial_tx() {
     assert_eq!(received, b"/1ZR\r\n");
 
     test_pub.shutdown().await;
-    child.shutdown().await;
+    node.shutdown().await;
     harness.shutdown().await;
 }
 
@@ -426,8 +426,8 @@ async fn test_unknown_node_event() {
     let mut harness = TestHarness::start("osdl-test-unknown", false).await;
     let mut rx = harness.take_event_rx();
 
-    let child = harness.child_client("mystery-node").await;
-    child
+    let node = harness.node_client("mystery-node").await;
+    node
         .register("mystery-01", "totally_unknown_device_xyz", 9600)
         .await;
 
@@ -443,7 +443,7 @@ async fn test_unknown_node_event() {
         other => panic!("Expected UnknownNode, got {:?}", other),
     }
 
-    child.shutdown().await;
+    node.shutdown().await;
     harness.shutdown().await;
 }
 
@@ -452,14 +452,14 @@ async fn test_heartbeat_keeps_node_online() {
     let mut harness = TestHarness::start("osdl-test-hb", false).await;
     let mut rx = harness.take_event_rx();
 
-    let child = harness.child_client("hb-node").await;
-    child.register("hb-pump", RUNZE_T06, 9600).await;
+    let node = harness.node_client("hb-node").await;
+    node.register("hb-pump", RUNZE_T06, 9600).await;
 
     // Consume DeviceOnline
     let _ = TestHarness::recv_event(&mut rx).await;
 
     // Send heartbeat
-    child.heartbeat("hb-pump").await;
+    node.heartbeat("hb-pump").await;
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let status = harness.status_rx.borrow().clone();
@@ -470,6 +470,6 @@ async fn test_heartbeat_keeps_node_online() {
         other => panic!("Expected Connected, got {:?}", other),
     }
 
-    child.shutdown().await;
+    node.shutdown().await;
     harness.shutdown().await;
 }

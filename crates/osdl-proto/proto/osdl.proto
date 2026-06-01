@@ -17,8 +17,8 @@ service Osdl {
   // Server identity + connection counts. Cheap to call; clients can poll.
   rpc Status(StatusRequest) returns (StatusResponse);
 
-  // Child nodes (MQTT-serial bridge children). Devices sit on top of these
-  // for that transport — for ESP-NOW / direct serial there are no nodes.
+  // Nodes (MQTT-serial bridge boards). Devices sit on top of these for
+  // that transport — for ESP-NOW / direct serial there are no nodes.
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
 
   // All known devices, regardless of transport.
@@ -28,7 +28,7 @@ service Osdl {
   rpc GetDevice(GetDeviceRequest) returns (Device);
 
   // Block until a device matching a hardware_id or device_type appears, or
-  // the deadline expires. Useful for scripted bring-up where the child has
+  // the deadline expires. Useful for scripted bring-up where the node has
   // not yet booted when the client starts. Returns the first match.
   rpc WaitForDevice(WaitForDeviceRequest) returns (Device);
 
