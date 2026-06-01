@@ -1,6 +1,6 @@
-//! mDNS service advertisement for automatic child node discovery.
+//! mDNS service advertisement for automatic node discovery.
 //!
-//! The mother node advertises `_osdl._tcp.local` so that ESP32 child nodes
+//! The mother node advertises `_osdl._tcp.local` so that ESP32 nodes
 //! can find the MQTT broker IP:port without any hardcoded configuration.
 //! This is the same mechanism used by AirPlay, Chromecast, and Home Assistant.
 
@@ -20,7 +20,7 @@ impl MdnsAdvertiser {
     /// Start advertising the MQTT broker on the given port.
     ///
     /// The service is visible as `_osdl._tcp.local.` on the local network.
-    /// ESP32 child nodes query this to discover the mother node's IP.
+    /// ESP32 nodes query this to discover the mother node's IP.
     pub fn start(mqtt_port: u16) -> Result<Self, String> {
         let daemon = ServiceDaemon::new().map_err(|e| format!("mDNS daemon: {}", e))?;
 

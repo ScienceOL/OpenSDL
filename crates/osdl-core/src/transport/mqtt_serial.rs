@@ -1,6 +1,6 @@
 //! MQTT Serial transport — bytes tunneled over MQTT to/from an ESP32 bridge node.
 //!
-//! This is the original transport for OpenSDL: an ESP32 child node acts as a
+//! This is the original transport for OpenSDL: an ESP32 node acts as a
 //! transparent serial-to-MQTT bridge. The mother node sends bytes to
 //! `osdl/serial/{node_id}/tx` and receives bytes from `osdl/serial/{node_id}/rx`.
 

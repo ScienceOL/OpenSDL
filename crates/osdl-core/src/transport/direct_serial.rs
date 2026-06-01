@@ -1,7 +1,7 @@
 //! Direct serial transport — USB/RS-232/RS-485 port on the mother node.
 //!
 //! For devices plugged directly into the mother node via USB-to-serial adapter.
-//! No ESP32 child node needed. The mother node reads/writes the serial port directly.
+//! No ESP-NOW node needed. The mother node reads/writes the serial port directly.
 //!
 //! Used by Laiyu XYZ pipette station (/dev/ttyUSB0, 115200 baud, RS-485).
 //!

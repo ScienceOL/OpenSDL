@@ -51,7 +51,7 @@ pub struct EngineHandle {
     adapters: Arc<Vec<Box<dyn ProtocolAdapter>>>,
     store: Option<Arc<EventStore>>,
 
-    /// Connected child nodes (node_id → Node). Specific to MQTT serial transport.
+    /// Connected nodes (node_id → Node). Specific to MQTT serial transport.
     nodes: Arc<RwLock<HashMap<String, Node>>>,
     /// All devices regardless of transport type (device_id → Device).
     devices: Arc<RwLock<HashMap<String, Device>>>,
@@ -263,11 +263,11 @@ pub struct OsdlEngine {
     /// `handle_node_register` to construct an `MqttSerialTransport`.
     mqtt_client: Option<AsyncClient>,
 
-    /// ESP-NOW gateway boards kept alive for the lifetime of the engine.
+    /// ESP-NOW dongle boards kept alive for the lifetime of the engine.
     /// Indexed by serial port path; each owns a serial read loop.
     #[cfg(feature = "espnow")]
     espnow_dongles: Arc<RwLock<HashMap<String, Arc<EspNowDongleClient>>>>,
-    /// REG events from all gateways, multiplexed into one stream for the
+    /// REG events from all dongles, multiplexed into one stream for the
     /// main select! loop to react to.
     #[cfg(feature = "espnow")]
     espnow_reg_tx: mpsc::UnboundedSender<(Arc<EspNowDongleClient>, RegEvent)>,
@@ -446,7 +446,7 @@ impl OsdlEngine {
             device_count: 0,
         });
 
-        // Start configured ESP-NOW gateways (USB-CDC). Each gateway owns a
+        // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
         #[cfg(feature = "espnow")]
@@ -610,7 +610,7 @@ impl OsdlEngine {
             }
         }
 
-        // Explicitly stop every ESP-NOW gateway so the read tasks (which hold
+        // Explicitly stop every ESP-NOW dongle so the read tasks (which hold
         // `Arc<EspNowDongleClient>`) can drop — otherwise they'd live on
         // until their serial port EOFs.
         #[cfg(feature = "espnow")]
@@ -1054,7 +1054,7 @@ impl OsdlEngine {
     }
 
     /// Create one Device per entry in a `BusConfig`, all sharing the
-    /// child's transport. Skips entries whose `device_type` isn't found in
+    /// node's transport. Skips entries whose `device_type` isn't found in
     /// any loaded adapter (logged as warn — typically a YAML/config typo).
     ///
     /// Device id format: `{transport_id}:{local_id}` (e.g.

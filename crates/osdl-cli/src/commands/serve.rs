@@ -357,7 +357,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
             .with_context(|| format!("parse config {}", path.display()))?
     } else {
         // No config: ship a sensible default — MQTT broker on, unilabos
-        // adapter, optional ESP-NOW gateway.
+        // adapter, optional ESP-NOW dongle.
         OsdlConfig {
             mqtt: Some(MqttConfig::default()),
             adapters: vec![AdapterConfig {
@@ -369,7 +369,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
     };
 
     // CLI/env-var overrides take precedence over YAML so the same recipe
-    // config can be shared across machines that have different gateway
+    // config can be shared across machines that have different dongle
     // ports or registry paths.
     if let Some(reg) = &args.registry {
         let reg_str = reg.display().to_string();

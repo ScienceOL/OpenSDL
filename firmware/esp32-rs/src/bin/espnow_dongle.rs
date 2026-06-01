@@ -149,8 +149,10 @@ fn bytes_hex(data: &[u8]) -> String {
 
 fn emit_line(s: &str) {
     // Use log::info! which goes through the default ESP-IDF console hook
-    // (USB-Serial-JTAG). Mac-side parser matches the `espnow_gateway: RX `
-    // prefix the env_logger backend prepends.
+    // (USB-Serial-JTAG). The Mac-side parser (`EspNowDongleClient::parse_rx_line`)
+    // matches `RX ` anywhere in the line, so the ESP-IDF logger's
+    // `I (ts) <module>:` prefix doesn't matter — module name follows the bin
+    // name (`espnow_dongle`) but parsing is prefix-agnostic on purpose.
     log::info!("{}", s);
 }
 

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// === Child Node (MQTT serial bridge) ===
+// === Node (MQTT serial bridge) ===
 
-/// A child node (ESP32 serial bridge) connected via MQTT.
+/// A node (ESP32 serial bridge) connected via MQTT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub node_id: String,
@@ -14,7 +14,7 @@ pub struct Node {
     pub device_id: Option<String>,
 }
 
-/// Registration payload published by child node on boot.
+/// Registration payload published by a node on boot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeRegistration {
     pub hardware_id: String,
