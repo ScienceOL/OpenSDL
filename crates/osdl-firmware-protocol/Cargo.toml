@@ -1,0 +1,13 @@
+[package]
+name = "osdl-firmware-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure-Rust no_std codec for the wire protocol shared by OSDL firmware (ESP-NOW frame layout, REG announcements) and the mother-side dongle client."
+
+# This crate is no_std-compatible (uses `alloc` for owned byte buffers).
+# Keep it dependency-free so it can be linked into both the host workspace
+# and the firmware leaf crates (firmware/esp32, firmware/esp32s3) without
+# pulling in esp-idf-* — those crates are MCU-bound and would break the host
+# build.
+[lib]

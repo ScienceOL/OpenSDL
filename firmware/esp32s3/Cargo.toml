@@ -4,7 +4,7 @@
 [workspace]
 
 [package]
-name = "osdl-esp32-firmware"
+name = "osdl-esp32s3-firmware"
 version = "0.1.0"
 authors = ["xinquiry <100398322+xinquiry@users.noreply.github.com>"]
 edition = "2021"
@@ -12,7 +12,7 @@ resolver = "2"
 rust-version = "1.82"
 
 [[bin]]
-name = "osdl-esp32-firmware"
+name = "legacy-mqtt"
 path = "src/main.rs"
 harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
@@ -22,13 +22,13 @@ path = "src/bin/espnow_mac.rs"
 harness = false
 
 [[bin]]
-name = "espnow-dongle"
-path = "src/bin/espnow_dongle.rs"
+name = "dongle"
+path = "src/bin/dongle.rs"
 harness = false
 
 [[bin]]
-name = "espnow-node"
-path = "src/bin/espnow_node.rs"
+name = "node-lcd"
+path = "src/bin/node-lcd.rs"
 harness = false
 
 [[bin]]
@@ -60,6 +60,10 @@ esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-tim
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
 mipidsi = "0.9"
 embedded-graphics = "0.8"
+# Pure-Rust no_std codec shared with the mother (`crates/osdl-core`) and the
+# initial-ESP32 firmware. Linked by path; not a workspace member of either
+# side.
+osdl-firmware-protocol = { path = "../../crates/osdl-firmware-protocol" }
 
 [build-dependencies]
 embuild = "0.33"

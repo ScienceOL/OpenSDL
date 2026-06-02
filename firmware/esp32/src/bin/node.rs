@@ -1,5 +1,5 @@
 //! ESP-NOW node for boards built around a standard ESP32-D0WD with an
-//! external MAX485 transceiver. Sibling crate to `firmware/esp32-rs`; the
+//! external MAX485 transceiver. Sibling crate to `firmware/esp32s3`; the
 //! wire protocol with the dongle is identical so the Mac side
 //! (`EspNowDongleClient`) needs no changes.
 //!
@@ -31,9 +31,7 @@ use esp_idf_svc::sys::{
     esp_mac_type_t_ESP_MAC_WIFI_STA, esp_read_mac, uart_port_t, uart_wait_tx_done,
 };
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, EspWifi};
-
-const BROADCAST: [u8; 6] = [0xFF; 6];
-const CHANNEL: u8 = 1;
+use osdl_firmware_protocol::{reg as reg_codec, BROADCAST, CHANNEL, ESPNOW_MAX_PAYLOAD};
 
 /// Mother-side `BusConfig.match_hardware_id` should equal this. The bus
 /// manifest fans this single REG out into the X/Y/Z + YYQ devices declared
@@ -43,7 +41,6 @@ const HARDWARE_ID: &str = "bus.laiyu_xyz.station1";
 const REG_INTERVAL_TICKS: u32 = 10; // REG every N seconds
 const UART_BAUD: u32 = 115200;
 const UART_FRAME_TIMEOUT_MS: u32 = 50;
-const ESPNOW_MAX_PAYLOAD: usize = 244; // 250-byte cap minus 6-byte dst_mac prefix
 
 /// Half-duplex turn-around guard. After `uart_wait_tx_done` returns, give
 /// the line a small margin before dropping DE so a jittery transceiver
@@ -277,9 +274,7 @@ fn pdms_to_ticks(ms: u32) -> u32 {
 }
 
 fn send_reg(espnow: &EspNow) -> Result<(), anyhow::Error> {
-    let mut payload = Vec::with_capacity(4 + HARDWARE_ID.len());
-    payload.extend_from_slice(b"REG ");
-    payload.extend_from_slice(HARDWARE_ID.as_bytes());
+    let payload = reg_codec::build_with_hardware_id(HARDWARE_ID);
     match espnow.send(BROADCAST, &payload) {
         Ok(()) => {
             log::info!("[reg] announced hardware_id={}", HARDWARE_ID);

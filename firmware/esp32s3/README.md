@@ -1,4 +1,4 @@
-# osdl-esp32-firmware
+# osdl-esp32s3-firmware
 
 Rust firmware for the ESP32-S3 boards used in OpenSDL's two roles:
 
@@ -20,7 +20,8 @@ Rust firmware for the ESP32-S3 boards used in OpenSDL's two roles:
           │
           │ ESP-NOW, channel 1, broadcast
           ▼
-   Node    (LilyGO T-Connect Pro or ESP32 + MAX485)
+   Node    (LilyGO T-Connect Pro, or — via the sibling
+          │  `firmware/esp32` crate — an ESP32 + MAX485)
           │ UART → RS-485 transceiver
           ▼
    RS-485 bus → lab device (Runze pump, stepper motor, …)
@@ -28,15 +29,16 @@ Rust firmware for the ESP32-S3 boards used in OpenSDL's two roles:
 
 The wire protocol between dongle and node is identical regardless of
 hardware variant; the host-side `EspNowDongleClient` doesn't care which
-board it talks to.
+board it talks to. Frame and REG codecs live in the shared
+`crates/osdl-firmware-protocol` crate.
 
 ## Hardware
 
-| Role   | Reference board                | Host USB path (macOS, typical) | Chip            |
-|--------|--------------------------------|--------------------------------|-----------------|
-| Dongle | Pocket-Dongle-S3 (with screen) | `/dev/cu.usbmodem*` (native)   | ESP32-S3, 16 MB |
-| Node   | LilyGO T-Connect Pro           | `/dev/cu.usbmodem*` (native)   | ESP32-S3, 16 MB |
-| Node   | ESP32 + external MAX485        | (sibling crate `firmware/esp32-max485`) | ESP32, 4 MB |
+| Role   | Reference board                | Host USB path (macOS, typical)          | Chip            |
+|--------|--------------------------------|-----------------------------------------|-----------------|
+| Dongle | Pocket-Dongle-S3 (with screen) | `/dev/cu.usbmodem*` (native)            | ESP32-S3, 16 MB |
+| Node   | LilyGO T-Connect Pro (LCD)     | `/dev/cu.usbmodem*` (native)            | ESP32-S3, 16 MB |
+| Node   | ESP32 + external MAX485        | (sibling crate `firmware/esp32`)        | ESP32, 4 MB     |
 
 Confirm the paths on your machine with `ls /dev/cu.usb*`.
 
@@ -73,14 +75,15 @@ RS-485 UART, and whatever comes back on the bus is broadcast back as an
 
 | `cargo run --bin …`        | Purpose                                                                |
 |----------------------------|------------------------------------------------------------------------|
-| `espnow-dongle`            | Runs on the dongle. Bridges Mac USB-CDC ↔ ESP-NOW.                     |
-| `espnow-node`              | Runs on the node. Bridges ESP-NOW ↔ RS-485 (UART1).                    |
+| `dongle`                   | Runs on the dongle. Bridges host USB-CDC ↔ ESP-NOW.                    |
+| `node-lcd`                 | Runs on the LilyGO LCD-equipped node. Bridges ESP-NOW ↔ RS-485 (UART1). |
 | `uart-count`               | Minimal UART1 TX sanity check. Emits an incrementing integer.          |
 | `espnow-mac` / `espnow-diag` | Early ESP-NOW probes kept for reference.                             |
+| `legacy-mqtt`              | Pre-ESP-NOW MQTT main firmware. Kept for reference, not in active use. |
 
 ## Prerequisites
 
-ESP32 is an Xtensa target, which isn't part of upstream LLVM, so the usual
+ESP32-S3 is an Xtensa target, which isn't part of upstream LLVM, so the usual
 `rustup target add` route doesn't work. You need Espressif's custom toolchain.
 
 ### 1. Install Rust itself (if you don't have it)
@@ -128,8 +131,8 @@ cp src/config.example.rs src/config.rs
 ```
 
 `src/config.rs` is `.gitignore`d so credentials never land in a commit. The
-ESP-NOW bins (`espnow-dongle` / `espnow-node`) don't actually use WiFi,
-but the file still has to exist because `src/main.rs` references it.
+ESP-NOW bins (`dongle` / `node-lcd`) don't actually use WiFi, but the file
+still has to exist because `src/main.rs` (the `legacy-mqtt` bin) references it.
 
 ## Build & flash
 
@@ -137,14 +140,14 @@ but the file still has to exist because `src/main.rs` references it.
 source ~/export-esp.sh
 
 # Dongle
-cargo build --release --bin espnow-dongle
+cargo build --release --bin dongle
 espflash flash --port /dev/cu.usbmodem-XXXX \
-    target/xtensa-esp32s3-espidf/release/espnow-dongle
+    target/xtensa-esp32s3-espidf/release/dongle
 
-# Node (LilyGO T-Connect Pro)
-cargo build --release --bin espnow-node
+# Node (LilyGO T-Connect Pro with LCD)
+cargo build --release --bin node-lcd
 espflash flash --port /dev/cu.usbmodem-XXXX \
-    target/xtensa-esp32s3-espidf/release/espnow-node
+    target/xtensa-esp32s3-espidf/release/node-lcd
 
 # Monitor logs (read-only)
 espflash monitor --port /dev/cu.usbmodem-XXXX --non-interactive
@@ -172,12 +175,12 @@ what each hop saw. A healthy run looks like:
 [mac->dongle] b'TX 30EDA0B65B38 2F315A520D0A\n'
 
 ====== DONGLE log (tx->radio / ER / RX from node) ======
-  I ... espnow_dongle: [tx->radio] to=30EDA0B65B38 len=6
-  I ... espnow_dongle: RX 30EDA0B65B38 FF2F3040030D0A
+  I ... dongle: [tx->radio] to=30EDA0B65B38 len=6
+  I ... dongle: RX 30EDA0B65B38 FF2F3040030D0A
 
 ====== NODE log (rx-for-me + any uart rx) ======
-  I ... espnow_node: [rx-for-me] 6 bytes -> UART: [2F, 31, 5A, 52, 0D, 0A]
-  I ... espnow_node: [uart rx -> radio] 7 bytes: [FF, 2F, 30, 40, 03, 0D, 0A]
+  I ... node-lcd: [rx-for-me] 6 bytes -> UART: [2F, 31, 5A, 52, 0D, 0A]
+  I ... node-lcd: [uart rx -> radio] 7 bytes: [FF, 2F, 30, 40, 03, 0D, 0A]
 ```
 
 The `FF 2F 30 40 03 0D 0A` in both the dongle RX line and the node
@@ -192,7 +195,7 @@ The `FF 2F 30 40 03 0D 0A` in both the dongle RX line and the node
 | `toolchain 'esp' is not installed`               | `espup install` not completed                 | Rerun `espup install`                                |
 | `~/export-esp.sh: No such file`                  | `espup install` was interrupted               | Rerun, or `espup install -f <path>` to choose a path |
 | `espflash: port is busy`                         | Another `espflash monitor` is still attached  | `pkill espflash` or close the other terminal         |
-| `cargo check` fails with main-workspace errors   | CWD isn't `firmware/esp32-rs`                 | `cd` into this directory first                       |
+| `cargo check` fails with main-workspace errors   | CWD isn't `firmware/esp32s3`                  | `cd` into this directory first                       |
 | First build sits in `esp-idf-sys` for minutes    | Normal — embuild is fetching ESP-IDF v5.5.3   | Wait 3–5 minutes; subsequent builds are cached       |
 
 ## Debugging tips
@@ -214,7 +217,7 @@ The `FF 2F 30 40 03 0D 0A` in both the dongle RX line and the node
 ## Layout
 
 ```
-firmware/esp32-rs/
+firmware/esp32s3/
 ├── Cargo.toml                # standalone crate (not part of OpenSDL workspace)
 ├── rust-toolchain.toml       # pins the `esp` Xtensa toolchain
 ├── sdkconfig.defaults        # ESP-IDF config knobs
@@ -222,11 +225,11 @@ firmware/esp32-rs/
 ├── scripts/
 │   └── send_1zr.py           # Python probe for the end-to-end path
 └── src/
-    ├── main.rs
+    ├── main.rs               # legacy-mqtt bin (kept for reference)
     ├── config.example.rs     # copy to config.rs and fill in
     └── bin/
-        ├── espnow_dongle.rs  # Dongle firmware (Mac USB-CDC ↔ ESP-NOW)
-        ├── espnow_node.rs    # Node firmware (ESP-NOW ↔ RS-485)
+        ├── dongle.rs         # Dongle firmware (host USB-CDC ↔ ESP-NOW)
+        ├── node-lcd.rs       # LilyGO LCD node (ESP-NOW ↔ RS-485)
         ├── uart_count.rs     # UART1 TX sanity check
         ├── espnow_mac.rs     # early MAC print helper
         └── espnow_diag.rs    # early ESP-NOW receive diag

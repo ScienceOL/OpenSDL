@@ -9,8 +9,8 @@
 //! ```
 //!
 //! The shared `EspNowDongleClient` owns the serial port and parses the line
-//! protocol emitted by the dongle firmware (`espnow_dongle.rs` on-board):
-//!   `I (123) espnow_dongle: RX <mac_hex> <hex_bytes>\n`
+//! protocol emitted by the dongle firmware (`firmware/esp32s3/src/bin/dongle.rs`):
+//!   `I (123) dongle: RX <mac_hex> <hex_bytes>\n`
 //! Outbound frames become:
 //!   `TX <mac_hex> <hex_bytes>\n`
 //!
@@ -25,6 +25,7 @@
 
 use super::{Transport, TransportRx};
 use async_trait::async_trait;
+use osdl_firmware_protocol::reg as reg_codec;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -33,10 +34,6 @@ use tokio::sync::{broadcast, mpsc, Mutex, Notify, RwLock};
 use tokio::task::JoinHandle;
 
 pub type Mac = [u8; 6];
-
-/// Marker prefix in ESP-NOW payloads used by nodes to announce their
-/// hardware_id. Keep in sync with firmware (the node bins' `send_reg`).
-const REG_PREFIX: &[u8] = b"REG ";
 
 /// Emitted by the dongle read loop every time a REG frame arrives. Consumers
 /// (e.g. `OsdlEngine`) subscribe to build per-node transports and devices.
@@ -187,6 +184,7 @@ impl EspNowDongleClient {
     pub async fn send_to_mac(&self, mac: Mac, bytes: &[u8]) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let line = format!("TX {} {}\n", mac_hex(&mac), bytes_hex(bytes));
+        log::debug!("dongle TX → {} ({} bytes): {}", mac_hex(&mac), bytes.len(), bytes_hex(bytes));
         let mut guard = self.writer.lock().await;
         let writer = guard.as_mut().ok_or("Dongle serial port not open")?;
         writer
@@ -367,7 +365,7 @@ impl Transport for EspNowNodeTransport {
 
 /// Parse `<stuff> RX <mac_hex12> <hex_bytes>` out of a dongle USB-CDC log line.
 /// The dongle emits frames through ESP-IDF's logger, which prefixes them with
-/// `I (ts) espnow_dongle:` and a timestamp — we skip that prefix and match on
+/// `I (ts) dongle:` and a timestamp — we skip that prefix and match on
 /// `RX ` appearing anywhere in the line.
 pub(crate) fn parse_rx_line(line: &str) -> Option<(Mac, Vec<u8>)> {
     let idx = line.find("RX ")?;
@@ -381,20 +379,21 @@ pub(crate) fn parse_rx_line(line: &str) -> Option<(Mac, Vec<u8>)> {
 }
 
 /// Extract the hardware_id from a REG payload, or None if the bytes don't
-/// look like a REG announcement. Format: ASCII `REG <hardware_id>`.
+/// look like a legacy `REG <hardware_id>` announcement.
+///
+/// Wraps `osdl_firmware_protocol::reg::parse` and discards the `MacOnly` form
+/// — that variant is part of the upcoming mac-assignment mechanism, which the
+/// engine doesn't consume yet. Keeping the host parser strict avoids silently
+/// registering empty-id MAC entries before the mother-side resolver lands.
 pub(crate) fn parse_reg_payload(payload: &[u8]) -> Option<String> {
-    let tail = payload.strip_prefix(REG_PREFIX)?;
-    // Must be valid UTF-8, non-empty, no embedded whitespace.
-    let id = std::str::from_utf8(tail).ok()?.trim();
-    if id.is_empty() || id.contains(char::is_whitespace) {
+    let id = match reg_codec::parse(payload)? {
+        reg_codec::Reg::WithHardwareId(id) => id,
+        reg_codec::Reg::MacOnly => return None,
+    };
+    if id.contains(char::is_whitespace) || id.chars().any(|c| c.is_control()) {
         return None;
     }
-    // Light sanity: reject control chars so a stray binary frame that happens
-    // to start with "REG " can't pollute the table.
-    if id.chars().any(|c| c.is_control()) {
-        return None;
-    }
-    Some(id.to_string())
+    Some(id)
 }
 
 pub fn parse_mac(s: &str) -> Option<Mac> {
@@ -440,7 +439,7 @@ mod tests {
 
     #[test]
     fn parses_typical_dongle_log_line() {
-        let line = "I (782) espnow_dongle: RX 30EDA0B65B38 26000000E5950000";
+        let line = "I (782) dongle: RX 30EDA0B65B38 26000000E5950000";
         let (mac, data) = parse_rx_line(line).unwrap();
         assert_eq!(mac, [0x30, 0xED, 0xA0, 0xB6, 0x5B, 0x38]);
         assert_eq!(data, vec![0x26, 0x00, 0x00, 0x00, 0xE5, 0x95, 0x00, 0x00]);
@@ -456,7 +455,7 @@ mod tests {
 
     #[test]
     fn ignores_non_rx_lines() {
-        assert!(parse_rx_line("I (123) espnow_dongle: [tx->radio] to=... len=6").is_none());
+        assert!(parse_rx_line("I (123) dongle: [tx->radio] to=... len=6").is_none());
         assert!(parse_rx_line("some random noise").is_none());
     }
 

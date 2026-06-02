@@ -29,9 +29,7 @@ use esp_idf_svc::sys::{
     usb_serial_jtag_driver_install, usb_serial_jtag_read_bytes,
 };
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, EspWifi};
-
-const BROADCAST: [u8; 6] = [0xFF; 6];
-const CHANNEL: u8 = 1;
+use osdl_firmware_protocol::{espnow as espnow_codec, BROADCAST, CHANNEL};
 
 // USB-Serial-JTAG ring buffers. The default config gives 256 B which can drop
 // lines under bursty Mac-side writers (e.g., probe scripts). 2 KiB rx is
@@ -121,11 +119,7 @@ fn main() -> anyhow::Result<()> {
                 emit_line(&format!("RX {} {}", mac_hex(&src), bytes_hex(&data)));
             }
             Ok(GwEvent::TxRequest { dst, data }) => {
-                // Wrap: [dst_mac(6) | payload(...)]
-                let mut frame = Vec::with_capacity(6 + data.len());
-                frame.extend_from_slice(&dst);
-                frame.extend_from_slice(&data);
-
+                let frame = espnow_codec::build_frame(&dst, &data);
                 match espnow.send(BROADCAST, &frame) {
                     Ok(()) => log::info!("[tx->radio] to={} len={}", mac_hex(&dst), data.len()),
                     Err(e) => emit_line(&format!("ER send {}: {:?}", mac_hex(&dst), e)),
@@ -152,7 +146,7 @@ fn emit_line(s: &str) {
     // (USB-Serial-JTAG). The Mac-side parser (`EspNowDongleClient::parse_rx_line`)
     // matches `RX ` anywhere in the line, so the ESP-IDF logger's
     // `I (ts) <module>:` prefix doesn't matter — module name follows the bin
-    // name (`espnow_dongle`) but parsing is prefix-agnostic on purpose.
+    // name (`dongle`) but parsing is prefix-agnostic on purpose.
     log::info!("{}", s);
 }
 

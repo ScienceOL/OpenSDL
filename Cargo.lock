@@ -1421,6 +1421,7 @@ dependencies = [
  "libc",
  "log",
  "mdns-sd",
+ "osdl-firmware-protocol",
  "rumqttc",
  "rumqttd",
  "rusqlite",
@@ -1432,6 +1433,10 @@ dependencies = [
  "tokio",
  "tokio-serial",
 ]
+
+[[package]]
+name = "osdl-firmware-protocol"
+version = "0.1.0"
 
 [[package]]
 name = "osdl-proto"

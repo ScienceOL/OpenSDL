@@ -195,7 +195,7 @@ brew install platformio  # macOS
 ### 5.1 创建配置文件
 
 ```bash
-cd firmware/esp32
+cd firmware/esp32-cpp
 
 # 复制配置模板
 cp src/config.example.h src/config.h
