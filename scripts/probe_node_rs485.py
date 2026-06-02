@@ -4,9 +4,9 @@ firmware (~/Downloads/Child/main.cpp) forwards it onto RS485, where the
 USB-RS485 sniffer (or a browser WebSerial terminal) on /dev/cu.usbserial-130
 should see the same bytes come out at 9600 8N1.
 
-Note: this is for an early-bring-up test only; once OSDL `espnow-node`
-firmware is flashed, talk to the node through the dongle instead (see
-`scripts/send_to_node.py`).
+Note: this is for an early-bring-up test only; once OSDL `node` firmware
+(in `firmware/esp32` or `firmware/esp32s3`) is flashed, talk to the node
+through the dongle instead (see `scripts/send_to_node.py`).
 
 Usage:
     uv run --with pyserial python3 scripts/probe_node_rs485.py

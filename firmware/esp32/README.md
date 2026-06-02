@@ -1,18 +1,20 @@
-# osdl-esp32-max485-firmware
+# osdl-esp32-firmware
 
-Sibling Rust firmware crate for boards built around a **standard ESP32**
-(Tensilica LX6, e.g. ESP32-D0WD-V3) with an **external MAX485** RS-485
-transceiver requiring manual DE/RE direction control.
+Rust firmware crate for boards built around a **standard ESP32** (Tensilica
+LX6, e.g. ESP32-D0WD-V3). Currently every bin under `src/bin/` targets a
+node board paired with an **external MAX485** RS-485 transceiver requiring
+manual DE/RE direction control. New ESP32 board variants can be added as
+additional bins without splitting the crate.
 
-This is a separate crate from `firmware/esp32-rs` because the esp-rs
+This is a separate crate from `firmware/esp32s3` because the esp-rs
 toolchain and esp-idf-template both assume one Cargo project per Xtensa
-MCU target — the official path. `firmware/esp32-rs` builds for ESP32-S3;
-this crate builds for ESP32. The two share no code (the firmware here
-intentionally has no LCD/SPI/board-specific peripherals), so the
-duplication is small.
+MCU target — the official path. `firmware/esp32s3` builds for ESP32-S3;
+this crate builds for ESP32. The two share the wire-level protocol via
+`crates/osdl-firmware-protocol` (pure-Rust no_std), but otherwise have no
+dependency overlap.
 
-Wire protocol with the dongle is identical to the LilyGO node in
-`firmware/esp32-rs/src/bin/espnow_node.rs`, so the Mac side
+Wire protocol with the dongle is identical to the LCD node in
+`firmware/esp32s3/src/bin/node-lcd.rs`, so the Mac side
 (`EspNowDongleClient`) needs no changes.
 
 ## Hardware
@@ -25,11 +27,11 @@ Wire protocol with the dongle is identical to the LilyGO node in
 
 ```bash
 source ~/export-esp.sh
-cd firmware/esp32-max485
+cd firmware/esp32
 
-cargo build --release
+cargo build --release --bin node
 espflash flash --port /dev/cu.usbserial-XXXX \
-    target/xtensa-esp32-espidf/release/espnow-node
+    target/xtensa-esp32-espidf/release/node
 ```
 
 First build pulls esp-idf v5.5.3 for the ESP32 target; allow 10–20 minutes.
@@ -37,7 +39,7 @@ Subsequent builds are cached under `target/`.
 
 ## What it does
 
-- ESP-NOW broadcast on channel 1, identical to `firmware/esp32-rs`
+- ESP-NOW broadcast on channel 1, identical to `firmware/esp32s3`
 - Filters inbound frames by `dst_mac` (first 6 bytes of payload)
 - Bridges payload bytes to RS-485, toggling DE/RE around each write
   using `uart_wait_tx_done` so the last bit clears the shift register
@@ -51,12 +53,12 @@ Subsequent builds are cached under `target/`.
 ## Layout
 
 ```
-firmware/esp32-max485/
+firmware/esp32/
 ├── Cargo.toml
 ├── rust-toolchain.toml
 ├── .cargo/config.toml      # target = xtensa-esp32-espidf, MCU = esp32
 ├── sdkconfig.defaults
 ├── build.rs
 └── src/bin/
-    └── espnow_node.rs
+    └── node.rs             # ESP32 + external MAX485 node (laiyu_xyz)
 ```

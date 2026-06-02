@@ -1,7 +1,7 @@
 //! Minimal UART/RS-485 TX diagnostic.
 //!
 //! Configures UART1 on GPIO17 (TX) / GPIO18 (RX) at 9600 8N1 — identical to
-//! `espnow_node.rs` — and then prints an incrementing integer once per
+//! `node-lcd.rs` — and then prints an incrementing integer once per
 //! second, *without* the open-drain GPIO override. On the bus sniffer
 //! (USB-RS485 adapter at 9600 baud) you should see "1\n2\n3\n..." appearing.
 //!

@@ -49,16 +49,14 @@ use mipidsi::interface::SpiInterface;
 use mipidsi::models::ST7796;
 use mipidsi::options::{ColorInversion, Orientation};
 use mipidsi::Builder;
+use osdl_firmware_protocol::{reg as reg_codec, BROADCAST, CHANNEL, ESPNOW_MAX_PAYLOAD};
 
-const BROADCAST: [u8; 6] = [0xFF; 6];
-const CHANNEL: u8 = 1;
 const HARDWARE_ID: &str = "syringe_pump_with_valve.runze.SY03B-T06";
 const REG_INTERVAL_TICKS: u32 = 10; // REG every N telemetry ticks (1 tick = 1 s)
 
 // UART bridge — LilyGO labels these pins RS485_TX_1 / RS485_RX_1.
 const UART_BAUD: u32 = 9600; // ChinWe Runze — confirmed by ThinkPad TCP ground truth
 const UART_FRAME_TIMEOUT_MS: u32 = 50;
-const ESPNOW_MAX_PAYLOAD: usize = 244; // 250-byte cap minus 6-byte dst_mac prefix
 
 // Panel — portrait, controller framebuffer is 320x480, visible window offset by 49 cols.
 const W: i32 = 222;
@@ -316,12 +314,10 @@ fn pdms_to_ticks(ms: u32) -> u32 {
 
 /// Broadcast a registration frame so the mother can build its MAC -> hardware_id
 /// table without any hard-coded config. Format: ASCII `REG <hardware_id>`.
-/// Mother parses this in `EspNowGatewayClient` — see
+/// Mother parses this in `EspNowDongleClient` — see
 /// `OpenSDL/crates/osdl-core/src/transport/espnow_dongle.rs`.
 fn send_reg(espnow: &EspNow) -> Result<(), anyhow::Error> {
-    let mut payload = Vec::with_capacity(4 + HARDWARE_ID.len());
-    payload.extend_from_slice(b"REG ");
-    payload.extend_from_slice(HARDWARE_ID.as_bytes());
+    let payload = reg_codec::build_with_hardware_id(HARDWARE_ID);
     match espnow.send(BROADCAST, &payload) {
         Ok(()) => {
             log::info!("[reg] announced hardware_id={}", HARDWARE_ID);

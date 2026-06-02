@@ -103,7 +103,10 @@ crates/
 │   └── integration.rs       # 6 integration tests (adapters, store, engine)
 ├── osdl-cli/src/main.rs     # Standalone binary
 registry/unilabos/           # Device YAML schemas
-firmware/esp32/              # Node firmware (PlatformIO, ESP32-S3)
+firmware/
+├── esp32/                   # Rust firmware leaf crate, target xtensa-esp32-espidf
+├── esp32s3/                 # Rust firmware leaf crate, target xtensa-esp32s3-espidf
+└── esp32-cpp/               # Legacy C++ PlatformIO stub
 ```
 
 ## Code Style

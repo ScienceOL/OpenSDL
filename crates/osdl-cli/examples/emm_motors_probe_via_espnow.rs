@@ -18,7 +18,7 @@
 //! or a timeout means the motor didn't answer — most commonly a baud-rate
 //! mismatch (node firmware UART is 9600) or wiring/power issue.
 //!
-//! Caveat on baud rate: `espnow_node.rs` hard-codes UART1 at 9600, which
+//! Caveat on baud rate: `firmware/esp32s3/src/bin/node-lcd.rs` hard-codes UART1 at 9600, which
 //! matches the Runze pumps we just verified. Emm V5.0 modules can also be
 //! ordered/configured at 115200 — if motors 4/5 don't answer but the pumps
 //! do, that's the first thing to check.
