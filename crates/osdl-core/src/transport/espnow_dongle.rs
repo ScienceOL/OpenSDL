@@ -39,7 +39,10 @@ pub type Mac = [u8; 6];
 /// (e.g. `OsdlEngine`) subscribe to build per-node transports and devices.
 #[derive(Debug, Clone)]
 pub struct RegEvent {
-    pub hardware_id: String,
+    /// `Some(id)` for legacy `REG <id>` (firmware bakes hardware_id in);
+    /// `None` for the new MAC-only `REG` form, where the mother resolves
+    /// identity via `OsdlConfig.mac_assignments`.
+    pub hardware_id: Option<String>,
     pub mac: Mac,
     /// True the first time this MAC is seen on this dongle; false if the
     /// node is re-announcing (e.g. after a reboot).
@@ -68,18 +71,26 @@ pub struct EspNowDongleClient {
 
 #[derive(Default)]
 struct Routes {
-    mac_to_id: HashMap<Mac, String>,
+    /// Every MAC we've seen a REG from. The value is `Some(hardware_id)` for
+    /// legacy `REG <id>` announcements and `None` for the MAC-only form
+    /// (mother-side resolves identity via `mac_assignments`).
+    mac_to_id: HashMap<Mac, Option<String>>,
+    /// Reverse lookup, only populated for legacy entries. MAC-only nodes
+    /// never appear here — the engine resolves them by MAC, not hardware_id.
     id_to_mac: HashMap<String, Mac>,
 }
 
 impl Routes {
-    fn upsert(&mut self, mac: Mac, hardware_id: String) {
-        if let Some(old_id) = self.mac_to_id.insert(mac, hardware_id.clone()) {
-            if old_id != hardware_id {
+    fn upsert(&mut self, mac: Mac, hardware_id: Option<String>) {
+        let prev = self.mac_to_id.insert(mac, hardware_id.clone());
+        if let Some(Some(old_id)) = prev {
+            if Some(&old_id) != hardware_id.as_ref() {
                 self.id_to_mac.remove(&old_id);
             }
         }
-        self.id_to_mac.insert(hardware_id, mac);
+        if let Some(id) = hardware_id {
+            self.id_to_mac.insert(id, mac);
+        }
     }
 }
 
@@ -110,22 +121,24 @@ impl EspNowDongleClient {
         self.reg_tx.subscribe()
     }
 
-    /// Snapshot of the current MAC ↔ hardware_id table. Useful when a late
-    /// subscriber needs to replay what has already registered.
-    pub async fn known_registrations(&self) -> Vec<(String, Mac)> {
+    /// Snapshot of the current MAC table. Returns one entry per known MAC,
+    /// pairing it with the `hardware_id` (legacy form) or `None` (MAC-only
+    /// form). Used by late subscribers to replay registrations they missed.
+    pub async fn known_registrations(&self) -> Vec<(Option<String>, Mac)> {
         self.routes
             .read()
             .await
-            .id_to_mac
+            .mac_to_id
             .iter()
-            .map(|(id, mac)| (id.clone(), *mac))
+            .map(|(mac, id)| (id.clone(), *mac))
             .collect()
     }
 
-    /// Register a hardware_id ↔ MAC binding manually. Normally unnecessary —
-    /// nodes announce themselves via REG frames — but useful for tests or
-    /// to pre-seed the table before a device has booted.
-    pub async fn register_device(&self, hardware_id: String, mac: Mac) {
+    /// Register a MAC binding manually. Normally unnecessary — nodes announce
+    /// themselves via REG frames — but useful for tests or to pre-seed the
+    /// table before a device has booted. Pass `Some(id)` for legacy
+    /// `REG <hardware_id>` form, `None` for MAC-only form.
+    pub async fn register_device(&self, hardware_id: Option<String>, mac: Mac) {
         let is_new = {
             let mut routes = self.routes.write().await;
             let was_unknown = !routes.mac_to_id.contains_key(&mac);
@@ -232,18 +245,14 @@ impl EspNowDongleClient {
                         routes.upsert(mac, hardware_id.clone());
                         was_unknown
                     };
+                    let id_label = hardware_id
+                        .as_deref()
+                        .map(String::from)
+                        .unwrap_or_else(|| "(mac-only)".into());
                     if is_new {
-                        log::info!(
-                            "dongle registered {} = {}",
-                            hardware_id,
-                            mac_hex(&mac)
-                        );
+                        log::info!("dongle registered {} = {}", id_label, mac_hex(&mac));
                     } else {
-                        log::debug!(
-                            "dongle re-REG {} = {}",
-                            hardware_id,
-                            mac_hex(&mac)
-                        );
+                        log::debug!("dongle re-REG {} = {}", id_label, mac_hex(&mac));
                     }
                     this.reg_notify.notify_waiters();
                     let _ = this.reg_tx.send(RegEvent {
@@ -378,22 +387,28 @@ pub(crate) fn parse_rx_line(line: &str) -> Option<(Mac, Vec<u8>)> {
     Some((mac, data))
 }
 
-/// Extract the hardware_id from a REG payload, or None if the bytes don't
-/// look like a legacy `REG <hardware_id>` announcement.
+/// Parse a REG payload into either form, or `None` if the bytes aren't a
+/// REG frame at all.
 ///
-/// Wraps `osdl_firmware_protocol::reg::parse` and discards the `MacOnly` form
-/// — that variant is part of the upcoming mac-assignment mechanism, which the
-/// engine doesn't consume yet. Keeping the host parser strict avoids silently
-/// registering empty-id MAC entries before the mother-side resolver lands.
-pub(crate) fn parse_reg_payload(payload: &[u8]) -> Option<String> {
-    let id = match reg_codec::parse(payload)? {
-        reg_codec::Reg::WithHardwareId(id) => id,
-        reg_codec::Reg::MacOnly => return None,
-    };
-    if id.contains(char::is_whitespace) || id.chars().any(|c| c.is_control()) {
-        return None;
+/// - `Some(None)` — MAC-only `REG` (mother resolves identity via
+///   `OsdlConfig.mac_assignments`).
+/// - `Some(Some(id))` — legacy `REG <hardware_id>`.
+/// - `None` — payload isn't a REG announcement.
+///
+/// Wraps `osdl_firmware_protocol::reg::parse` and additionally rejects
+/// hardware_ids containing whitespace or control characters (catches stray
+/// log fragments and binary noise that happen to start with `REG `).
+pub(crate) fn parse_reg_payload(payload: &[u8]) -> Option<Option<String>> {
+    match reg_codec::parse(payload)? {
+        reg_codec::Reg::MacOnly => Some(None),
+        reg_codec::Reg::WithHardwareId(id) => {
+            if id.contains(char::is_whitespace) || id.chars().any(|c| c.is_control()) {
+                None
+            } else {
+                Some(Some(id))
+            }
+        }
     }
-    Some(id)
 }
 
 pub fn parse_mac(s: &str) -> Option<Mac> {
@@ -470,9 +485,17 @@ mod tests {
     }
 
     #[test]
-    fn parses_reg_payload() {
+    fn parses_legacy_reg_payload() {
         let payload = b"REG pump-01";
-        assert_eq!(parse_reg_payload(payload).as_deref(), Some("pump-01"));
+        assert_eq!(
+            parse_reg_payload(payload),
+            Some(Some("pump-01".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_mac_only_reg_payload() {
+        assert_eq!(parse_reg_payload(b"REG"), Some(None));
     }
 
     #[test]
@@ -499,17 +522,29 @@ mod tests {
     }
 
     #[test]
-    fn routes_upsert_updates_both_directions() {
+    fn routes_upsert_legacy_form_updates_both_directions() {
         let mut r = Routes::default();
         let mac_a: Mac = [1, 2, 3, 4, 5, 6];
-        r.upsert(mac_a, "pump-01".into());
-        assert_eq!(r.mac_to_id.get(&mac_a).map(String::as_str), Some("pump-01"));
+        r.upsert(mac_a, Some("pump-01".into()));
+        assert_eq!(
+            r.mac_to_id.get(&mac_a).and_then(Option::as_deref),
+            Some("pump-01")
+        );
         assert_eq!(r.id_to_mac.get("pump-01").copied(), Some(mac_a));
 
         // Re-registering same MAC with a renamed hardware_id should evict the
         // old id_to_mac entry so reverse lookup stays consistent.
-        r.upsert(mac_a, "pump-01b".into());
+        r.upsert(mac_a, Some("pump-01b".into()));
         assert_eq!(r.id_to_mac.get("pump-01"), None);
         assert_eq!(r.id_to_mac.get("pump-01b").copied(), Some(mac_a));
+    }
+
+    #[test]
+    fn routes_upsert_mac_only_skips_id_index() {
+        let mut r = Routes::default();
+        let mac: Mac = [10, 20, 30, 40, 50, 60];
+        r.upsert(mac, None);
+        assert!(r.mac_to_id.contains_key(&mac));
+        assert!(r.id_to_mac.is_empty());
     }
 }

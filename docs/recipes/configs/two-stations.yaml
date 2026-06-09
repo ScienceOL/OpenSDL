@@ -1,6 +1,9 @@
 # Two-station setup: chinwe + laiyu_xyz on one mother, one dongle.
-# Demonstrates that `buses` is an array — each node REG independently
-# matches its own entry, no fallback collision.
+#
+# Both nodes are LilyGO T-CAN485 boards running the same MAC-only firmware
+# (`firmware/esp32/src/bin/node-tcan485.rs`). `mac_assignments` decides who
+# is who — change it (and the bus manifests below) and the same firmware
+# binary serves any pair of stations.
 
 mqtt: ~
 
@@ -8,8 +11,12 @@ adapters:
   - type: unilabos
     registry_path: registry/unilabos
 
+mac_assignments:
+  A4F00FD87478: syringe_pump_with_valve.runze.SY03B-T06   # chinwe T-CAN485
+  A4F00FD8555C: bus.laiyu_xyz.station1                    # laiyu T-CAN485
+
 buses:
-  # Station 1: ChinWe (Runze syringes + Emm steppers) — LilyGO T-Connect Pro.
+  # Station 1: ChinWe (Runze syringes + Emm steppers) — LilyGO T-CAN485.
   - match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06
     devices:
       - local_id: pump-1
@@ -28,7 +35,7 @@ buses:
         device_type: stepper_motor.chinwe.emm5
         role: drain_valve
 
-  # Station 2: LaiYu XYZ + SOPA pipette — standard ESP32 + MAX485.
+  # Station 2: LaiYu XYZ + SOPA pipette — LilyGO T-CAN485.
   - match_hardware_id: bus.laiyu_xyz.station1
     devices:
       - local_id: axis-x

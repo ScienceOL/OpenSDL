@@ -953,17 +953,20 @@ impl OsdlEngine {
 
     /// Handle a REG announcement from an ESP-NOW node.
     ///
-    /// Two registration paths:
+    /// Resolution order:
     ///
-    /// 1. **Bus manifest** (`config.buses`): the node's `hardware_id`
-    ///    matches a `BusConfig.match_hardware_id`. We register one
-    ///    `Device` per entry in `devices`, all sharing the node's
-    ///    transport — this is how one ESP-NOW node bridging a shared
-    ///    RS-485 bus exposes multiple addressable devices to the engine.
+    /// 0. **MAC-only REG** (`reg.hardware_id == None`): look the MAC up in
+    ///    `OsdlConfig.mac_assignments` to recover a hardware_id, then fall
+    ///    through to the same paths as a legacy REG. An unassigned MAC is
+    ///    a config gap — log loudly and drop, don't create devices.
     ///
-    /// 2. **Legacy 1:1**: no bus manifest matches. Fall back to the old
-    ///    behavior — look up the hardware_id directly in the adapter
-    ///    registry and create a single Device keyed on the MAC.
+    /// 1. **Bus manifest** (`config.buses`): hardware_id matches a
+    ///    `BusConfig.match_hardware_id`. Register one `Device` per entry
+    ///    in `devices`, all sharing the node's transport.
+    ///
+    /// 2. **Legacy 1:1**: no bus manifest matches. Look up the hardware_id
+    ///    directly in the adapter registry and create one Device keyed on
+    ///    the MAC.
     ///
     /// Idempotent: re-REG (node reboot) is a no-op once transport + any
     /// devices exist.
@@ -985,6 +988,37 @@ impl OsdlEngine {
         if !is_new {
             return;
         }
+
+        // Step 0: resolve MAC-only REG via mac_assignments.
+        let hardware_id = match hardware_id {
+            Some(id) => id,
+            None => {
+                let mac_key = mac_hex_flat(&mac);
+                match self.handle.config.mac_assignments.get(&mac_key) {
+                    Some(id) => {
+                        log::info!(
+                            "ESP-NOW MAC-only REG: {} → hardware_id={} (via mac_assignments)",
+                            mac_key,
+                            id,
+                        );
+                        id.clone()
+                    }
+                    None => {
+                        log::warn!(
+                            "ESP-NOW MAC-only REG from {} but MAC not in `mac_assignments` — dropping. \
+                             Add `mac_assignments: {{ \"{}\": \"<hardware_id>\" }}` to your config.",
+                            mac_key,
+                            mac_key,
+                        );
+                        self.handle.emit(OsdlEvent::UnknownNode {
+                            node_id: transport_id,
+                            hardware_id: format!("(mac-only:{})", mac_key),
+                        });
+                        return;
+                    }
+                }
+            }
+        };
 
         // Path 1: bus manifest.
         let bus = self
@@ -1154,4 +1188,45 @@ fn now_millis() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(all(test, feature = "espnow"))]
+mod espnow_reg_tests {
+    use super::*;
+    use crate::config::OsdlConfig;
+
+    /// `mac_hex_flat` must match the canonical form documented for
+    /// `OsdlConfig.mac_assignments` keys: uppercase hex, no separators.
+    /// If this drifts, every existing recipe YAML stops resolving silently.
+    #[test]
+    fn mac_hex_flat_matches_mac_assignments_key_format() {
+        let mac: Mac = [0xA4, 0xF0, 0x0F, 0xD8, 0x55, 0x5C];
+        assert_eq!(mac_hex_flat(&mac), "A4F00FD8555C");
+    }
+
+    /// A YAML config with a `mac_assignments` table parses, and its keys
+    /// match what the engine will compute from an inbound REG MAC.
+    #[test]
+    fn config_yaml_mac_assignments_roundtrip() {
+        let yaml = r#"
+mac_assignments:
+  A4F00FD7D87C: syringe_pump_with_valve.runze.SY03B-T06
+  A4F00FD8555C: bus.laiyu_xyz.station1
+"#;
+        let cfg: OsdlConfig = serde_yaml::from_str(yaml).expect("parse");
+        let mac: Mac = [0xA4, 0xF0, 0x0F, 0xD8, 0x55, 0x5C];
+        assert_eq!(
+            cfg.mac_assignments.get(&mac_hex_flat(&mac)).map(String::as_str),
+            Some("bus.laiyu_xyz.station1"),
+        );
+        assert_eq!(cfg.mac_assignments.len(), 2);
+    }
+
+    /// Default config has an empty assignments table — MAC-only REGs from
+    /// unknown nodes hit the warn branch, not a panic.
+    #[test]
+    fn default_config_has_no_mac_assignments() {
+        let cfg = OsdlConfig::default();
+        assert!(cfg.mac_assignments.is_empty());
+    }
 }

@@ -1,5 +1,6 @@
 use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OsdlConfig {
@@ -25,6 +26,16 @@ pub struct OsdlConfig {
     /// applies (one Device per REG).
     #[serde(default)]
     pub buses: Vec<BusConfig>,
+    /// MAC → hardware_id table for ESP-NOW nodes that announce in the
+    /// MAC-only REG form (no hardware_id baked into firmware). The engine
+    /// looks up the announcing MAC here and proceeds through the same
+    /// `buses` / 1:1 path as a legacy `REG <hardware_id>` would.
+    ///
+    /// MAC keys are uppercase hex without separators, e.g. `A4F00FD8555C`.
+    /// Lets one firmware binary serve any station — identity is decided
+    /// host-side, not at flash time.
+    #[serde(default)]
+    pub mac_assignments: HashMap<String, String>,
     /// Media sources (cameras, etc.). When non-empty the engine starts a
     /// mediamtx subprocess on `run()` to expose them via RTSP/HLS/WebRTC.
     #[serde(default)]
