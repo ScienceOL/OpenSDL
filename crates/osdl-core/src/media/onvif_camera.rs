@@ -13,19 +13,31 @@ pub struct OnvifCameraConfig {
     pub description: Option<String>,
 
     /// Upstream RTSP URL of the high-quality main stream. Re-exposed as a
-    /// passthrough path (no transcoding) under `id`.
+    /// passthrough path (no transcoding) under `id`. Always required —
+    /// the main path is what the host-side gateway publishes by default.
     pub rtsp_main: String,
 
-    /// Optional sub stream URL. When present, an additional H.264 transcode
-    /// path `{id}_h264` is generated, fed by this stream, so browsers /
-    /// WebRTC can play even when the camera produces HEVC.
+    /// Optional sub-stream URL. Only consumed when
+    /// `h264_transcode_source: sub`, where it lets a CPU-constrained host
+    /// transcode from the cheaper low-resolution feed instead of the main
+    /// 4K one. Has no effect on the main passthrough path. Leave unset
+    /// unless you need that override.
     #[serde(default)]
     pub rtsp_sub: Option<String>,
 
-    /// If true, generate the H.264 transcode path. Default: true when
-    /// `rtsp_sub` is set, false otherwise.
+    /// If true, generate an additional H.264 transcoded path `{id}_h264`
+    /// alongside the main passthrough. Lets clients that can't decode
+    /// HEVC (older browsers, some WebRTC stacks) still play the camera.
+    /// Default false — modern Mac/Win Electron handles HEVC natively.
     #[serde(default)]
     pub h264_transcode: Option<bool>,
+
+    /// Where the H.264 transcode pulls from when `h264_transcode` is on.
+    /// Defaults to `Main` so the H.264 path matches the HEVC path's
+    /// resolution / quality. Use `Sub` (and set `rtsp_sub`) only when
+    /// the host is CPU-constrained and you accept lower-res H.264.
+    #[serde(default)]
+    pub h264_transcode_source: H264TranscodeSource,
 
     /// Force RTSP transport=tcp on the upstream pull. Most cameras work
     /// better with TCP (no UDP packet loss); default true.
@@ -37,6 +49,21 @@ pub struct OnvifCameraConfig {
     /// there's no extra encoding cost.
     #[serde(default)]
     pub remote_rtmp: Option<RemoteRtmpConfig>,
+}
+
+/// Selects which upstream feeds the optional `{id}_h264` transcode path.
+/// Only consulted when `h264_transcode` is on; the HEVC main passthrough
+/// path always sources from `rtsp_main` regardless.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum H264TranscodeSource {
+    /// Transcode from `rtsp_main`. Same resolution as the HEVC path,
+    /// higher CPU on the host.
+    #[default]
+    Main,
+    /// Transcode from `rtsp_sub`. Lower CPU, lower resolution. Requires
+    /// `rtsp_sub` to be set; otherwise validation fails.
+    Sub,
 }
 
 /// Remote RTMP ingest target. Resulting push URL is `{base_url}/{stream}`,
@@ -108,9 +135,18 @@ impl OnvifCameraConfig {
     /// Validate cross-field invariants. Called from `MediaSourceConfig::paths`
     /// before the engine spawns mediamtx, so config errors fail fast.
     pub fn validate(&self) -> Result<(), String> {
-        // Main path always exists (HEVC passthrough), so remote_rtmp is
-        // always satisfiable. No invariants to check at the moment; left
-        // as a hook for future ones.
+        // h264_transcode_source = sub  ⇒  rtsp_sub must be present.
+        // Without this check the transcode would silently fall back to
+        // main, masking a config typo.
+        if self.produces_h264_path()
+            && self.h264_transcode_source == H264TranscodeSource::Sub
+            && self.rtsp_sub.is_none()
+        {
+            return Err(format!(
+                "camera {:?}: h264_transcode_source=sub requires rtsp_sub to be set",
+                self.id,
+            ));
+        }
         Ok(())
     }
 
@@ -140,12 +176,17 @@ impl OnvifCameraConfig {
             // Optional H.264 transcode for clients that can't play HEVC
             // (some browser WebRTC stacks, older mobile decoders).
             //
-            // Source the transcode from the *main* stream so the H.264 path
-            // matches the HEVC path's resolution and quality. Sub stream
-            // would be cheaper to encode but visibly lower-resolution; if a
-            // host is CPU-constrained, override per-camera by adding a
-            // dedicated low-res `rtsp_main` upstream.
-            let upstream = self.rtsp_main.clone();
+            // Source: `Main` (default) so the H.264 path matches the HEVC
+            // path's resolution; `Sub` for CPU-constrained hosts willing
+            // to accept the low-res feed. validate() guarantees rtsp_sub
+            // is set whenever we reach the Sub branch here.
+            let upstream = match self.h264_transcode_source {
+                H264TranscodeSource::Main => self.rtsp_main.clone(),
+                H264TranscodeSource::Sub => self
+                    .rtsp_sub
+                    .clone()
+                    .expect("validate() ensures rtsp_sub is Some when source=sub"),
+            };
             // Don't double-push to remote — the HEVC main path already does.
             // Local-only H.264 fallback for now.
             out.push(MediaPath {
@@ -172,6 +213,7 @@ mod tests {
             rtsp_main: "rtsp://1.2.3.4/main".into(),
             rtsp_sub: None,
             h264_transcode: None,
+            h264_transcode_source: H264TranscodeSource::Main,
             rtsp_transport_tcp: true,
             remote_rtmp: None,
         }
@@ -241,5 +283,40 @@ mod tests {
         let paths = c.paths();
         assert_eq!(paths.len(), 2);
         assert!(paths.iter().all(|p| p.push_to.is_none()));
+    }
+
+    #[test]
+    fn h264_transcode_source_sub_uses_rtsp_sub() {
+        let mut c = cam("cam1");
+        c.rtsp_sub = Some("rtsp://1.2.3.4/sub".into());
+        c.h264_transcode = Some(true);
+        c.h264_transcode_source = H264TranscodeSource::Sub;
+        assert!(c.validate().is_ok());
+        let paths = c.paths();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(
+            paths[1].transcode_from.as_deref(),
+            Some("rtsp://1.2.3.4/sub"),
+            "source=sub should pull rtsp_sub",
+        );
+    }
+
+    #[test]
+    fn h264_transcode_source_sub_without_rtsp_sub_fails_validation() {
+        let mut c = cam("cam1");
+        // rtsp_sub deliberately left None
+        c.h264_transcode = Some(true);
+        c.h264_transcode_source = H264TranscodeSource::Sub;
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn h264_transcode_source_sub_with_transcode_off_is_silently_ignored() {
+        // Source override only matters when h264_transcode is on.
+        let mut c = cam("cam1");
+        c.h264_transcode_source = H264TranscodeSource::Sub;
+        // No rtsp_sub, no h264_transcode — validate should still pass.
+        assert!(c.validate().is_ok());
+        assert_eq!(c.paths().len(), 1);
     }
 }

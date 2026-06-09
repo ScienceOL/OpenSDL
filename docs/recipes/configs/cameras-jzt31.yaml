@@ -5,7 +5,9 @@
 # (Electron 33+, Safari, Chrome 107+ on Mac/Win) plays HEVC natively, so
 # we keep the camera's full 4K quality at near-zero CPU cost. Set
 # `h264_transcode: true` on a per-camera basis if a legacy / WebRTC-only
-# consumer needs an H.264 fallback alongside the main HEVC path.
+# consumer needs an H.264 fallback alongside the main HEVC path; pair
+# with `h264_transcode_source: sub` if the host is CPU-constrained and
+# the lower-resolution sub stream is acceptable.
 #
 # Credentials are bring-up values from camera-bringup/.env.cam131 / .env.cam53.
 # Move these to env-templated values before sharing the host.
