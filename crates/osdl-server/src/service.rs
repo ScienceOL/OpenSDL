@@ -246,10 +246,38 @@ impl pb::osdl_server::Osdl for OsdlService {
         req: Request<pb::StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
         let kinds = req.into_inner().kinds;
+        // Subscribe BEFORE reading the snapshot so we don't lose any
+        // event fired between the snapshot read and the loop start.
+        // The snapshot may overlap with a live event still in the
+        // broadcast buffer; clients are expected to dedupe by id (the
+        // runner already does this via its `media_sources` cache).
         let mut rx = self.engine.subscribe_events();
         let shutdown = self.shutdown.clone();
 
+        // Replay the current media-source snapshot so a subscriber
+        // that connects after engine startup learns about cameras —
+        // the live `MediaSourceOnline` event is only emitted once at
+        // mediamtx start and there's no ListMediaSources RPC for
+        // late-comers to reconcile against.
+        let media_snapshot = self.engine.list_media_sources().await;
+
         let stream = async_stream::stream! {
+            // Synthesize a `MediaSourceOnline` event per snapshot entry
+            // and pipe it through the same `event_to_pb` used for live
+            // events so the wire shape stays in sync with the canonical
+            // converter.
+            for src in media_snapshot {
+                let synthetic = osdl_core::OsdlEvent::MediaSourceOnline {
+                    id: src.id,
+                    description: src.description,
+                    endpoints: src.endpoints,
+                };
+                let pb_event = event_to_pb(&synthetic);
+                if !kinds.is_empty() && !event_kind_matches(&pb_event, &kinds) {
+                    continue;
+                }
+                yield Ok(pb_event);
+            }
             // Pre-allocate a `Notified` future so the select! loop can
             // be polled across iterations. `Notified` resets after each
             // wake; we re-arm it at the top of every iteration.

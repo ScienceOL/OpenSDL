@@ -33,3 +33,4 @@ directories = "6"
 hyper-util = { version = "0.1", features = ["tokio"] }
 tower = { version = "0.5", features = ["util"] }
 daemonize = "0.5"
+shellexpand = "3"

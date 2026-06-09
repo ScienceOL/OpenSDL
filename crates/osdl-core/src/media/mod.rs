@@ -188,7 +188,11 @@ fn build_url(host: &str, ports: &mediamtx::ListenerPorts, proto: Protocol, path:
     match proto {
         Protocol::Rtsp => format!("rtsp://{}:{}/{}", host, ports.rtsp, path),
         Protocol::Hls => format!("http://{}:{}/{}/index.m3u8", host, ports.hls, path),
-        Protocol::Webrtc => format!("http://{}:{}/{}", host, ports.webrtc, path),
+        // mediamtx serves the WHEP negotiation endpoint at `<path>/whep`
+        // (the bare `<path>` is the HTML demo player). Subscribers POST
+        // their SDP offer to `/whep` and receive the answer in the
+        // response body. Without the suffix, mediamtx returns 404.
+        Protocol::Webrtc => format!("http://{}:{}/{}/whep", host, ports.webrtc, path),
         // Rtmp/Flv are remote-only; build_url is only called for local
         // gateway endpoints. Reaching here would indicate a programming bug.
         Protocol::Rtmp | Protocol::Flv => unreachable!("RTMP/FLV are remote-only"),

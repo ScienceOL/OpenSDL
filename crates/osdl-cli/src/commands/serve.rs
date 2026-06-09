@@ -14,6 +14,7 @@ use clap::Args;
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::config::{AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
+use osdl_core::path_expand;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 use osdl_server::{paths::Paths, ListenConfig, ServeConfig};
 
@@ -90,6 +91,13 @@ pub fn main_entrypoint(mut args: ServeArgs) -> anyhow::Result<()> {
     #[cfg(not(unix))]
     let should_detach = false;
 
+    // Env-var expansion runs in *every* mode so users can write
+    // `--config $LAB_DIR/recipe.yaml` from any shell (bash, fish, launchd,
+    // Electron's child_process.spawn — none of them necessarily expand the
+    // same surface). After expansion the path may still be relative — that
+    // case is handled per-mode below.
+    expand_env_in_path_args(&mut args);
+
     // Daemonized children chdir to `/` (standard daemon hygiene — don't
     // pin the user's CWD), so any relative path passed on the command
     // line stops resolving after the fork. Canonicalize them up-front
@@ -115,10 +123,49 @@ pub fn main_entrypoint(mut args: ServeArgs) -> anyhow::Result<()> {
     }
 }
 
+/// Expand `~` / `$VAR` / `${VAR}` in every path-shaped CLI arg in place.
+/// Doesn't touch path *relativity* — that's handled in `absolutize_path_args`
+/// or, for non-detach foreground runs, by std's normal CWD-relative open.
+fn expand_env_in_path_args(args: &mut ServeArgs) {
+    fn expand_pathbuf(p: &Path) -> PathBuf {
+        PathBuf::from(path_expand::expand_vars(&p.to_string_lossy()))
+    }
+    if let Some(p) = args.config.as_deref() {
+        args.config = Some(expand_pathbuf(p));
+    }
+    if let Some(p) = args.registry.as_deref() {
+        args.registry = Some(expand_pathbuf(p));
+    }
+    if let Some(p) = args.data_dir.as_deref() {
+        args.data_dir = Some(expand_pathbuf(p));
+    }
+    if let Some(p) = args.log_file.as_deref() {
+        args.log_file = Some(expand_pathbuf(p));
+    }
+    if let Some(s) = args.socket.as_deref() {
+        if !matches!(s, "disabled" | "none" | "off") {
+            let expanded = path_expand::expand_vars(s);
+            if expanded != s {
+                args.socket = Some(expanded);
+            }
+        }
+    }
+    if let Some(s) = args.dongle_port.as_deref() {
+        // Dongle port is a path on Unix (`/dev/cu.*`) and a name
+        // (`COM3`) on Windows. Either way passing it through expand_vars
+        // is harmless: the Windows form has no `$` / `~` to substitute.
+        let expanded = path_expand::expand_vars(s);
+        if expanded != s {
+            args.dongle_port = Some(expanded);
+        }
+    }
+}
+
 /// Canonicalize all path-bearing CLI args so they survive the daemon's
 /// chdir(`/`). We don't require the file to exist for `--data-dir` /
 /// `--log-file` (they may be created), only resolve them relative to
-/// the current CWD.
+/// the current CWD. Env vars are assumed to have already been expanded
+/// by `expand_env_in_path_args`.
 fn absolutize_path_args(args: &mut ServeArgs) -> anyhow::Result<()> {
     fn require_existing(p: &Path) -> anyhow::Result<PathBuf> {
         std::fs::canonicalize(p).with_context(|| format!("resolve {}", p.display()))
@@ -350,23 +397,42 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 }
 
 fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
-    let mut cfg = if let Some(path) = &args.config {
+    // Recipe-relative path resolution requires a stable base. Pick the
+    // YAML's parent dir when a config was loaded — that's the only
+    // reference point that travels with the file across machines (CWD
+    // changes between an interactive shell and a launchd-spawned `.app`,
+    // but `dirname(config.yaml)` does not). Fall back to the current
+    // working directory when no config was given.
+    let (mut cfg, config_dir) = if let Some(path) = &args.config {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("read config {}", path.display()))?;
-        serde_yaml::from_str::<OsdlConfig>(&raw)
-            .with_context(|| format!("parse config {}", path.display()))?
+        let cfg: OsdlConfig = serde_yaml::from_str(&raw)
+            .with_context(|| format!("parse config {}", path.display()))?;
+        let dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        (cfg, dir)
     } else {
         // No config: ship a sensible default — MQTT broker on, unilabos
         // adapter, optional ESP-NOW dongle.
-        OsdlConfig {
+        let dir = std::env::current_dir().context("read current dir")?;
+        let cfg = OsdlConfig {
             mqtt: Some(MqttConfig::default()),
             adapters: vec![AdapterConfig {
                 adapter_type: "unilabos".into(),
                 registry_path: None,
             }],
             ..Default::default()
-        }
+        };
+        (cfg, dir)
     };
+
+    // Expand `~` / `$VAR` / `${VAR}` in every path-shaped field, and
+    // resolve relatives against `config_dir`. Done before the CLI override
+    // pass so a user-provided override always wins, even if the YAML had
+    // a lab-local path with env vars.
+    normalize_config_paths(&mut cfg, &config_dir);
 
     // CLI/env-var overrides take precedence over YAML so the same recipe
     // config can be shared across machines that have different dongle
@@ -384,12 +450,14 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
             }
         }
     } else {
-        // Final fallback for adapters with no registry configured — keeps
-        // the historical default behavior when running from the workspace
-        // root with no flags.
+        // Final fallback for adapters with no registry configured — pick
+        // the registry that ships next to the config file. With a config
+        // file, that's `<config_dir>/registry/unilabos`; without one,
+        // it's the historical CWD-relative `registry/unilabos`.
+        let default_registry = config_dir.join("registry/unilabos");
         for a in &mut cfg.adapters {
             if a.registry_path.is_none() {
-                a.registry_path = Some("registry/unilabos".to_string());
+                a.registry_path = Some(default_registry.display().to_string());
             }
         }
     }
@@ -408,4 +476,35 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
     }
 
     Ok(cfg)
+}
+
+/// Expand env vars and resolve relative paths in every path-shaped config
+/// field. Run **after** the YAML is parsed and **before** any CLI override
+/// so user-provided overrides remain authoritative.
+///
+/// The fields touched here are all the spots where the engine treats a
+/// string as a filesystem path: adapter registry directories, ESP-NOW
+/// dongle device files, and the optional mediamtx binary path. URLs
+/// (RTSP / mediamtx endpoints, MQTT host) are deliberately left alone.
+fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
+    for a in &mut cfg.adapters {
+        if let Some(p) = a.registry_path.as_deref() {
+            a.registry_path =
+                Some(path_expand::expand(p, config_dir).display().to_string());
+        }
+    }
+    for d in &mut cfg.espnow_dongles {
+        // Dongle port: usually `/dev/cu.usbmodem...` (absolute) or `COM3`
+        // (Windows, no leading separator). `expand` happens to leave
+        // both alone because absolute paths short-circuit and
+        // `COM3` has no `$` / `~` to expand. The point of running it
+        // through is to support `${LAB_DONGLE_PORT}` in shared recipes.
+        let raw = d.port.clone();
+        let expanded = path_expand::expand(&raw, config_dir);
+        d.port = expanded.display().to_string();
+    }
+    if let Some(bin) = cfg.media_gateway.binary.as_deref() {
+        cfg.media_gateway.binary =
+            Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
+    }
 }
