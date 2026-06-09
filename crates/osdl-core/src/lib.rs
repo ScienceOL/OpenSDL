@@ -8,6 +8,7 @@ pub mod mdns;
 pub mod media;
 pub mod mqtt;
 pub mod orchestrator;
+pub mod path_expand;
 pub mod protocol;
 pub mod store;
 pub mod transport;

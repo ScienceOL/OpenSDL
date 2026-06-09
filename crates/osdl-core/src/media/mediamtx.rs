@@ -165,6 +165,19 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
 
     s.push_str("webrtc: yes\n");
     s.push_str(&format!("webrtcAddress: :{}\n", cfg.ports.webrtc));
+    // Pin the ICE candidate's host to whatever we advertise to consumers.
+    // Without this, mediamtx gathers every interface — including macOS's
+    // mDNS-anonymized `*.local` candidate that Chromium 110+ emits for
+    // privacy. Some embedded WebRTC stacks (Electron's renderer) can't
+    // resolve those, so the SDP exchange succeeds but ICE never connects
+    // and the tile sits at "handshake ok, no media". Pinning to the
+    // advertise host (loopback in the desktop case, the LAN IP for
+    // off-host viewers) keeps ICE on a network path the client just used
+    // to reach mediamtx — guaranteed reachable.
+    s.push_str(&format!(
+        "webrtcAdditionalHosts: [{}]\n",
+        cfg.advertise_host
+    ));
     s.push_str("\n");
 
     s.push_str("rtmp: no\n");

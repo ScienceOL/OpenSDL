@@ -2,6 +2,7 @@ use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
 use crate::media::mediamtx::MediamtxProcess;
+use crate::media::MediaEndpoint;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
@@ -69,9 +70,26 @@ pub struct EngineHandle {
     /// `RecvError::Lagged(n)`.
     events_tx: broadcast::Sender<OsdlEvent>,
 
+    /// Currently-online media sources, keyed by id. Populated when the
+    /// media gateway starts and cleared on `MediaGatewayDown`. Late
+    /// subscribers (every gRPC `StreamEvents` reconnect) read this so
+    /// they don't miss the one-time `MediaSourceOnline` emit — the gRPC
+    /// service replays a snapshot before forwarding live events.
+    media_sources: Arc<RwLock<HashMap<String, MediaSourceState>>>,
+
     status_tx: watch::Sender<OsdlStatus>,
     status_rx: watch::Receiver<OsdlStatus>,
     stop_tx: watch::Sender<bool>,
+}
+
+/// Snapshot of an online media source. Mirrors the `MediaSourceOnline`
+/// event payload because that's exactly what subscribers want when the
+/// stream replays state on reconnect.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MediaSourceState {
+    pub id: String,
+    pub description: String,
+    pub endpoints: Vec<MediaEndpoint>,
 }
 
 impl EngineHandle {
@@ -87,6 +105,15 @@ impl EngineHandle {
 
     pub async fn list_nodes(&self) -> Vec<Node> {
         self.nodes.read().await.values().cloned().collect()
+    }
+
+    /// Snapshot of every media source that is currently online (mediamtx
+    /// is up and the source's URLs are reachable). Used by the gRPC
+    /// `StreamEvents` handler to replay state to a new subscriber so a
+    /// runner / desktop client that connects after the one-time
+    /// `MediaSourceOnline` emit still learns about the cameras.
+    pub async fn list_media_sources(&self) -> Vec<MediaSourceState> {
+        self.media_sources.read().await.values().cloned().collect()
     }
 
     /// Get a reference to the event store (for querying logs).
@@ -316,6 +343,7 @@ impl OsdlEngine {
             transport_rx_tx,
             cmd_inject_tx,
             events_tx,
+            media_sources: Arc::new(RwLock::new(HashMap::new())),
             status_tx,
             status_rx,
             stop_tx,
@@ -537,6 +565,11 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
+                                // Drop the snapshot before emitting so a
+                                // subscriber that races the event observes
+                                // an empty media-source set rather than
+                                // stale URLs that no longer resolve.
+                                self.handle.media_sources.write().await.clear();
                                 self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                                 media_proc = None;
                             }
@@ -597,6 +630,11 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
+                                // Drop the snapshot before emitting so a
+                                // subscriber that races the event observes
+                                // an empty media-source set rather than
+                                // stale URLs that no longer resolve.
+                                self.handle.media_sources.write().await.clear();
                                 self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                                 media_proc = None;
                             }
@@ -618,6 +656,9 @@ impl OsdlEngine {
 
         if let Some(p) = media_proc.take() {
             p.shutdown().await;
+            // Drop the snapshot too so a fresh `run()` doesn't observe
+            // stale state from the previous session.
+            self.handle.media_sources.write().await.clear();
         }
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
@@ -660,6 +701,15 @@ impl OsdlEngine {
             }
         };
 
+        // Commit each entry to the shared map BEFORE emitting the
+        // live event. A subscriber that races the emit window finds
+        // the snapshot already populated; a subscriber that arrives
+        // after engine startup sees both the snapshot replay and any
+        // live event still in the broadcast buffer (clients dedupe by
+        // camera id). The reverse order — emit first, commit later —
+        // creates a window where a fresh subscriber observes neither.
+        let mut sources_map = self.handle.media_sources.write().await;
+        sources_map.clear();
         for src in &cfg.media_sources {
             let endpoints = src.endpoints(&gateway.advertise_host, &gateway.ports);
             log::info!(
@@ -667,12 +717,21 @@ impl OsdlEngine {
                 src.id(),
                 endpoints.len(),
             );
+            sources_map.insert(
+                src.id().to_string(),
+                MediaSourceState {
+                    id: src.id().to_string(),
+                    description: src.description().to_string(),
+                    endpoints: endpoints.clone(),
+                },
+            );
             self.handle.emit(OsdlEvent::MediaSourceOnline {
                 id: src.id().to_string(),
                 description: src.description().to_string(),
                 endpoints,
             });
         }
+        drop(sources_map);
 
         Some(proc)
     }
