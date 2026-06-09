@@ -20,6 +20,12 @@
 //! Wire protocol with the dongle is identical to every other OSDL node, so
 //! the mother (`EspNowDongleClient`) needs no changes.
 //!
+//! Identity is decided host-side: this firmware announces a MAC-only `REG`
+//! (no hardware_id baked in), and the mother resolves the announcing MAC to
+//! a station via `OsdlConfig.mac_assignments`. The same binary therefore
+//! serves any station — flash-and-forget. See the new station's entry in
+//! `docs/recipes/configs/*.yaml` for the MAC → hardware_id mapping.
+//!
 //! Reference: https://github.com/Xinyuan-LilyGO/T-CAN485/blob/main/examples/RS485/RS485.ino
 
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -37,8 +43,6 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::sys::{esp_mac_type_t_ESP_MAC_WIFI_STA, esp_read_mac};
 use esp_idf_svc::wifi::{ClientConfiguration, Configuration, EspWifi};
 use osdl_firmware_protocol::{reg as reg_codec, BROADCAST, CHANNEL, ESPNOW_MAX_PAYLOAD};
-
-const HARDWARE_ID: &str = "bus.laiyu_xyz.station1";
 
 const REG_INTERVAL_TICKS: u32 = 10;
 const UART_BAUD: u32 = 115200;
@@ -228,10 +232,10 @@ fn pdms_to_ticks(ms: u32) -> u32 {
 }
 
 fn send_reg(espnow: &EspNow) -> Result<(), anyhow::Error> {
-    let payload = reg_codec::build_with_hardware_id(HARDWARE_ID);
+    let payload = reg_codec::build_mac_only();
     match espnow.send(BROADCAST, &payload) {
         Ok(()) => {
-            log::info!("[reg] announced hardware_id={}", HARDWARE_ID);
+            log::info!("[reg] announced (mac-only) — mother resolves via mac_assignments");
             Ok(())
         }
         Err(e) => {

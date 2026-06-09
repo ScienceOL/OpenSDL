@@ -1,0 +1,47 @@
+# Two ONVIF cameras (JZT31 family, firmware V4.0) on the bring-up subnet
+# 192.168.1.0/24, reachable via the host's en7 alias 192.168.1.10.
+#
+# Default mode: HEVC main passthrough — no transcoding. Downstream
+# (Electron 33+, Safari, Chrome 107+ on Mac/Win) plays HEVC natively, so
+# we keep the camera's full 4K quality at near-zero CPU cost. Set
+# `h264_transcode: true` on a per-camera basis if a legacy / WebRTC-only
+# consumer needs an H.264 fallback alongside the main HEVC path; pair
+# with `h264_transcode_source: sub` if the host is CPU-constrained and
+# the lower-resolution sub stream is acceptable.
+#
+# Credentials are bring-up values from camera-bringup/.env.cam131 / .env.cam53.
+# Move these to env-templated values before sharing the host.
+#
+# Use with:
+#   osdl serve --config docs/recipes/configs/cameras-jzt31.yaml
+#
+# After it boots, paths come up at:
+#   rtsp://<advertise_host>:8554/cam131    (HEVC main passthrough)
+#   rtsp://<advertise_host>:8554/cam53
+# plus HLS at :8888/<id>/index.m3u8 and (with h264_transcode) the
+# WebRTC-friendly :8889/<id>_h264.
+
+mqtt: ~        # No MQTT bridge.
+adapters: []   # No physical instruments — pure media gateway.
+
+media_gateway:
+  # Loopback only for now. Switch to the host's LAN IP when other machines
+  # need to consume the streams.
+  advertise_host: 127.0.0.1
+
+media_sources:
+  - kind: onvif_camera
+    id: cam131
+    description: JZT31X PTZ dome (WiFi). Main 2304x1296 HEVC, passthrough.
+    rtsp_main: rtsp://onvif_op:IK1tCNzKP7VyAPIl@192.168.1.131:554/ch01.264
+    rtsp_sub:  rtsp://onvif_op:IK1tCNzKP7VyAPIl@192.168.1.131:554/ch01_sub.264
+    rtsp_transport_tcp: true
+
+  - kind: onvif_camera
+    id: cam53
+    description: JZT31N V2 PTZ. Main 2560x1440 HEVC, passthrough.
+    # Operator account hasn't been provisioned on this unit yet; using
+    # factory admin until the manual web-UI step in camera-bringup is done.
+    rtsp_main: rtsp://admin:123456@192.168.1.53:554/ch01.264
+    rtsp_sub:  rtsp://admin:123456@192.168.1.53:554/ch01_sub.264
+    rtsp_transport_tcp: true

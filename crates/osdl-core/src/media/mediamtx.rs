@@ -129,6 +129,18 @@ fn validate_url(label: &str, value: &str, schemes: &[&str]) -> Result<(), Mediam
     Ok(())
 }
 
+/// ffmpeg flags applied at the *input* of every demuxer we spawn, on both
+/// the transcode (`runOnDemand` / `runOnInit`) and the remote-push
+/// (`runOnReady`) paths. They strip ffmpeg's default ~5s probe / analyze
+/// window and the demuxer reorder buffer so a frame goes downstream as
+/// soon as it arrives, instead of getting parked.
+///
+/// Single source of truth — both renderers below read this constant so
+/// future tuning lands in one place. If you split per-path tuning later,
+/// duplicate this string before changing it, don't shadow the const.
+const FFMPEG_LOW_LATENCY_INPUT: &str =
+    "-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0";
+
 /// Render a mediamtx YAML config from gateway settings + path entries.
 pub fn render_config(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Result<String, MediamtxError> {
     for p in paths {
@@ -166,9 +178,14 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
             if p.rtsp_transport_tcp {
                 s.push_str("    rtspTransport: tcp\n");
             }
-            s.push_str("    sourceOnDemand: yes\n");
-            s.push_str("    sourceOnDemandStartTimeout: 10s\n");
-            s.push_str("    sourceOnDemandCloseAfter: 30s\n");
+            // When this path also republishes to a remote, keep it always-on
+            // so the upstream pull stays alive between local consumers — the
+            // remote ingest is itself a permanent consumer.
+            if p.push_to.is_none() {
+                s.push_str("    sourceOnDemand: yes\n");
+                s.push_str("    sourceOnDemandStartTimeout: 10s\n");
+                s.push_str("    sourceOnDemandCloseAfter: 30s\n");
+            }
         } else if let Some(upstream) = &p.transcode_from {
             // ffmpeg pulls upstream and republishes to localhost as this path.
             // Software libx264 ultrafast/zerolatency keeps cross-platform CPU
@@ -183,12 +200,29 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
             let always_on = p.push_to.is_some();
             s.push_str("    source: publisher\n");
             let runner_keyword = if always_on { "runOnInit" } else { "runOnDemand" };
+            // Low-latency knobs, in priority order:
+            //   - FFMPEG_LOW_LATENCY_INPUT  → skip ffmpeg's default ~5s probe
+            //     and reorder buffer (shared with the push path).
+            //   - -tune zerolatency / -bf 0  → no B frames, no lookahead.
+            //   - -g 8 / x264 keyint=8 scenecut=0  → IDR every ~0.5s @15fps,
+            //     so a fresh subscriber waits at most ~500ms for keyframe.
+            //   - repeat_headers=1  → SPS/PPS prepended to every IDR, lets
+            //     mid-stream join work without out-of-band negotiation.
+            //   - rc-lookahead=0 / sync-lookahead=0  → encoder doesn't queue
+            //     frames waiting on rate control.
+            //   - -flush_packets 1  → muxer doesn't pool packets before
+            //     writing (matters for FLV/RTSP intermediates).
             s.push_str(&format!(
-                "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning {transport} \
+                "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
+                  {FFMPEG_LOW_LATENCY_INPUT} \
+                  {transport} \
                   -i {upstream} \
-                  -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline \
-                  -pix_fmt yuv420p -g 30 \
+                  -c:v libx264 -preset ultrafast -tune zerolatency \
+                  -profile:v baseline -pix_fmt yuv420p \
+                  -bf 0 -g 8 \
+                  -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
                   -c:a aac -ar 44100 -b:a 64k \
+                  -flush_packets 1 \
                   -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH\n",
             ));
             if always_on {
@@ -202,9 +236,13 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
         if let Some(target) = &p.push_to {
             // runOnReady fires whenever the path becomes available. ffmpeg
             // `-c copy` since path content is already H.264/AAC. -f flv for
-            // RTMP ingest. mediamtx auto-restarts the command if it exits.
+            // RTMP ingest. Reuses FFMPEG_LOW_LATENCY_INPUT so the push side
+            // doesn't drift from the transcode side; -c copy means no
+            // encoder is in the middle to queue. mediamtx auto-restarts
+            // the command if it exits.
             s.push_str(&format!(
                 "    runOnReady: >\n      ffmpeg -hide_banner -loglevel warning \
+                 {FFMPEG_LOW_LATENCY_INPUT} \
                  -rtsp_transport tcp \
                  -i rtsp://localhost:$RTSP_PORT/$MTX_PATH \
                  -c copy -f flv {target}\n"

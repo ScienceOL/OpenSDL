@@ -1,18 +1,19 @@
 # ChinWe separator station — bus manifest.
 #
-# One ESP-NOW node fronts a shared RS-485 bus carrying 5 addressable
-# devices: 3 syringe pumps (Runze SY-03B at addresses 1/2/3) and 2 Emm V5.0
-# stepper motors (device_id 4/5, used as the stirrer and drain valve).
+# One ESP-NOW node (LilyGO T-CAN485, MAC A4:F0:0F:D8:74:78) fronts a shared
+# RS-485 bus carrying 5 addressable devices: 3 syringe pumps (Runze SY-03B
+# at addresses 1/2/3) and 2 Emm V5.0 stepper motors (device_id 4/5, used as
+# the stirrer and drain valve).
 #
-# The node REGs as `syringe_pump_with_valve.runze.SY03B-T06` (its
-# hardware_id, baked into the firmware). The bus manifest below tells the
-# engine that this single node should expose 5 distinct devices, each
-# addressable by a `local_id` (pump-1 … motor-5).
+# The node firmware (`firmware/esp32/src/bin/node-tcan485.rs`) ships a
+# MAC-only `REG`. `mac_assignments` below tells the mother that this MAC
+# means `syringe_pump_with_valve.runze.SY03B-T06`, which then matches the
+# bus manifest and fans out to 5 logical devices.
 #
 # Use with:
 #   osdl serve --config docs/recipes/configs/chinwe-station.yaml \
 #              --registry $(pwd)/registry/unilabos \
-#              --dongle-port /dev/cu.usbserial-XXXX
+#              --dongle-port /dev/cu.usbmodem1101
 
 mqtt: ~  # No MQTT bridge needed — ESP-NOW only.
 
@@ -21,6 +22,9 @@ adapters:
     # `--registry` overrides this; if you launch from the workspace root
     # without that flag the relative `registry/unilabos` resolves correctly.
     registry_path: registry/unilabos
+
+mac_assignments:
+  A4F00FD87478: syringe_pump_with_valve.runze.SY03B-T06
 
 buses:
   - match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06
