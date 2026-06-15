@@ -3,6 +3,7 @@ name = "osdl-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Core library for OpenSDL — platform-agnostic lab hardware control via MQTT"
 
 [features]

@@ -99,7 +99,25 @@ firmware/
 └── esp32/                       # Child node firmware (PlatformIO)
 ```
 
-## Build & Run
+## Install
+
+Pre-built binaries for Linux (glibc + musl), macOS (Intel + Apple Silicon), and Windows are published to [GitHub Releases](https://github.com/ScienceOL/OpenSDL/releases). The installer auto-detects your platform.
+
+**Linux & macOS:**
+```bash
+curl -LsSf https://github.com/ScienceOL/OpenSDL/releases/latest/download/osdl-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/osdl-installer.ps1 | iex"
+```
+
+After install, verify with `osdl --version`. Update later with `osdl-update`.
+
+Prefer downloading a tarball directly? Pick your platform on the [latest release page](https://github.com/ScienceOL/OpenSDL/releases/latest).
+
+## Build from source
 
 ```bash
 cargo build              # Build all crates

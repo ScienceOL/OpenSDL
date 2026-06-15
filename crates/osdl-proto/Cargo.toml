@@ -3,6 +3,7 @@ name = "osdl-proto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "gRPC wire schema for OpenSDL — protobuf definitions, generated client + server stubs"
 
 [dependencies]

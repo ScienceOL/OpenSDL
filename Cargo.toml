@@ -6,6 +6,7 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/ScienceOL/OpenSDL"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -38,3 +39,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 sha1 = "0.10"
 base64 = "0.22"
 quick-xml = "0.36"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
