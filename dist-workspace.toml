@@ -15,3 +15,13 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = true
+
+# Minimum glibc per target. Without this, cargo-dist links against the
+# host runner's glibc (currently 2.31+ on ubuntu-22.04), which would
+# shut out RHEL 7 / CentOS 7 / Ubuntu 14.04-18.04 from running our
+# binaries. 2.17 covers any glibc-based Linux from ~2012 onward.
+# aarch64 distros never shipped glibc < 2.28 in practice, so don't try
+# to pretend we support older.
+[dist.min-glibc-version]
+"*" = "2.17"
+aarch64-unknown-linux-gnu = "2.28"
