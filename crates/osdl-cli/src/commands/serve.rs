@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use clap::Args;
+use osdl_core::adapter::onvif::OnvifAdapter;
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
 use osdl_core::config::{AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
@@ -332,7 +333,15 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         }
     }
 
-    let config = build_config(&args)?;
+    let mut config = build_config(&args)?;
+    // Propagate the resolved data_dir into the engine config so the
+    // ONVIF transport can write snapshots under it. The CLI's
+    // --data-dir wins; otherwise we use the platform default.
+    let resolved_data_dir = args
+        .data_dir
+        .clone()
+        .unwrap_or_else(|| paths.state_dir.clone());
+    config.data_dir = Some(resolved_data_dir.clone());
 
     // Start broker + mDNS only when MQTT is enabled in the config.
     let _broker = config
@@ -351,15 +360,16 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    let data_dir = args.data_dir.clone().unwrap_or_else(|| paths.state_dir.clone());
+    let data_dir = resolved_data_dir;
     std::fs::create_dir_all(&data_dir)
         .with_context(|| format!("create data dir {}", data_dir.display()))?;
     let db_path = data_dir.join(format!("{}.db", args.instance));
     let store = EventStore::open(&db_path).map_err(|e| anyhow!("event store {}: {}", db_path.display(), e))?;
 
-    let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> = vec![Box::new(
-        UniLabOsAdapter::new(DriverRegistry::with_builtins()),
-    )];
+    let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> = vec![
+        Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins())),
+        Box::new(OnvifAdapter::new()),
+    ];
     let mut engine = OsdlEngine::new(config, adapters).with_store(store);
     let handle = engine.handle();
 

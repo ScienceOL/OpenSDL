@@ -22,6 +22,18 @@ media_sources:
     rtsp_sub: rtsp://USER:PASS@192.168.1.131:554/ch01_sub.264
     h264_transcode: true
     rtsp_transport_tcp: true
+    # Optional control plane. When present, the engine registers `cam1`
+    # as a Device under the `onvif` adapter so you can:
+    #   osdl send cam1 ptz_move -p direction=up
+    #   osdl send cam1 ptz_stop
+    #   osdl send cam1 snapshot
+    # Snapshots land under <data_dir>/snapshots/cam1/<ts>.jpg; the path
+    # surfaces as `snapshot_path` on the next device_status event.
+    control:
+      onvif_url: http://192.168.1.131:80/onvif/device_service
+      username: USER
+      password: PASS
+      # profile_token: Profile_1   # optional; auto-discovered otherwise
     # Optional remote ingest:
     # remote_rtmp:
     #   base_url: rtmp://srs.example.com:1935/camera

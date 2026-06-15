@@ -36,6 +36,10 @@ media_sources:
     rtsp_main: rtsp://onvif_op:IK1tCNzKP7VyAPIl@192.168.1.131:554/ch01.264
     rtsp_sub:  rtsp://onvif_op:IK1tCNzKP7VyAPIl@192.168.1.131:554/ch01_sub.264
     rtsp_transport_tcp: true
+    control:
+      onvif_url: http://192.168.1.131:80/onvif/device_service
+      username: onvif_op
+      password: IK1tCNzKP7VyAPIl
 
   - kind: onvif_camera
     id: cam53
@@ -45,3 +49,7 @@ media_sources:
     rtsp_main: rtsp://admin:123456@192.168.1.53:554/ch01.264
     rtsp_sub:  rtsp://admin:123456@192.168.1.53:554/ch01_sub.264
     rtsp_transport_tcp: true
+    control:
+      onvif_url: http://192.168.1.53:80/onvif/device_service
+      username: admin
+      password: "123456"
