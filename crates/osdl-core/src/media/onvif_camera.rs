@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use super::MediaPath;
 
+/// Subdirectory under `OsdlConfig.data_dir` where snapshot JPEGs land.
+/// Kept as a const so the engine and any future snapshot-serving HTTP
+/// route reach for the same path.
+pub const SNAPSHOT_SUBDIR: &str = "snapshots";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OnvifCameraConfig {
     pub id: String,
@@ -49,6 +54,35 @@ pub struct OnvifCameraConfig {
     /// there's no extra encoding cost.
     #[serde(default)]
     pub remote_rtmp: Option<RemoteRtmpConfig>,
+
+    /// ONVIF control plane (PTZ, snapshot, presets). When set, the engine
+    /// additionally registers this camera as a `Device` with adapter
+    /// `onvif`, so callers can `send_command` against it the same way they
+    /// would any pump or stirrer. When unset, the camera is streaming-only
+    /// (the historical behavior).
+    #[serde(default)]
+    pub control: Option<OnvifControlConfig>,
+}
+
+/// Auth + endpoint info needed to reach a camera's ONVIF control service.
+/// Credentials should be templated in from env vars at deploy time —
+/// committing them to YAML is a deployment-process bug, not a code one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnvifControlConfig {
+    /// Full URL to the ONVIF device service, e.g.
+    /// `http://192.168.1.131:80/onvif/device_service`. Most cameras expose
+    /// this path; the actual PTZ / Media services are auto-discovered via
+    /// `GetCapabilities` at startup.
+    pub onvif_url: String,
+    pub username: String,
+    pub password: String,
+    /// Optional pre-known media profile token. If unset, the transport
+    /// calls `Media::GetProfiles` on first use and picks the first profile
+    /// that has a PTZ configuration. Set this when a camera publishes
+    /// multiple profiles and you want to pin which one PTZ commands act
+    /// on.
+    #[serde(default)]
+    pub profile_token: Option<String>,
 }
 
 /// Selects which upstream feeds the optional `{id}_h264` transcode path.
@@ -216,6 +250,7 @@ mod tests {
             h264_transcode_source: H264TranscodeSource::Main,
             rtsp_transport_tcp: true,
             remote_rtmp: None,
+            control: None,
         }
     }
 

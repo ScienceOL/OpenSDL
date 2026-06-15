@@ -11,7 +11,9 @@ use crate::transport::espnow_dongle::{
     transport_id_for as espnow_transport_id, EspNowNodeTransport, EspNowDongleClient, Mac,
     RegEvent,
 };
+use crate::media::MediaSourceConfig;
 use crate::transport::mqtt_serial::MqttSerialTransport;
+use crate::transport::onvif::{transport_id_for as onvif_transport_id, OnvifTransport};
 use crate::transport::{Transport, TransportRx};
 
 use rumqttc::AsyncClient;
@@ -733,7 +735,100 @@ impl OsdlEngine {
         }
         drop(sources_map);
 
+        // Register ONVIF control devices for any camera with a `control:`
+        // block. This is what makes `osdl send cam1 ptz_move ...` work
+        // without a separate camera-control RPC — the camera shows up in
+        // `list_devices`, and `send_command` routes through OnvifTransport
+        // exactly the way it does for pumps and stirrers.
+        self.register_onvif_control_devices().await;
+
         Some(proc)
+    }
+
+    /// Walk `media_sources` and register a control-plane `Device` for
+    /// every ONVIF camera that has a `control:` block. Idempotent: skips
+    /// cameras that are already registered (so a transient mediamtx
+    /// restart doesn't duplicate devices).
+    async fn register_onvif_control_devices(&self) {
+        // Snapshot directory: `<data_dir>/snapshots`. Falls back to a
+        // process-temp subdir when no data_dir was configured (tests do
+        // this); the warning is logged so a real deployment doesn't
+        // silently lose snapshots into /tmp.
+        let snapshot_root = match self.handle.config.data_dir.clone() {
+            Some(dir) => dir.join(crate::media::onvif_camera::SNAPSHOT_SUBDIR),
+            None => {
+                let fallback = std::env::temp_dir().join("osdl-snapshots");
+                log::warn!(
+                    "No data_dir configured; snapshots will land in {} — set OsdlConfig.data_dir for a stable location",
+                    fallback.display(),
+                );
+                fallback
+            }
+        };
+
+        for src in &self.handle.config.media_sources {
+            // Explicit match so a future MediaSourceConfig variant
+            // doesn't silently inherit the ONVIF registration path.
+            let cam = match src {
+                MediaSourceConfig::OnvifCamera(c) => c,
+            };
+            let Some(ctrl) = cam.control.as_ref() else {
+                continue;
+            };
+
+            let transport_id = onvif_transport_id(&cam.id);
+            // Idempotent: a second start_media_gateway() (e.g. mediamtx
+            // recovery) shouldn't double-register the device.
+            if self.handle.transports.read().await.contains_key(&transport_id) {
+                continue;
+            }
+
+            let snapshot_url_base = None; // future: serve under mediamtx http
+            let transport = Arc::new(OnvifTransport::new(
+                cam.id.clone(),
+                ctrl.onvif_url.clone(),
+                ctrl.username.clone(),
+                ctrl.password.clone(),
+                ctrl.profile_token.clone(),
+                snapshot_root.clone(),
+                snapshot_url_base,
+                self.handle.transport_rx_tx.clone(),
+            ));
+
+            self.handle
+                .transports
+                .write()
+                .await
+                .insert(transport_id.clone(), transport);
+
+            let device = Device {
+                id: cam.id.clone(),
+                transport_id: transport_id.clone(),
+                device_type: crate::adapter::onvif::DEVICE_TYPE_COMBINED.to_string(),
+                adapter: crate::adapter::onvif::PLATFORM.to_string(),
+                description: cam
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| format!("ONVIF camera {}", cam.id)),
+                online: true,
+                properties: HashMap::new(),
+                actions: crate::adapter::onvif::OnvifAdapter::combined_actions(),
+                role: Some("camera".into()),
+            };
+            log::info!(
+                "ONVIF control registered: {} → {} ({})",
+                cam.id,
+                transport_id,
+                ctrl.onvif_url,
+            );
+            self.handle
+                .devices
+                .write()
+                .await
+                .insert(device.id.clone(), device.clone());
+            self.handle.emit(OsdlEvent::DeviceOnline(device));
+        }
+        self.handle.broadcast_status().await;
     }
 
     /// Route incoming MQTT messages to the appropriate handler.

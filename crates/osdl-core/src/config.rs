@@ -1,6 +1,7 @@
 use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OsdlConfig {
@@ -44,6 +45,12 @@ pub struct OsdlConfig {
     /// consulted when `media_sources` is non-empty.
     #[serde(default)]
     pub media_gateway: MediaGatewayConfig,
+    /// Where snapshots and other transient camera artifacts get written.
+    /// The CLI (`osdl serve`) sets this from its `--data-dir` flag; tests
+    /// that build configs directly can leave it `None` and the engine
+    /// will fall back to the system temp directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<PathBuf>,
 }
 
 /// One physical bus (e.g., RS-485) reached through a single transport,

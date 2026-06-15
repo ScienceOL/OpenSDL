@@ -3,6 +3,7 @@ name = "osdl-firmware-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Pure-Rust no_std codec for the wire protocol shared by OSDL firmware (ESP-NOW frame layout, REG announcements) and the mother-side dongle client."
 
 # This crate is no_std-compatible (uses `alloc` for owned byte buffers).
