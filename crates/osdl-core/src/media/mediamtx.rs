@@ -54,6 +54,8 @@ pub struct ListenerPorts {
     pub hls: u16,
     #[serde(default = "default_webrtc_port")]
     pub webrtc: u16,
+    #[serde(default = "default_webrtc_udp_port")]
+    pub webrtc_udp: u16,
 }
 
 impl Default for ListenerPorts {
@@ -62,6 +64,7 @@ impl Default for ListenerPorts {
             rtsp: default_rtsp_port(),
             hls: default_hls_port(),
             webrtc: default_webrtc_port(),
+            webrtc_udp: default_webrtc_udp_port(),
         }
     }
 }
@@ -78,6 +81,9 @@ fn default_hls_port() -> u16 {
 fn default_webrtc_port() -> u16 {
     8889
 }
+fn default_webrtc_udp_port() -> u16 {
+    8189
+}
 
 /// Validate a `MediaPath` field that will be string-interpolated into the
 /// generated mediamtx YAML. Rejects anything that could break out of the
@@ -89,16 +95,24 @@ fn default_webrtc_port() -> u16 {
 /// characters or quotes that could confuse the ffmpeg argv splitter.
 fn validate_path(p: &MediaPath) -> Result<(), MediamtxError> {
     if p.name.is_empty()
-        || !p.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        || !p
+            .name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
         return Err(MediamtxError::InvalidConfig(format!(
-            "path name {:?}: must match [A-Za-z0-9_-]+", p.name
+            "path name {:?}: must match [A-Za-z0-9_-]+",
+            p.name
         )));
     }
     for (label, value, schemes) in [
-        ("source_uri",     p.source_uri.as_deref(),     &["rtsp", "rtmp"][..]),
-        ("transcode_from", p.transcode_from.as_deref(), &["rtsp", "rtmp"][..]),
-        ("push_to",        p.push_to.as_deref(),        &["rtmp", "rtsp"][..]),
+        ("source_uri", p.source_uri.as_deref(), &["rtsp", "rtmp"][..]),
+        (
+            "transcode_from",
+            p.transcode_from.as_deref(),
+            &["rtsp", "rtmp"][..],
+        ),
+        ("push_to", p.push_to.as_deref(), &["rtmp", "rtsp"][..]),
     ] {
         if let Some(v) = value {
             validate_url(label, v, schemes)?;
@@ -142,11 +156,24 @@ const FFMPEG_LOW_LATENCY_INPUT: &str =
     "-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0";
 
 /// Render a mediamtx YAML config from gateway settings + path entries.
-pub fn render_config(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Result<String, MediamtxError> {
+pub fn render_config(
+    cfg: &MediaGatewayConfig,
+    paths: &[MediaPath],
+) -> Result<String, MediamtxError> {
     for p in paths {
         validate_path(p)?;
     }
     Ok(render_config_unchecked(cfg, paths))
+}
+
+/// Whether the rendered mediamtx config must avoid binding UDP 8000.
+/// SRS hard-codes `a=candidate:... <host> 8000` into its SDP answer, so
+/// SRS must own UDP 8000 on the host whenever any path pushes to it.
+/// mediamtx can still serve local WHEP as long as its own WebRTC UDP mux
+/// is pinned elsewhere (`webrtcLocalUDPAddress`, default :8189) and RTSP
+/// over UDP is disabled.
+fn should_reserve_udp_8000_for_remote(paths: &[MediaPath]) -> bool {
+    paths.iter().any(|p| p.push_to.is_some())
 }
 
 fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> String {
@@ -157,7 +184,18 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
 
     s.push_str("rtsp: yes\n");
     s.push_str(&format!("rtspAddress: :{}\n", cfg.ports.rtsp));
-    s.push_str("rtspTransports: [tcp, udp]\n\n");
+    let reserve_udp_8000 = should_reserve_udp_8000_for_remote(paths);
+    // Default RTSP transport list. When a path pushes to SRS, reserve UDP
+    // 8000 for SRS WebRTC by forcing mediamtx RTSP to TCP-only. mediamtx's
+    // own local WebRTC stays enabled on `webrtc_udp` instead.
+    if reserve_udp_8000 {
+        s.push_str("rtspTransports: [tcp]\n");
+        s.push_str("rtpAddress: :0\n");
+        s.push_str("rtcpAddress: :0\n");
+        s.push_str("multicastRTPPort: 0\n\n");
+    } else {
+        s.push_str("rtspTransports: [tcp, udp]\n\n");
+    }
 
     s.push_str("hls: yes\n");
     s.push_str(&format!("hlsAddress: :{}\n", cfg.ports.hls));
@@ -165,6 +203,10 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
 
     s.push_str("webrtc: yes\n");
     s.push_str(&format!("webrtcAddress: :{}\n", cfg.ports.webrtc));
+    s.push_str(&format!(
+        "webrtcLocalUDPAddress: :{}\n",
+        cfg.ports.webrtc_udp
+    ));
     // Pin the ICE candidate's host to whatever we advertise to consumers.
     // Without this, mediamtx gathers every interface — including macOS's
     // mDNS-anonymized `*.local` candidate that Chromium 110+ emits for
@@ -193,26 +235,52 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
             }
             // When this path also republishes to a remote, keep it always-on
             // so the upstream pull stays alive between local consumers — the
-            // remote ingest is itself a permanent consumer.
-            if p.push_to.is_none() {
+            // remote ingest is itself a permanent consumer. Without this,
+            // mediamtx waits for a local viewer before pulling the camera,
+            // and the remote push never fires because the SRS ingest side
+            // has nothing to consume yet → deadlock.
+            if p.push_to.is_some() {
+                s.push_str("    sourceOnDemand: no\n");
+            } else {
                 s.push_str("    sourceOnDemand: yes\n");
                 s.push_str("    sourceOnDemandStartTimeout: 10s\n");
                 s.push_str("    sourceOnDemandCloseAfter: 30s\n");
             }
         } else if let Some(upstream) = &p.transcode_from {
-            // ffmpeg pulls upstream and republishes to localhost as this path.
-            // Software libx264 ultrafast/zerolatency keeps cross-platform CPU
-            // cost low; hardware encoders can be substituted later per-host.
+            // ffmpeg pulls upstream and republishes as H.264.
             //
             // Two driving modes:
             //   - on-demand: only transcode while a consumer is connected.
             //   - always-on: start immediately and keep running. Required
             //     when `push_to` is set, otherwise nothing forces the
             //     upstream link to stay alive between consumer connects.
-            let transport = if p.rtsp_transport_tcp { "-rtsp_transport tcp" } else { "" };
+            //
+            // When `push_to` is set we push to the remote target directly
+            // (RTMP/FLV). We do NOT also publish to the local mediamtx
+            // path because mediamtx's RTSP listener in our config is
+            // TCP-only (UDP is disabled to free port 8000 for SRS's
+            // WebRTC egress), and ffmpeg's tee muxer can't be told to
+            // publish over RTSP-over-TCP for one sub-output only —
+            // publishing over UDP gets rejected with "method SETUP
+            // failed: 461 (Unsupported Transport)" and the tee muxer
+            // then aborts BOTH outputs, killing the SRS push too.
+            // The local `cam131_h264` path stays empty unless a local
+            // viewer connects; in that case the source config below
+            // (sourceOnDemand-style) re-pulls from the upstream RTSP
+            // and serves it via mediamtx — but for SRS delivery we
+            // bypass mediamtx entirely.
+            let transport = if p.rtsp_transport_tcp {
+                "-rtsp_transport tcp"
+            } else {
+                ""
+            };
             let always_on = p.push_to.is_some();
             s.push_str("    source: publisher\n");
-            let runner_keyword = if always_on { "runOnInit" } else { "runOnDemand" };
+            let runner_keyword = if always_on {
+                "runOnInit"
+            } else {
+                "runOnDemand"
+            };
             // Low-latency knobs, in priority order:
             //   - FFMPEG_LOW_LATENCY_INPUT  → skip ffmpeg's default ~5s probe
             //     and reorder buffer (shared with the push path).
@@ -225,19 +293,40 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
             //     frames waiting on rate control.
             //   - -flush_packets 1  → muxer doesn't pool packets before
             //     writing (matters for FLV/RTSP intermediates).
-            s.push_str(&format!(
-                "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
-                  {FFMPEG_LOW_LATENCY_INPUT} \
-                  {transport} \
-                  -i {upstream} \
-                  -c:v libx264 -preset ultrafast -tune zerolatency \
-                  -profile:v baseline -pix_fmt yuv420p \
-                  -bf 0 -g 8 \
-                  -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
-                  -c:a aac -ar 44100 -b:a 64k \
-                  -flush_packets 1 \
-                  -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH\n",
-            ));
+            //
+            // When `push_to` is set, the encoder writes to RTMP/FLV
+            // directly — one ffmpeg process, one encoder, one output.
+            // No tee, no runOnReady re-pull → no flap, no UDP-vs-TCP
+            // transport mismatch with mediamtx.
+            if let Some(target) = &p.push_to {
+                s.push_str(&format!(
+                    "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
+                      {FFMPEG_LOW_LATENCY_INPUT} \
+                      {transport} \
+                      -i {upstream} \
+                      -c:v libx264 -preset ultrafast -tune zerolatency \
+                      -profile:v baseline -pix_fmt yuv420p \
+                      -bf 0 -g 8 \
+                      -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
+                      -c:a aac -ar 44100 -b:a 64k \
+                      -flush_packets 1 \
+                      -f flv {target}\n",
+                ));
+            } else {
+                s.push_str(&format!(
+                    "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
+                      {FFMPEG_LOW_LATENCY_INPUT} \
+                      {transport} \
+                      -i {upstream} \
+                      -c:v libx264 -preset ultrafast -tune zerolatency \
+                      -profile:v baseline -pix_fmt yuv420p \
+                      -bf 0 -g 8 \
+                      -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
+                      -c:a aac -ar 44100 -b:a 64k \
+                      -flush_packets 1 \
+                      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH\n",
+                ));
+            }
             if always_on {
                 s.push_str("    runOnInitRestart: yes\n");
             } else {
@@ -246,21 +335,20 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
                 s.push_str("    runOnDemandCloseAfter: 30s\n");
             }
         }
-        if let Some(target) = &p.push_to {
-            // runOnReady fires whenever the path becomes available. ffmpeg
-            // `-c copy` since path content is already H.264/AAC. -f flv for
-            // RTMP ingest. Reuses FFMPEG_LOW_LATENCY_INPUT so the push side
-            // doesn't drift from the transcode side; -c copy means no
-            // encoder is in the middle to queue. mediamtx auto-restarts
-            // the command if it exits.
-            s.push_str(&format!(
-                "    runOnReady: >\n      ffmpeg -hide_banner -loglevel warning \
-                 {FFMPEG_LOW_LATENCY_INPUT} \
-                 -rtsp_transport tcp \
-                 -i rtsp://localhost:$RTSP_PORT/$MTX_PATH \
-                 -c copy -f flv {target}\n"
-            ));
-            s.push_str("    runOnReadyRestart: yes\n");
+        // Passthrough path (no transcode): encoder is upstream,
+        // so we can't bake the push into the transcode ffmpeg. Use runOnReady
+        // that `-c copy`s from mediamtx to SRS.
+        if p.push_to.is_some() && p.transcode_from.is_none() {
+            if let Some(target) = &p.push_to {
+                s.push_str(&format!(
+                    "    runOnReady: >\n      ffmpeg -hide_banner -loglevel warning \
+                     {FFMPEG_LOW_LATENCY_INPUT} \
+                     -rtsp_transport tcp \
+                     -i rtsp://localhost:$RTSP_PORT/$MTX_PATH \
+                     -c copy -f flv {target}\n"
+                ));
+                s.push_str("    runOnReadyRestart: yes\n");
+            }
         }
     }
     s
@@ -284,9 +372,11 @@ pub enum MediamtxError {
 /// or until `timeout` elapses. mediamtx logs `[RTSP] listener opened` to
 /// stdout when it's ready, but we'd rather not parse logs when a TCP
 /// connect probe is straightforward and language-agnostic.
-async fn wait_listening(child: &mut Child, port: u16, timeout: Duration)
-    -> Result<(), MediamtxError>
-{
+async fn wait_listening(
+    child: &mut Child,
+    port: u16,
+    timeout: Duration,
+) -> Result<(), MediamtxError> {
     let addr = format!("127.0.0.1:{port}");
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
@@ -342,7 +432,10 @@ pub struct MediamtxProcess {
 }
 
 impl MediamtxProcess {
-    pub async fn spawn(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Result<Self, MediamtxError> {
+    pub async fn spawn(
+        cfg: &MediaGatewayConfig,
+        paths: &[MediaPath],
+    ) -> Result<Self, MediamtxError> {
         let bin = locate_binary(cfg.binary.as_ref())?;
         let yaml = render_config(cfg, paths)?;
 
@@ -372,8 +465,13 @@ impl MediamtxProcess {
         // first), or fail. Without this we'd advertise endpoint URLs before
         // the listener is ready, and surface a "bind failed" only when a
         // consumer connects — too late.
-        if let Err(e) = wait_listening(&mut child, cfg.ports.rtsp,
-                                        std::time::Duration::from_secs(5)).await {
+        if let Err(e) = wait_listening(
+            &mut child,
+            cfg.ports.rtsp,
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        {
             // Process exited or never bound. Make sure it's gone.
             let _ = child.start_kill();
             let _ = child.wait().await;
@@ -488,11 +586,24 @@ mod tests {
             push_to: Some("rtmp://srs.example.com:1935/openSDL/cam1".into()),
         }];
         let yaml = render_config(&cfg, &paths).unwrap();
-        assert!(yaml.contains("runOnReady:"));
-        assert!(yaml.contains("rtmp://srs.example.com:1935/openSDL/cam1"));
-        assert!(yaml.contains("-c copy"));
-        assert!(yaml.contains("-f flv"));
-        assert!(yaml.contains("runOnReadyRestart: yes"));
+        // Push on a transcode path: encoder writes directly to SRS in the
+        // SAME ffmpeg process (no tee, no runOnReady hook).
+        assert!(
+            yaml.contains("rtmp://srs.example.com:1935/openSDL/cam1"),
+            "should contain the SRS push URL"
+        );
+        assert!(
+            yaml.contains("-f flv"),
+            "should output FLV (RTMP-compatible)"
+        );
+        assert!(
+            !yaml.contains("-f tee"),
+            "should NOT use tee muxer (rtsp-over-udp publish rejected by mediamtx TCP-only)"
+        );
+        assert!(
+            yaml.contains("runOnInitRestart: yes"),
+            "push_to makes the path always-on"
+        );
     }
 
     #[test]
@@ -540,7 +651,10 @@ mod tests {
                 push_to: None,
             }];
             assert!(
-                matches!(render_config(&cfg, &paths), Err(MediamtxError::InvalidConfig(_))),
+                matches!(
+                    render_config(&cfg, &paths),
+                    Err(MediamtxError::InvalidConfig(_))
+                ),
                 "expected rejection for {u:?}",
             );
         }

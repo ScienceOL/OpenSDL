@@ -36,7 +36,7 @@ media_sources:
       # profile_token: Profile_1   # optional; auto-discovered otherwise
     # Optional remote ingest:
     # remote_rtmp:
-    #   base_url: rtmp://srs.example.com:1935/camera
-    #   stream: lab-1
-    #   http_host: srs.example.com
-    #   webrtc_host: srs.example.com
+    #   base_url: rtmp://localhost:1935/live   # local dev SRS — see docker-compose.srs.yaml
+    #   stream: cam1                          # defaults to camera id
+    #   http_host: localhost:18085            # HLS / FLV egress (http_server port)
+    #   webrtc_host: localhost:1985           # WHEP signalling (http_api port)

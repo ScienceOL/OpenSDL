@@ -76,5 +76,102 @@ The engine signals mediamtx to terminate gracefully on shutdown.
   suffix path.
 - For remote ingest (push to SRS), uncomment the `remote_rtmp:` block.
   See `crates/osdl-core/src/media/onvif_camera.rs` for the validation
-  rules — most importantly, you must have transcoding enabled to have an
-  H.264 source path to republish from.
+  rules. Note: with HEVC passthrough as the default, the mediamtx push
+  to SRS is `-c copy` of the HEVC stream — vanilla RTMP carries only
+  H.264, so this path relies on SRS's Enhanced RTMP / HEVC-over-RTMP
+  support (SRS 5+ has it). If the downstream browser's WHEP stack
+  refuses to negotiate HEVC, flip `h264_transcode: true` to force an
+  H.264 republish from the camera's main or sub stream.
+
+## Remote ingest (push to SRS)
+
+Each camera can optionally push to a remote SRS instance so viewers
+outside the LAN (e.g. a teammate the camera is shared with) can still
+see the live feed. mediamtx re-publishes the camera's already-encoded
+stream to SRS via `ffmpeg -c copy`, so there is no extra encoding cost
+on the lab host.
+
+### Local dev — bring up SRS with `just dev`
+
+A local SRS container is included in the dev stack automatically
+(`docker/docker-compose.srs.yaml`). After `just dev`:
+
+- RTMP ingest:  `rtmp://localhost:1935/<app>/<stream>`
+- HTTP-FLV:     `http://localhost:18085/<app>/<stream>.flv`
+- HLS:          `http://localhost:18085/<app>/<stream>.m3u8`
+- WHEP (POST):  `http://localhost:1985/rtc/v1/whep/?app=<app>&stream=<stream>`
+- WebRTC media: UDP `localhost:8000`
+
+**Two HTTP ports** — SRS splits its HTTP surface: HLS/FLV on the
+`http_server` port (18085) and the WHEP signalling POST on the `http_api`
+port (1985). The browser's WebRTC media flows over UDP 8000.
+
+**UDP 8000 is not remapped** — SRS bakes the internal UDP port
+(`a=candidate:... 127.0.0.1 8000`) into its SDP answer, so Docker's
+host-side port remapping is invisible to the browser. SRS_RTC_PORT
+must stay `8000`. UDP 8000 is free on the dev host (TCP 8000 is taken
+by MinIO; TCP and UDP are independent sockets).
+
+(HTTP-server port defaults to 18085, not 8080, because the dev stack's
+OpenFGA `network-service` already occupies 8080. See
+`docker/docker-compose.srs.yaml`.)
+
+If your dev host port 1935/18085/1985 is taken, override via
+`SRS_RTMP_PORT` / `SRS_HTTP_PORT` / `SRS_API_PORT` in
+`docker/.env.dev`.
+
+### Point a camera at the local SRS
+
+Drop this into the camera YAML. Note `http_host` and `webrtc_host`
+point at *different* ports — the FLV/HLS server vs the WHEP signalling
+API. Use `localhost` when the mediamtx publisher and the browser
+viewer run on the same host as the dev stack.
+
+```yaml
+remote_rtmp:
+  base_url: rtmp://localhost:1935/live
+  stream: cam1
+  http_host: localhost:18085     # HLS / FLV egress port
+  webrtc_host: localhost:1985    # WHEP signalling port (http_api)
+```
+
+Restart `osdl serve`. The `MediaSourceOnline` event will now include
+four extra `location: "remote"` endpoints alongside the three local
+mediamtx ones:
+
+```
+{"protocol":"rtmp",    "location":"remote","url":"rtmp://localhost:1935/live/cam1"},
+{"protocol":"flv",     "location":"remote","url":"http://localhost:18085/live/cam1.flv"},
+{"protocol":"hls",     "location":"remote","url":"http://localhost:18085/live/cam1.m3u8"},
+{"protocol":"webrtc",  "location":"remote",
+ "url":"http://localhost:1985/rtc/v1/whep/?app=live&stream=cam1"}
+```
+
+### Smoke test
+
+```sh
+# 1. Confirm mediamtx is pushing to SRS.
+curl -s http://localhost:1985/api/v1/streams/ | jq
+
+# 2. SRS-side probe.
+ffprobe http://localhost:18085/live/cam1.flv
+
+# 3. End-to-end via the web UI — open the team channel that owns the
+#    camera; the tile should show `live` within a few seconds.
+```
+
+### Browser fallback order
+
+The `CameraTile` component tries each advertised endpoint in turn:
+
+1. Local mediamtx WHEP (loopback / LAN)
+2. Remote SRS WHEP
+3. Remote SRS HLS (H.264, via native HLS or hls.js)
+4. Local mediamtx HLS
+
+A teammate off the LAN fails step 1 fast (mediamtx port unreachable)
+and falls through to step 2. If Electron/Chromium cannot establish the
+SRS UDP media path, it falls through to step 3, which works over HTTP
+and uses the H.264 SRS output before trying any local HEVC HLS path.
+The same endpoint list is sent to owner and teammate — only the
+browser's reach differs.
