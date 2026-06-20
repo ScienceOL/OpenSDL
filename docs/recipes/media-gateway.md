@@ -116,7 +116,7 @@ by MinIO; TCP and UDP are independent sockets).
 OpenFGA `network-service` already occupies 8080. See
 `docker/docker-compose.srs.yaml`.)
 
-If your dev host port 1935/18085/1985 is taken, override via
+If any of the dev host ports 1935, 18085, or 1985 are taken, override via
 `SRS_RTMP_PORT` / `SRS_HTTP_PORT` / `SRS_API_PORT` in
 `docker/.env.dev`.
 

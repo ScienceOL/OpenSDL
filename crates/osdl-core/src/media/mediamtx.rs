@@ -155,6 +155,29 @@ fn validate_url(label: &str, value: &str, schemes: &[&str]) -> Result<(), Mediam
 const FFMPEG_LOW_LATENCY_INPUT: &str =
     "-fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0";
 
+/// libx264 + AAC encode flags shared by every transcode path (both
+/// rtsp-republish and direct-RTMP-push variants). Kept separate from
+/// FFMPEG_LOW_LATENCY_INPUT because that one applies to copy-only
+/// runOnReady jobs too, while these flags only matter when we encode.
+///
+/// Tuning rationale:
+///   - libx264 ultrafast / zerolatency / -bf 0 — no B-frames, no lookahead
+///   - -profile:v baseline -pix_fmt yuv420p — broadest decoder support
+///   - -g 8 + x264 keyint=8 scenecut=0 — IDR ~every 0.5 s @15fps so a
+///     fresh subscriber waits at most ~500 ms for a keyframe
+///   - repeat_headers=1 — SPS/PPS prepended to every IDR for mid-stream
+///     joins without out-of-band negotiation
+///   - rc-lookahead=0 / sync-lookahead=0 — encoder doesn't queue frames
+///   - -c:a aac -ar 44100 -b:a 64k — lightweight, browser-friendly audio
+///   - -flush_packets 1 — muxer doesn't pool packets before writing
+///     (matters for FLV/RTSP intermediates)
+const FFMPEG_H264_LOWLATENCY_ENCODE: &str = "-c:v libx264 -preset ultrafast -tune zerolatency \
+     -profile:v baseline -pix_fmt yuv420p \
+     -bf 0 -g 8 \
+     -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
+     -c:a aac -ar 44100 -b:a 64k \
+     -flush_packets 1";
+
 /// Render a mediamtx YAML config from gateway settings + path entries.
 pub fn render_config(
     cfg: &MediaGatewayConfig,
@@ -168,12 +191,14 @@ pub fn render_config(
 
 /// Whether the rendered mediamtx config must avoid binding UDP 8000.
 /// SRS hard-codes `a=candidate:... <host> 8000` into its SDP answer, so
-/// SRS must own UDP 8000 on the host whenever any path pushes to it.
-/// mediamtx can still serve local WHEP as long as its own WebRTC UDP mux
-/// is pinned elsewhere (`webrtcLocalUDPAddress`, default :8189) and RTSP
-/// over UDP is disabled.
-fn should_reserve_udp_8000_for_remote(paths: &[MediaPath]) -> bool {
-    paths.iter().any(|p| p.push_to.is_some())
+/// SRS must own UDP 8000 on the host whenever a path pushes to SRS *and*
+/// we want to read back over WHEP. Generic RTMP relays (Twitch, YouTube)
+/// don't re-serve over WebRTC, so they don't trigger this — see the
+/// `pushes_to_srs` field on `MediaPath`. mediamtx can still serve local
+/// WHEP as long as its own WebRTC UDP mux is pinned elsewhere
+/// (`webrtcLocalUDPAddress`, default :8189) and RTSP over UDP is disabled.
+fn should_reserve_webrtc_udp_for_srs(paths: &[MediaPath]) -> bool {
+    paths.iter().any(|p| p.pushes_to_srs)
 }
 
 fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> String {
@@ -184,7 +209,7 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
 
     s.push_str("rtsp: yes\n");
     s.push_str(&format!("rtspAddress: :{}\n", cfg.ports.rtsp));
-    let reserve_udp_8000 = should_reserve_udp_8000_for_remote(paths);
+    let reserve_udp_8000 = should_reserve_webrtc_udp_for_srs(paths);
     // Default RTSP transport list. When a path pushes to SRS, reserve UDP
     // 8000 for SRS WebRTC by forcing mediamtx RTSP to TCP-only. mediamtx's
     // own local WebRTC stays enabled on `webrtc_udp` instead.
@@ -281,52 +306,23 @@ fn render_config_unchecked(cfg: &MediaGatewayConfig, paths: &[MediaPath]) -> Str
             } else {
                 "runOnDemand"
             };
-            // Low-latency knobs, in priority order:
-            //   - FFMPEG_LOW_LATENCY_INPUT  → skip ffmpeg's default ~5s probe
-            //     and reorder buffer (shared with the push path).
-            //   - -tune zerolatency / -bf 0  → no B frames, no lookahead.
-            //   - -g 8 / x264 keyint=8 scenecut=0  → IDR every ~0.5s @15fps,
-            //     so a fresh subscriber waits at most ~500ms for keyframe.
-            //   - repeat_headers=1  → SPS/PPS prepended to every IDR, lets
-            //     mid-stream join work without out-of-band negotiation.
-            //   - rc-lookahead=0 / sync-lookahead=0  → encoder doesn't queue
-            //     frames waiting on rate control.
-            //   - -flush_packets 1  → muxer doesn't pool packets before
-            //     writing (matters for FLV/RTSP intermediates).
-            //
             // When `push_to` is set, the encoder writes to RTMP/FLV
             // directly — one ffmpeg process, one encoder, one output.
             // No tee, no runOnReady re-pull → no flap, no UDP-vs-TCP
-            // transport mismatch with mediamtx.
-            if let Some(target) = &p.push_to {
-                s.push_str(&format!(
-                    "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
-                      {FFMPEG_LOW_LATENCY_INPUT} \
-                      {transport} \
-                      -i {upstream} \
-                      -c:v libx264 -preset ultrafast -tune zerolatency \
-                      -profile:v baseline -pix_fmt yuv420p \
-                      -bf 0 -g 8 \
-                      -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
-                      -c:a aac -ar 44100 -b:a 64k \
-                      -flush_packets 1 \
-                      -f flv {target}\n",
-                ));
-            } else {
-                s.push_str(&format!(
-                    "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
-                      {FFMPEG_LOW_LATENCY_INPUT} \
-                      {transport} \
-                      -i {upstream} \
-                      -c:v libx264 -preset ultrafast -tune zerolatency \
-                      -profile:v baseline -pix_fmt yuv420p \
-                      -bf 0 -g 8 \
-                      -x264-params keyint=8:scenecut=0:repeat_headers=1:rc-lookahead=0:sync-lookahead=0:bframes=0 \
-                      -c:a aac -ar 44100 -b:a 64k \
-                      -flush_packets 1 \
-                      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH\n",
-                ));
-            }
+            // transport mismatch with mediamtx. Otherwise we publish
+            // locally and let mediamtx serve consumers.
+            let output = match p.push_to.as_deref() {
+                Some(target) => format!("-f flv {target}"),
+                None => "-f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH".to_string(),
+            };
+            s.push_str(&format!(
+                "    {runner_keyword}: >\n      ffmpeg -hide_banner -loglevel warning \
+                  {FFMPEG_LOW_LATENCY_INPUT} \
+                  {transport} \
+                  -i {upstream} \
+                  {FFMPEG_H264_LOWLATENCY_ENCODE} \
+                  {output}\n",
+            ));
             if always_on {
                 s.push_str("    runOnInitRestart: yes\n");
             } else {
@@ -537,6 +533,7 @@ mod tests {
             rtsp_transport_tcp: true,
             transcode_from: None,
             push_to: None,
+            pushes_to_srs: false,
         }];
         let yaml = render_config(&cfg, &paths).unwrap();
         assert!(yaml.contains("rtspAddress: :8554"));
@@ -557,6 +554,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: None,
                 push_to: None,
+            pushes_to_srs: false,
             },
             MediaPath {
                 name: "cam1_h264".into(),
@@ -564,6 +562,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: Some("rtsp://1.2.3.4/sub".into()),
                 push_to: None,
+            pushes_to_srs: false,
             },
         ];
         let yaml = render_config(&cfg, &paths).unwrap();
@@ -584,6 +583,7 @@ mod tests {
             rtsp_transport_tcp: true,
             transcode_from: Some("rtsp://1.2.3.4/sub".into()),
             push_to: Some("rtmp://srs.example.com:1935/openSDL/cam1".into()),
+            pushes_to_srs: true,
         }];
         let yaml = render_config(&cfg, &paths).unwrap();
         // Push on a transcode path: encoder writes directly to SRS in the
@@ -607,6 +607,38 @@ mod tests {
     }
 
     #[test]
+    fn srs_push_reserves_udp_8000_but_generic_rtmp_does_not() {
+        // SRS push: gateway must yield host UDP 8000 → RTSP forced TCP-only,
+        // RTP/RTCP UDP zeroed, mediamtx WebRTC pinned to webrtc_udp instead.
+        let cfg = MediaGatewayConfig::default();
+        let srs_paths = vec![MediaPath {
+            name: "cam".into(),
+            source_uri: Some("rtsp://1.2.3.4/main".into()),
+            rtsp_transport_tcp: true,
+            transcode_from: None,
+            push_to: Some("rtmp://127.0.0.1:1935/live/cam".into()),
+            pushes_to_srs: true,
+        }];
+        let yaml = render_config(&cfg, &srs_paths).unwrap();
+        assert!(yaml.contains("rtspTransports: [tcp]"));
+        assert!(yaml.contains("rtpAddress: :0"));
+
+        // Generic RTMP relay (Twitch, YouTube, etc.) — no WHEP read-back, no
+        // need to surrender UDP 8000. Default transports stay enabled.
+        let twitch_paths = vec![MediaPath {
+            name: "cam".into(),
+            source_uri: Some("rtsp://1.2.3.4/main".into()),
+            rtsp_transport_tcp: true,
+            transcode_from: None,
+            push_to: Some("rtmp://live.twitch.tv/app/streamkey".into()),
+            pushes_to_srs: false,
+        }];
+        let yaml = render_config(&cfg, &twitch_paths).unwrap();
+        assert!(yaml.contains("rtspTransports: [tcp, udp]"));
+        assert!(!yaml.contains("rtpAddress: :0"));
+    }
+
+    #[test]
     fn locate_binary_returns_error_for_missing_override() {
         let bogus = PathBuf::from("/definitely/does/not/exist/mediamtx");
         assert!(matches!(
@@ -626,6 +658,7 @@ mod tests {
             rtsp_transport_tcp: true,
             transcode_from: None,
             push_to: None,
+            pushes_to_srs: false,
         }];
         assert!(matches!(
             render_config(&cfg, &paths),
@@ -649,6 +682,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: None,
                 push_to: None,
+            pushes_to_srs: false,
             }];
             assert!(
                 matches!(
@@ -669,6 +703,7 @@ mod tests {
             rtsp_transport_tcp: true,
             transcode_from: Some("rtsp://1.2.3.4/foo".into()),
             push_to: Some("http://attacker.example.com/exfil".into()),
+            pushes_to_srs: false,
         }];
         assert!(matches!(
             render_config(&cfg, &paths),

@@ -177,6 +177,12 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
 /// `push_to` is set when this path's output should additionally be republished
 /// to a remote ingest (e.g. RTMP at SRS) — uses ffmpeg `-c copy`, no extra
 /// encoding cost since the path is already H.264.
+/// `pushes_to_srs` is true when the push target is an SRS server we also
+/// want to read from over WHEP. SRS hard-codes UDP 8000 in its WebRTC SDP,
+/// so the gateway must yield that port to SRS even though mediamtx itself
+/// would otherwise bind it for RTSP-over-UDP. False for non-SRS RTMP
+/// targets (Twitch, YouTube, generic RTMP relays), where the gateway can
+/// keep its default transports.
 #[derive(Debug, Clone)]
 pub struct MediaPath {
     pub name: String,
@@ -184,6 +190,7 @@ pub struct MediaPath {
     pub rtsp_transport_tcp: bool,
     pub transcode_from: Option<String>,
     pub push_to: Option<String>,
+    pub pushes_to_srs: bool,
 }
 
 /// One protocol/URL pair pointing at either the local gateway or a remote

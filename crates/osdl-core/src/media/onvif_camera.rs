@@ -192,12 +192,23 @@ impl OnvifCameraConfig {
         } else {
             self.remote_rtmp.as_ref().map(|r| r.full_push_url(&self.id))
         };
+        // SRS is the only push target we know about that *also* re-reads
+        // the stream over WebRTC and needs host UDP 8000 free. Treat
+        // `webrtc_host` as the explicit "this is SRS" marker — generic
+        // RTMP relays leave it unset and don't trigger the gateway's
+        // transport restrictions.
+        let pushes_to_srs = self
+            .remote_rtmp
+            .as_ref()
+            .map(|r| r.webrtc_host.is_some())
+            .unwrap_or(false);
         let mut out = vec![MediaPath {
             name: self.id.clone(),
             source_uri: Some(self.rtsp_main.clone()),
             rtsp_transport_tcp: self.rtsp_transport_tcp,
             transcode_from: None,
             push_to: main_push_to,
+            pushes_to_srs: pushes_to_srs && !self.produces_h264_path(),
         }];
 
         if self.produces_h264_path() {
@@ -223,6 +234,7 @@ impl OnvifCameraConfig {
                 rtsp_transport_tcp: self.rtsp_transport_tcp,
                 transcode_from: Some(upstream),
                 push_to: h264_push_to,
+                pushes_to_srs,
             });
         }
 
