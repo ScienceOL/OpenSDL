@@ -54,10 +54,19 @@ impl MediaSourceConfig {
     /// External-facing endpoints to advertise via `MediaSourceOnline`.
     /// Includes both local gateway endpoints (RTSP/HLS/WebRTC at the
     /// `gateway_host`) and any configured remote ingest playback URLs.
-    pub fn endpoints(&self, gateway_host: &str, gateway: &mediamtx::ListenerPorts) -> Vec<MediaEndpoint> {
+    ///
+    /// Local WebRTC remains advertised even when this source pushes to
+    /// remote ingest. mediamtx pins its own ICE UDP mux away from SRS's
+    /// UDP 8000, so local viewers can stay on the low-latency LAN path
+    /// while teammates use SRS.
+    pub fn endpoints(
+        &self,
+        gateway_host: &str,
+        gateway: &mediamtx::ListenerPorts,
+    ) -> Vec<MediaEndpoint> {
         let mut out = Vec::new();
         for p in self.paths() {
-            for proto in [Protocol::Rtsp, Protocol::Hls, Protocol::Webrtc] {
+            for proto in [Protocol::Rtsp, Protocol::Hls] {
                 out.push(MediaEndpoint {
                     source_id: self.id().to_string(),
                     path: p.name.clone(),
@@ -66,6 +75,13 @@ impl MediaSourceConfig {
                     location: Location::Local,
                 });
             }
+            out.push(MediaEndpoint {
+                source_id: self.id().to_string(),
+                path: p.name.clone(),
+                protocol: Protocol::Webrtc,
+                url: build_url(gateway_host, gateway, Protocol::Webrtc, &p.name),
+                location: Location::Local,
+            });
         }
         out.extend(self.remote_endpoints());
         out
@@ -86,10 +102,7 @@ impl MediaSourceConfig {
     }
 }
 
-fn build_remote_endpoints(
-    id: &str,
-    remote: &onvif_camera::RemoteRtmpConfig,
-) -> Vec<MediaEndpoint> {
+fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> Vec<MediaEndpoint> {
     let stream = remote.stream.as_deref().unwrap_or(id);
     let app = remote.app();
     let mut out = vec![MediaEndpoint {
@@ -121,16 +134,35 @@ fn build_remote_endpoints(
         });
     }
     if let Some(webrtc_host) = &remote.webrtc_host {
-        let path = if app.is_empty() {
-            stream.to_string()
+        // SRS WHEP endpoint. WHEP is HTTP-POST-application/sdp, so the URL
+        // must be a real http(s):// — a `webrtc://` URI would crash the
+        // fetch() in CameraTile.tsx before any candidate exchange happens.
+        //
+        // SRS puts WHEP under /rtc/v1/whep/ and takes the stream path as
+        // query params (`app=` + `stream=`) rather than URL segments,
+        // because the resource being POSTed to is the *WHEP signalling
+        // endpoint*, not the stream itself.
+        //
+        // mediamtx's local WHEP URL shape is different
+        // (`http://host:port/<path>/whep`, see `build_url`) — we don't try
+        // to unify them because the local and remote viewers use different
+        // fetch code paths in practice (the local one has no `app`).
+        //
+        // Production cameras are pinned to H.264 Baseline. Make that explicit
+        // for SRS so Electron builds with optional HEVC WebRTC support don't
+        // send a broader offer that SRS answers on the wrong codec path.
+        let app_q = if app.is_empty() {
+            "live".to_string()
         } else {
-            format!("{app}/{stream}")
+            app.to_string()
         };
         out.push(MediaEndpoint {
             source_id: id.to_string(),
             path: stream.to_string(),
             protocol: Protocol::Webrtc,
-            url: format!("webrtc://{webrtc_host}/{path}"),
+            url: format!(
+                "http://{webrtc_host}/rtc/v1/whep/?app={app_q}&stream={stream}&codec=h264"
+            ),
             location: Location::Remote,
         });
     }
@@ -141,10 +173,16 @@ fn build_remote_endpoints(
 ///
 /// `source_uri` is the upstream RTSP URL when mediamtx pulls directly.
 /// `transcode_from` is set when an ffmpeg sidecar must transcode another path
-/// or upstream URL into this one (used for HEVC→H.264 rewrites).
+/// or upstream URL into this one (used for optional H.264 fallback rewrites).
 /// `push_to` is set when this path's output should additionally be republished
 /// to a remote ingest (e.g. RTMP at SRS) — uses ffmpeg `-c copy`, no extra
 /// encoding cost since the path is already H.264.
+/// `pushes_to_srs` is true when the push target is an SRS server we also
+/// want to read from over WHEP. SRS hard-codes UDP 8000 in its WebRTC SDP,
+/// so the gateway must yield that port to SRS even though mediamtx itself
+/// would otherwise bind it for RTSP-over-UDP. False for non-SRS RTMP
+/// targets (Twitch, YouTube, generic RTMP relays), where the gateway can
+/// keep its default transports.
 #[derive(Debug, Clone)]
 pub struct MediaPath {
     pub name: String,
@@ -152,6 +190,7 @@ pub struct MediaPath {
     pub rtsp_transport_tcp: bool,
     pub transcode_from: Option<String>,
     pub push_to: Option<String>,
+    pub pushes_to_srs: bool,
 }
 
 /// One protocol/URL pair pointing at either the local gateway or a remote

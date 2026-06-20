@@ -31,14 +31,14 @@ pub struct OnvifCameraConfig {
     pub rtsp_sub: Option<String>,
 
     /// If true, generate an additional H.264 transcoded path `{id}_h264`
-    /// alongside the main passthrough. Lets clients that can't decode
-    /// HEVC (older browsers, some WebRTC stacks) still play the camera.
-    /// Default false — modern Mac/Win Electron handles HEVC natively.
+    /// alongside the main passthrough. Production cameras should already
+    /// output H.264 Baseline, so default false keeps mediamtx/ffmpeg on
+    /// `-c copy` with no extra encoding cost.
     #[serde(default)]
     pub h264_transcode: Option<bool>,
 
     /// Where the H.264 transcode pulls from when `h264_transcode` is on.
-    /// Defaults to `Main` so the H.264 path matches the HEVC path's
+    /// Defaults to `Main` so the H.264 path matches the passthrough path's
     /// resolution / quality. Use `Sub` (and set `rtsp_sub`) only when
     /// the host is CPU-constrained and you accept lower-res H.264.
     #[serde(default)]
@@ -49,9 +49,10 @@ pub struct OnvifCameraConfig {
     #[serde(default = "default_true")]
     pub rtsp_transport_tcp: bool,
 
-    /// Push the H.264 stream to a remote RTMP ingest (e.g. SRS). The
-    /// transcoded `{id}_h264` path is reused — ffmpeg uses `-c copy` so
-    /// there's no extra encoding cost.
+    /// Push the camera's H.264 stream to a remote RTMP ingest (e.g. SRS).
+    /// With `h264_transcode=false`, the main passthrough path is pushed
+    /// with `-c copy`; if transcoding is enabled, the `{id}_h264` path is
+    /// pushed instead.
     #[serde(default)]
     pub remote_rtmp: Option<RemoteRtmpConfig>,
 
@@ -86,12 +87,12 @@ pub struct OnvifControlConfig {
 }
 
 /// Selects which upstream feeds the optional `{id}_h264` transcode path.
-/// Only consulted when `h264_transcode` is on; the HEVC main passthrough
+/// Only consulted when `h264_transcode` is on; the main passthrough
 /// path always sources from `rtsp_main` regardless.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum H264TranscodeSource {
-    /// Transcode from `rtsp_main`. Same resolution as the HEVC path,
+    /// Transcode from `rtsp_main`. Same resolution as the passthrough path,
     /// higher CPU on the host.
     #[default]
     Main,
@@ -118,8 +119,8 @@ pub struct RemoteRtmpConfig {
     #[serde(default)]
     pub http_host: Option<String>,
 
-    /// Public host (no port) for WebRTC playback. Example:
-    /// `srs.sciol.ac.cn`. Used only to assemble `MediaEndpoint`s.
+    /// Public host[:port] for WebRTC playback. Example:
+    /// `srs.sciol.ac.cn:1985`. Used only to assemble `MediaEndpoint`s.
     #[serde(default)]
     pub webrtc_host: Option<String>,
 }
@@ -153,16 +154,9 @@ fn default_true() -> bool {
 }
 
 impl OnvifCameraConfig {
-    /// Whether this config will produce a path that pushes to remote RTMP.
-    /// `remote_rtmp` only takes effect on the H.264 transcode path; if the
-    /// caller disabled transcoding, no push happens. Used by both `paths()`
-    /// (to attach `push_to`) and `endpoints()` (to suppress remote URL
-    /// advertisement that no one would actually be publishing).
     fn produces_h264_path(&self) -> bool {
-        // Default off — modern downstreams (Electron 33+, Safari, Chrome 107+)
-        // play HEVC fine, and skipping the transcode preserves 4K quality at
-        // near-zero CPU cost. Set explicitly when a legacy / WebRTC consumer
-        // really needs an H.264 fallback.
+        // Default off — the camera is expected to output H.264 Baseline in
+        // production, so mediamtx can pass packets through directly.
         self.h264_transcode.unwrap_or(false)
     }
 
@@ -185,32 +179,43 @@ impl OnvifCameraConfig {
     }
 
     /// Whether this camera will advertise remote-ingest endpoints. With
-    /// HEVC-passthrough as the default, any `remote_rtmp` setup pushes —
-    /// the transcode path is purely an optional H.264 fallback.
+    /// H.264 passthrough as the default, any `remote_rtmp` setup pushes.
     pub fn pushes_to_remote(&self) -> bool {
         self.remote_rtmp.is_some()
     }
 
     pub fn paths(&self) -> Vec<MediaPath> {
-        // Main path: HEVC passthrough. ffmpeg/mediamtx needs no encoder —
+        // Main path: camera passthrough. ffmpeg/mediamtx needs no encoder —
         // RTMP push (when configured) is `-c copy`, ~0 CPU.
-        let main_push_to = self
+        let main_push_to = if self.produces_h264_path() {
+            None
+        } else {
+            self.remote_rtmp.as_ref().map(|r| r.full_push_url(&self.id))
+        };
+        // SRS is the only push target we know about that *also* re-reads
+        // the stream over WebRTC and needs host UDP 8000 free. Treat
+        // `webrtc_host` as the explicit "this is SRS" marker — generic
+        // RTMP relays leave it unset and don't trigger the gateway's
+        // transport restrictions.
+        let pushes_to_srs = self
             .remote_rtmp
             .as_ref()
-            .map(|r| r.full_push_url(&self.id));
+            .map(|r| r.webrtc_host.is_some())
+            .unwrap_or(false);
         let mut out = vec![MediaPath {
             name: self.id.clone(),
             source_uri: Some(self.rtsp_main.clone()),
             rtsp_transport_tcp: self.rtsp_transport_tcp,
             transcode_from: None,
             push_to: main_push_to,
+            pushes_to_srs: pushes_to_srs && !self.produces_h264_path(),
         }];
 
         if self.produces_h264_path() {
-            // Optional H.264 transcode for clients that can't play HEVC
-            // (some browser WebRTC stacks, older mobile decoders).
+            // Optional H.264 transcode for deployments where the camera
+            // cannot be configured to emit browser/SRS-friendly H.264.
             //
-            // Source: `Main` (default) so the H.264 path matches the HEVC
+            // Source: `Main` (default) so the H.264 path matches the main
             // path's resolution; `Sub` for CPU-constrained hosts willing
             // to accept the low-res feed. validate() guarantees rtsp_sub
             // is set whenever we reach the Sub branch here.
@@ -221,14 +226,15 @@ impl OnvifCameraConfig {
                     .clone()
                     .expect("validate() ensures rtsp_sub is Some when source=sub"),
             };
-            // Don't double-push to remote — the HEVC main path already does.
-            // Local-only H.264 fallback for now.
+            // When remote_rtmp is set, the H.264 path carries the push.
+            let h264_push_to = self.remote_rtmp.as_ref().map(|r| r.full_push_url(&self.id));
             out.push(MediaPath {
                 name: format!("{}_h264", self.id),
                 source_uri: None,
                 rtsp_transport_tcp: self.rtsp_transport_tcp,
                 transcode_from: Some(upstream),
-                push_to: None,
+                push_to: h264_push_to,
+                pushes_to_srs,
             });
         }
 
@@ -265,8 +271,8 @@ mod tests {
 
     #[test]
     fn remote_rtmp_pushes_main_path_by_default() {
-        // Modern default: HEVC main passthrough is what gets pushed.
-        // No explicit transcode needed.
+        // Production default: camera-side H.264 passthrough is what gets
+        // pushed. No explicit transcode needed.
         let mut c = cam("cam1");
         c.remote_rtmp = Some(rtmp());
         assert!(c.validate().is_ok());
@@ -280,20 +286,21 @@ mod tests {
     }
 
     #[test]
-    fn explicit_h264_transcode_adds_local_only_h264_path() {
+    fn explicit_h264_transcode_moves_push_to_h264_path() {
+        // If a deployment must transcode, the push moves to the generated
+        // H.264 path. The main path stays local-only to avoid double-push.
         let mut c = cam("cam1");
         c.rtsp_sub = Some("rtsp://1.2.3.4/sub".into());
         c.h264_transcode = Some(true);
         c.remote_rtmp = Some(rtmp());
         let paths = c.paths();
         assert_eq!(paths.len(), 2);
-        // Main HEVC: source + push_to (the remote push lives here now).
+        // Main passthrough: local-only now (push moved to H.264 path).
         assert_eq!(paths[0].name, "cam1");
-        assert!(paths[0].push_to.is_some());
-        // H.264 fallback: transcoded from MAIN (matches HEVC path quality),
-        // local-only (no double push to remote).
+        assert!(paths[0].push_to.is_none(), "main path no longer pushes");
+        // H.264 fallback: transcoded from MAIN, owns the remote push.
         assert_eq!(paths[1].name, "cam1_h264");
-        assert!(paths[1].push_to.is_none(), "no double-push to remote");
+        assert!(paths[1].push_to.is_some(), "H.264 path pushes to remote");
         assert_eq!(
             paths[1].transcode_from.as_deref(),
             Some("rtsp://1.2.3.4/main"),
