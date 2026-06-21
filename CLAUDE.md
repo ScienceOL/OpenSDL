@@ -88,25 +88,40 @@ osdl/serial/{node_id}/rx          # node → mother: bytes read from UART
 
 ```
 crates/
-├── osdl-core/src/
-│   ├── engine.rs            # OsdlEngine — main loop, dispatching
-│   ├── transport/           # Transport trait + MqttSerial, DirectSerial (stub), TCP (stub)
-│   ├── adapter/             # ProtocolAdapter trait + unilabos + runze codec
-│   ├── broker.rs            # Embedded MQTT broker (rumqttd)
-│   ├── mdns.rs              # mDNS service discovery
-│   ├── store.rs             # SQLite event store
-│   ├── protocol.rs          # Device, Node, Command, Status types
-│   ├── event.rs             # OsdlEvent enum
-│   └── config.rs            # OsdlConfig
+├── osdl-core/src/              # Engine + library core
+│   ├── engine.rs               # OsdlEngine — main loop, dispatching
+│   ├── orchestrator.rs         # Higher-level device orchestration
+│   ├── transport/              # Transport trait + impls
+│   │   ├── mqtt_serial.rs        # → MQTT → ESP32 → RS-485 → device
+│   │   ├── espnow_dongle.rs      # ESP-NOW dongle bridge
+│   │   ├── direct_serial.rs      # USB/RS-232/RS-485 on the mother node (real)
+│   │   ├── tcp.rs                # TCP socket (real)
+│   │   └── onvif.rs              # HTTP/SOAP control plane for IP cameras
+│   ├── adapter/                # ProtocolAdapter trait
+│   │   ├── unilabos.rs           # UniLabOs adapter
+│   │   └── onvif.rs              # ONVIF camera adapter
+│   ├── driver/                 # Driver trait + per-device codecs
+│   │   ├── builtins/             # emm, laiyu_xyz, runze, sopa, xkc
+│   │   └── registry.rs           # DriverRegistry (YAML factory)
+│   ├── media/                  # Media plane: mediamtx (SRS WebRTC), onvif_camera
+│   ├── broker.rs               # Embedded MQTT broker (rumqttd)
+│   ├── mqtt.rs / mdns.rs       # MQTT + mDNS service discovery
+│   ├── store.rs                # SQLite event store
+│   ├── protocol.rs             # Device, Node, Command, Status types
+│   ├── event.rs                # OsdlEvent enum
+│   └── config.rs               # OsdlConfig
 ├── osdl-core/tests/
-│   ├── e2e_mqtt.rs          # 6 e2e tests (broker + engine + simulated ESP32)
-│   └── integration.rs       # 6 integration tests (adapters, store, engine)
-├── osdl-cli/src/main.rs     # Standalone binary
-registry/unilabos/           # Device YAML schemas
+│   ├── e2e_mqtt.rs             # e2e tests (broker + engine + simulated ESP32)
+│   └── integration.rs          # integration tests (adapters, store, engine)
+├── osdl-cli/src/               # `osdl` binary — subcommands: serve, status, device, send, events, stop
+├── osdl-server/                # gRPC server (tonic) — what `osdl serve` runs (TCP + UDS)
+├── osdl-proto/                 # tonic-generated gRPC protobuf crate (consumed by the runner)
+├── osdl-firmware-protocol/     # Shared types between core and firmware
+registry/unilabos/              # Device YAML schemas
 firmware/
-├── esp32/                   # Rust firmware leaf crate, target xtensa-esp32-espidf
-├── esp32s3/                 # Rust firmware leaf crate, target xtensa-esp32s3-espidf
-└── esp32-cpp/               # Legacy C++ PlatformIO stub
+├── esp32/                      # Rust firmware leaf crate (xtensa-esp32-espidf)
+├── esp32s3/                    # Rust firmware leaf crate (xtensa-esp32s3-espidf)
+└── esp32-cpp/                  # Legacy C++ PlatformIO stub
 ```
 
 ## Code Style
@@ -121,16 +136,22 @@ firmware/
 
 ```bash
 cargo build              # Build all crates
-cargo run --bin osdl     # Run mother node
-cargo test               # Run all 24 tests
+cargo run --bin osdl serve   # Boot engine + gRPC server (TCP + UDS)
+cargo test               # Run all tests (e2e + integration)
 ```
 
 ## Integration with Xyzen
 
 ```
-Xyzen Cloud → WebSocket → Runner → OsdlEngine → Transport → Device
+Xyzen Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `osdl serve` (OsdlEngine) → Transport → Device
 ```
 
-- `osdl-core` as optional crate dependency in `xyzen-runner` (`feature = "osdl"`)
-- New Runner message types: `osdl_list_devices`, `osdl_send_command`, etc.
-- OsdlEvent forwarded to cloud via existing WebSocket (same pattern as PTY events)
+The runner is a **pure gRPC client** of OpenSDL, not an embedded crate:
+it depends on `osdl-proto` (the generated tonic crate) behind the
+`feature = "osdl"`. The engine + gRPC server live in a separate `osdl
+serve` process — spawned and supervised by the desktop host (see
+`desktop/electron`'s `lab_server.ts`) or run independently on a lab Pi.
+The runner connects to whatever endpoint the user configured.
+
+- Runner message types (desktop ↔ cloud WebSocket, same channel as PTY events): `osdl_list_devices`, `osdl_send_command`, `osdl_device_online`, `osdl_device_offline`, `osdl_media_source_online`, …
+- OsdlEvent is forwarded to the cloud over the runner's existing WebSocket (same pattern as PTY events).
