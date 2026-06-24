@@ -175,3 +175,35 @@ SRS UDP media path, it falls through to step 3, which works over HTTP
 and uses the H.264 SRS output before trying any local HEVC HLS path.
 The same endpoint list is sent to owner and teammate — only the
 browser's reach differs.
+
+### Production SRS (Xyzen Shanghai)
+
+Production SRS lives in the Shanghai cluster
+(`kubernetes/shk/xyzen-srs/`). Two public hostnames, because the media
+plane and the HTTP plane have different transport requirements:
+
+- `srs-rtc.xyzen.cc` — dedicated Aliyun NLB. Exposes **RTMP 1935/TCP**
+  (where mediamtx pushes) and **WebRTC media 8000/UDP** (what SRS bakes
+  into the SDP `a=candidate` line, so browsers connect to it directly).
+- `srs.xyzen.cc` — ingress-nginx (HTTPS). Serves **HLS playlists** and
+  **WHEP signalling** (the `/rtc/v1/whep/` POST). Ingress-nginx is HTTP
+  only — **don't** push RTMP here.
+
+Camera YAML for the production SRS:
+
+```yaml
+remote_rtmp:
+  base_url: rtmp://srs-rtc.xyzen.cc:1935/live
+  stream: lab-1
+  http_host: srs.xyzen.cc
+  webrtc_host: srs.xyzen.cc
+```
+
+Smoke-testing without a camera:
+
+```sh
+ffmpeg -re -f lavfi -i testsrc -c:v libx264 -f flv \
+  rtmp://srs-rtc.xyzen.cc:1935/live/test
+# then check the stream is listed:
+curl -s https://srs.xyzen.cc/api/v1/streams/ | jq
+```
