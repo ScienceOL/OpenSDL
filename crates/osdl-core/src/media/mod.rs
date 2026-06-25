@@ -102,6 +102,27 @@ impl MediaSourceConfig {
     }
 }
 
+/// Split an optional `scheme://` prefix off a host string. Lets the YAML
+/// author opt into HTTPS by writing `https://srs.xyzen.cc` for `http_host`
+/// / `webrtc_host`; bare `host[:port]` keeps the historical `http://`
+/// default so existing dev recipes (`localhost:18085`) still work.
+///
+/// Why this matters: Xyzen's web frontend is served over HTTPS, and
+/// browsers refuse to `fetch()` `http://...` from an HTTPS page (mixed
+/// content). Production SRS lives behind ingress-nginx with a real cert,
+/// so the playback URLs must be `https://`; without this knob the runner
+/// emitted `http://srs.xyzen.cc/...` and every WHEP POST was silently
+/// blocked before leaving the renderer.
+fn split_scheme(host: &str) -> (&'static str, &str) {
+    if let Some(rest) = host.strip_prefix("https://") {
+        ("https", rest)
+    } else if let Some(rest) = host.strip_prefix("http://") {
+        ("http", rest)
+    } else {
+        ("http", host)
+    }
+}
+
 fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> Vec<MediaEndpoint> {
     let stream = remote.stream.as_deref().unwrap_or(id);
     let app = remote.app();
@@ -113,6 +134,7 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
         location: Location::Remote,
     }];
     if let Some(http_host) = &remote.http_host {
+        let (scheme, host) = split_scheme(http_host);
         let path = if app.is_empty() {
             stream.to_string()
         } else {
@@ -122,14 +144,14 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
             source_id: id.to_string(),
             path: stream.to_string(),
             protocol: Protocol::Flv,
-            url: format!("http://{http_host}/{path}.flv"),
+            url: format!("{scheme}://{host}/{path}.flv"),
             location: Location::Remote,
         });
         out.push(MediaEndpoint {
             source_id: id.to_string(),
             path: stream.to_string(),
             protocol: Protocol::Hls,
-            url: format!("http://{http_host}/{path}.m3u8"),
+            url: format!("{scheme}://{host}/{path}.m3u8"),
             location: Location::Remote,
         });
     }
@@ -151,6 +173,7 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
         // Production cameras are pinned to H.264 Baseline. Make that explicit
         // for SRS so Electron builds with optional HEVC WebRTC support don't
         // send a broader offer that SRS answers on the wrong codec path.
+        let (scheme, host) = split_scheme(webrtc_host);
         let app_q = if app.is_empty() {
             "live".to_string()
         } else {
@@ -161,12 +184,66 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
             path: stream.to_string(),
             protocol: Protocol::Webrtc,
             url: format!(
-                "http://{webrtc_host}/rtc/v1/whep/?app={app_q}&stream={stream}&codec=h264"
+                "{scheme}://{host}/rtc/v1/whep/?app={app_q}&stream={stream}&codec=h264"
             ),
             location: Location::Remote,
         });
     }
     out
+}
+
+#[cfg(test)]
+mod scheme_tests {
+    use super::*;
+    use crate::media::onvif_camera::RemoteRtmpConfig;
+
+    fn endpoints(http: Option<&str>, webrtc: Option<&str>) -> Vec<MediaEndpoint> {
+        build_remote_endpoints(
+            "cam1",
+            &RemoteRtmpConfig {
+                base_url: "rtmp://example:1935/live".into(),
+                stream: None,
+                http_host: http.map(str::to_string),
+                webrtc_host: webrtc.map(str::to_string),
+            },
+        )
+    }
+
+    fn find(endpoints: &[MediaEndpoint], proto: Protocol) -> &str {
+        endpoints
+            .iter()
+            .find(|e| e.protocol == proto)
+            .map(|e| e.url.as_str())
+            .expect("endpoint")
+    }
+
+    #[test]
+    fn bare_host_defaults_to_http() {
+        let out = endpoints(Some("localhost:18085"), Some("localhost:1985"));
+        assert!(find(&out, Protocol::Flv).starts_with("http://localhost:18085/"));
+        assert!(find(&out, Protocol::Hls).starts_with("http://localhost:18085/"));
+        assert!(find(&out, Protocol::Webrtc).starts_with("http://localhost:1985/rtc/v1/whep/"));
+    }
+
+    #[test]
+    fn https_prefix_is_honored() {
+        let out = endpoints(Some("https://srs.xyzen.cc"), Some("https://srs.xyzen.cc"));
+        assert!(find(&out, Protocol::Flv).starts_with("https://srs.xyzen.cc/"));
+        assert!(find(&out, Protocol::Hls).starts_with("https://srs.xyzen.cc/"));
+        assert!(find(&out, Protocol::Webrtc).starts_with("https://srs.xyzen.cc/rtc/v1/whep/"));
+    }
+
+    #[test]
+    fn explicit_http_prefix_is_stripped() {
+        let out = endpoints(Some("http://srs.example.com"), None);
+        // No double scheme — `http://http://...` would be unparseable.
+        assert_eq!(
+            find(&out, Protocol::Flv).matches("http://").count(),
+            1,
+            "scheme must appear exactly once",
+        );
+        assert!(find(&out, Protocol::Flv).starts_with("http://srs.example.com/"));
+    }
 }
 
 /// An entry in the rendered mediamtx config.

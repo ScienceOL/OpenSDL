@@ -195,9 +195,17 @@ Camera YAML for the production SRS:
 remote_rtmp:
   base_url: rtmp://srs-rtc.xyzen.cc:1935/live
   stream: lab-1
-  http_host: srs.xyzen.cc
-  webrtc_host: srs.xyzen.cc
+  http_host: https://srs.xyzen.cc
+  webrtc_host: https://srs.xyzen.cc
 ```
+
+The `https://` prefix on `http_host` / `webrtc_host` is required for
+production: the engine emits `http://...` URLs by default (matching the
+bare `localhost:18085` form used in dev), and browsers loaded over
+HTTPS refuse to `fetch()` `http://` resources (mixed content).
+Prefixing the host with `https://` switches the emitted endpoint URLs
+to HTTPS. The prefix on `base_url` is unaffected (RTMP push runs from
+the runner, not the browser).
 
 Smoke-testing without a camera:
 

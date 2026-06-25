@@ -53,8 +53,15 @@ media_sources:
     #     WHEP signalling over HTTPS. The WebRTC media itself still goes
     #     to srs-rtc:8000/UDP via the SDP `a=candidate` line that SRS
     #     fills in from its CANDIDATE env var.
+    #
+    # Note the `https://` prefix on http_host / webrtc_host below.
+    # When the host is bare (e.g. `localhost:18085`) the engine emits
+    # `http://...` URLs; prefix with `https://` (or `http://` to be
+    # explicit) when SRS is fronted by HTTPS ingress. Browser frontends
+    # served over HTTPS will refuse to fetch `http://` endpoints, so
+    # production deployments must use the prefixed form.
     # remote_rtmp:
     #   base_url: rtmp://srs-rtc.xyzen.cc:1935/live
     #   stream: lab-1
-    #   http_host: srs.xyzen.cc
-    #   webrtc_host: srs.xyzen.cc
+    #   http_host: https://srs.xyzen.cc
+    #   webrtc_host: https://srs.xyzen.cc
