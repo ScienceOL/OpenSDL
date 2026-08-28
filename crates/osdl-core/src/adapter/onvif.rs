@@ -52,7 +52,12 @@ impl OnvifAdapter {
     /// Used by the engine when constructing the `Device` record so callers
     /// see actions in `osdl device get`.
     pub fn combined_actions() -> Vec<ActionSchema> {
-        vec![ptz_move_schema(), ptz_stop_schema(), ptz_preset_goto_schema(), snapshot_schema()]
+        vec![
+            ptz_move_schema(),
+            ptz_stop_schema(),
+            ptz_preset_goto_schema(),
+            snapshot_schema(),
+        ]
     }
 }
 
@@ -95,15 +100,10 @@ impl ProtocolAdapter for OnvifAdapter {
             ));
         }
 
-        serde_json::to_vec(&envelope)
-            .map_err(|e| format!("onvif adapter: serialize envelope: {e}"))
+        serde_json::to_vec(&envelope).map_err(|e| format!("onvif adapter: serialize envelope: {e}"))
     }
 
-    fn decode_response(
-        &self,
-        _device_type: &str,
-        bytes: &[u8],
-    ) -> Option<HashMap<String, Value>> {
+    fn decode_response(&self, _device_type: &str, bytes: &[u8]) -> Option<HashMap<String, Value>> {
         let envelope: Value = match serde_json::from_slice(bytes) {
             Ok(v) => v,
             Err(e) => {
@@ -291,7 +291,10 @@ mod tests {
     fn encodes_direction_shorthand() {
         let a = OnvifAdapter::new();
         let bytes = a
-            .encode_command(DEVICE_TYPE_COMBINED, &cmd("ptz_move", json!({"direction": "up"})))
+            .encode_command(
+                DEVICE_TYPE_COMBINED,
+                &cmd("ptz_move", json!({"direction": "up"})),
+            )
             .unwrap();
         let v: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["op"], "ptz_move");
@@ -303,7 +306,10 @@ mod tests {
     fn rejects_unknown_direction() {
         let a = OnvifAdapter::new();
         let err = a
-            .encode_command(DEVICE_TYPE_COMBINED, &cmd("ptz_move", json!({"direction": "north"})))
+            .encode_command(
+                DEVICE_TYPE_COMBINED,
+                &cmd("ptz_move", json!({"direction": "north"})),
+            )
             .unwrap_err();
         assert!(err.contains("unknown direction"));
     }
@@ -320,9 +326,15 @@ mod tests {
     #[test]
     fn snapshot_action_only_on_camera_or_combined() {
         let a = OnvifAdapter::new();
-        assert!(a.encode_command(DEVICE_TYPE_PTZ, &cmd("snapshot", json!({}))).is_err());
-        assert!(a.encode_command(DEVICE_TYPE_CAMERA, &cmd("snapshot", json!({}))).is_ok());
-        assert!(a.encode_command(DEVICE_TYPE_COMBINED, &cmd("snapshot", json!({}))).is_ok());
+        assert!(a
+            .encode_command(DEVICE_TYPE_PTZ, &cmd("snapshot", json!({})))
+            .is_err());
+        assert!(a
+            .encode_command(DEVICE_TYPE_CAMERA, &cmd("snapshot", json!({})))
+            .is_ok());
+        assert!(a
+            .encode_command(DEVICE_TYPE_COMBINED, &cmd("snapshot", json!({})))
+            .is_ok());
     }
 
     #[test]
@@ -343,7 +355,14 @@ mod tests {
     #[test]
     fn preset_goto_requires_preset_param() {
         let a = OnvifAdapter::new();
-        assert!(a.encode_command(DEVICE_TYPE_COMBINED, &cmd("ptz_preset_goto", json!({}))).is_err());
-        assert!(a.encode_command(DEVICE_TYPE_COMBINED, &cmd("ptz_preset_goto", json!({"preset": "1"}))).is_ok());
+        assert!(a
+            .encode_command(DEVICE_TYPE_COMBINED, &cmd("ptz_preset_goto", json!({})))
+            .is_err());
+        assert!(a
+            .encode_command(
+                DEVICE_TYPE_COMBINED,
+                &cmd("ptz_preset_goto", json!({"preset": "1"}))
+            )
+            .is_ok());
     }
 }

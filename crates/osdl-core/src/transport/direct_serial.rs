@@ -122,7 +122,11 @@ impl DirectSerialTransport {
         });
 
         *self.read_task.lock().await = Some(handle);
-        log::info!("Serial: opened {} @ {} baud", self.port_path, self.baud_rate);
+        log::info!(
+            "Serial: opened {} @ {} baud",
+            self.port_path,
+            self.baud_rate
+        );
         Ok(())
     }
 

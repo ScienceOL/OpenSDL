@@ -3,15 +3,14 @@ use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
 use crate::media::mediamtx::MediamtxProcess;
 use crate::media::MediaEndpoint;
+use crate::media::MediaSourceConfig;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
 #[cfg(feature = "espnow")]
 use crate::transport::espnow_dongle::{
-    transport_id_for as espnow_transport_id, EspNowNodeTransport, EspNowDongleClient, Mac,
-    RegEvent,
+    transport_id_for as espnow_transport_id, EspNowDongleClient, EspNowNodeTransport, Mac, RegEvent,
 };
-use crate::media::MediaSourceConfig;
 use crate::transport::mqtt_serial::MqttSerialTransport;
 use crate::transport::onvif::{transport_id_for as onvif_transport_id, OnvifTransport};
 use crate::transport::{Transport, TransportRx};
@@ -779,7 +778,13 @@ impl OsdlEngine {
             let transport_id = onvif_transport_id(&cam.id);
             // Idempotent: a second start_media_gateway() (e.g. mediamtx
             // recovery) shouldn't double-register the device.
-            if self.handle.transports.read().await.contains_key(&transport_id) {
+            if self
+                .handle
+                .transports
+                .read()
+                .await
+                .contains_key(&transport_id)
+            {
                 continue;
             }
 
@@ -1370,7 +1375,9 @@ mac_assignments:
         let cfg: OsdlConfig = serde_yaml::from_str(yaml).expect("parse");
         let mac: Mac = [0xA4, 0xF0, 0x0F, 0xD8, 0x55, 0x5C];
         assert_eq!(
-            cfg.mac_assignments.get(&mac_hex_flat(&mac)).map(String::as_str),
+            cfg.mac_assignments
+                .get(&mac_hex_flat(&mac))
+                .map(String::as_str),
             Some("bus.laiyu_xyz.station1"),
         );
         assert_eq!(cfg.mac_assignments.len(), 2);

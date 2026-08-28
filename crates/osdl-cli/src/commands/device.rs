@@ -54,8 +54,7 @@ pub struct WaitArgs {
 }
 
 pub async fn run(cmd: DeviceCmd, opts: client::ClientOpts) -> anyhow::Result<()> {
-    let paths = osdl_server::paths::Paths::discover()
-        .map_err(|e| anyhow::anyhow!("paths: {e}"))?;
+    let paths = osdl_server::paths::Paths::discover().map_err(|e| anyhow::anyhow!("paths: {e}"))?;
     let resolved = client::resolve(&opts, &paths)?;
     let mut client = client::connect(&resolved, &opts).await?;
 
@@ -86,7 +85,10 @@ pub async fn run(cmd: DeviceCmd, opts: client::ClientOpts) -> anyhow::Result<()>
                 .context("get_device RPC")?
                 .into_inner();
             if a.json {
-                println!("{}", serde_json::to_string_pretty(&device_summary_json(&dev))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&device_summary_json(&dev))?
+                );
             } else {
                 print_device_detail(&dev);
             }
@@ -99,7 +101,10 @@ pub async fn run(cmd: DeviceCmd, opts: client::ClientOpts) -> anyhow::Result<()>
                 .context("wait_for_device RPC")?
                 .into_inner();
             if a.json {
-                println!("{}", serde_json::to_string_pretty(&device_summary_json(&dev))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&device_summary_json(&dev))?
+                );
             } else {
                 print_device_detail(&dev);
             }
@@ -109,9 +114,9 @@ pub async fn run(cmd: DeviceCmd, opts: client::ClientOpts) -> anyhow::Result<()>
 }
 
 fn parse_selector(s: &str, timeout: Duration) -> anyhow::Result<pb::WaitForDeviceRequest> {
-    let (key, val) = s
-        .split_once(':')
-        .ok_or_else(|| anyhow::anyhow!("selector must be `id:`, `type:`, or `role:` (got '{s}')"))?;
+    let (key, val) = s.split_once(':').ok_or_else(|| {
+        anyhow::anyhow!("selector must be `id:`, `type:`, or `role:` (got '{s}')")
+    })?;
     let selector = match key {
         "id" => pb::wait_for_device_request::Selector::DeviceId(val.to_string()),
         "type" => pb::wait_for_device_request::Selector::DeviceType(val.to_string()),
@@ -187,7 +192,10 @@ fn print_device_detail(d: &pb::Device) {
         if !props.fields.is_empty() {
             let json = osdl_server::convert::struct_to_json(props);
             println!("properties:");
-            for line in serde_json::to_string_pretty(&json).unwrap_or_default().lines() {
+            for line in serde_json::to_string_pretty(&json)
+                .unwrap_or_default()
+                .lines()
+            {
                 println!("  {line}");
             }
         }

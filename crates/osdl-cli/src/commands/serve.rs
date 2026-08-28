@@ -118,8 +118,7 @@ pub fn main_entrypoint(mut args: ServeArgs) -> anyhow::Result<()> {
         run_detached(args, log_path)?;
         Ok(())
     } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-            .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
         run_foreground(args)
     }
 }
@@ -276,7 +275,10 @@ fn resolve_log_path(args: &ServeArgs, paths: &Paths) -> anyhow::Result<PathBuf> 
     if let Some(p) = &args.log_file {
         return Ok(p.clone());
     }
-    let dir: &Path = args.data_dir.as_deref().unwrap_or(paths.state_dir.as_path());
+    let dir: &Path = args
+        .data_dir
+        .as_deref()
+        .unwrap_or(paths.state_dir.as_path());
     Ok(dir.join(format!("{}.log", args.instance)))
 }
 
@@ -308,9 +310,9 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     // loopback with a kernel-assigned port. The chosen port is recorded
     // in the lockfile, so clients can still discover us by --instance.
     #[cfg(not(unix))]
-    let listen_addr = args.listen.or_else(|| {
-        Some(SocketAddr::from(([127, 0, 0, 1], 0)))
-    });
+    let listen_addr = args
+        .listen
+        .or_else(|| Some(SocketAddr::from(([127, 0, 0, 1], 0))));
     #[cfg(unix)]
     let listen_addr = args.listen;
 
@@ -364,7 +366,8 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     std::fs::create_dir_all(&data_dir)
         .with_context(|| format!("create data dir {}", data_dir.display()))?;
     let db_path = data_dir.join(format!("{}.db", args.instance));
-    let store = EventStore::open(&db_path).map_err(|e| anyhow!("event store {}: {}", db_path.display(), e))?;
+    let store = EventStore::open(&db_path)
+        .map_err(|e| anyhow!("event store {}: {}", db_path.display(), e))?;
 
     let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> = vec![
         Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins())),
@@ -499,8 +502,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
 fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
     for a in &mut cfg.adapters {
         if let Some(p) = a.registry_path.as_deref() {
-            a.registry_path =
-                Some(path_expand::expand(p, config_dir).display().to_string());
+            a.registry_path = Some(path_expand::expand(p, config_dir).display().to_string());
         }
     }
     for d in &mut cfg.espnow_dongles {
@@ -514,7 +516,6 @@ fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
         d.port = expanded.display().to_string();
     }
     if let Some(bin) = cfg.media_gateway.binary.as_deref() {
-        cfg.media_gateway.binary =
-            Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
+        cfg.media_gateway.binary = Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
     }
 }

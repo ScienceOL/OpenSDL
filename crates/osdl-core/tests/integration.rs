@@ -52,8 +52,11 @@ devices:
     assert_eq!(bus.devices.len(), 5);
 
     // Optional fields survive the round-trip.
-    let motor4: &BusDeviceConfig =
-        bus.devices.iter().find(|d| d.local_id == "motor-4").unwrap();
+    let motor4: &BusDeviceConfig = bus
+        .devices
+        .iter()
+        .find(|d| d.local_id == "motor-4")
+        .unwrap();
     assert_eq!(motor4.role.as_deref(), Some("stirrer"));
     assert_eq!(
         motor4.description.as_deref(),
@@ -100,7 +103,9 @@ fn test_engine_creation() {
     };
 
     let store = EventStore::in_memory().unwrap();
-    let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
+    let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(
+        DriverRegistry::with_builtins(),
+    ))];
     let engine = OsdlEngine::new(config, adapters).with_store(store);
 
     assert_eq!(engine.status(), OsdlStatus::Disconnected);
@@ -199,8 +204,8 @@ fn test_event_store_query_filters() {
 
 #[test]
 fn test_runze_pump_via_adapter() {
-    use osdl_core::adapter::ProtocolAdapter;
     use osdl_core::adapter::unilabos::UniLabOsAdapter;
+    use osdl_core::adapter::ProtocolAdapter;
     use osdl_core::protocol::DeviceCommand;
 
     let mut adapter = UniLabOsAdapter::new(DriverRegistry::with_builtins());
@@ -319,8 +324,7 @@ fn test_laiyu_xyz_decode_via_adapter() {
 
     // Simulate X axis status response: standby, pos=2048, speed=0, emergency=0, current=50
     let mut frame = vec![
-        0x01, 0x03, 12,
-        0x00, 0x00, // status = standby
+        0x01, 0x03, 12, 0x00, 0x00, // status = standby
         0x00, 0x00, // pos_high
         0x08, 0x00, // pos_low = 2048
         0x00, 0x00, // speed
@@ -339,7 +343,10 @@ fn test_laiyu_xyz_decode_via_adapter() {
 
     // Same frame should NOT decode for Y axis (slave 2, but frame has slave 1)
     let props = adapter.decode_response("stepper_motor.laiyu_xyz.Y", &frame);
-    assert!(props.is_none(), "Slave 1 frame should not decode for Y (slave 2)");
+    assert!(
+        props.is_none(),
+        "Slave 1 frame should not decode for Y (slave 2)"
+    );
 }
 
 #[test]
@@ -354,9 +361,7 @@ fn test_sopa_pipette_via_adapter() {
         action: "aspirate".into(),
         params: serde_json::json!({"volume": 200.0}),
     };
-    let bytes = adapter
-        .encode_command("pipette.sopa.YYQ", &cmd)
-        .unwrap();
+    let bytes = adapter.encode_command("pipette.sopa.YYQ", &cmd).unwrap();
     assert!(bytes.starts_with(b"/4P200E"));
 
     // Query tip
@@ -366,9 +371,7 @@ fn test_sopa_pipette_via_adapter() {
         action: "query_tip".into(),
         params: serde_json::json!({}),
     };
-    let bytes = adapter
-        .encode_command("pipette.sopa.YYQ", &cmd)
-        .unwrap();
+    let bytes = adapter.encode_command("pipette.sopa.YYQ", &cmd).unwrap();
     assert!(bytes.starts_with(b"/4Q28E"));
 }
 
@@ -492,9 +495,7 @@ fn test_chinwe_xkc_via_adapter() {
         action: "read_level".into(),
         params: serde_json::json!({}),
     };
-    let bytes = adapter
-        .encode_command("sensor.chinwe.xkc", &cmd)
-        .unwrap();
+    let bytes = adapter.encode_command("sensor.chinwe.xkc", &cmd).unwrap();
     assert_eq!(bytes[0], 6); // slave 6
     assert_eq!(bytes[1], 0x03); // read registers
 
@@ -519,22 +520,34 @@ fn test_shared_bus_decode_isolation() {
 
     // A Modbus response from slave 1 (Laiyu X axis)
     let mut frame = vec![
-        0x01, 0x03, 12,
-        0x00, 0x00, 0x00, 0x00, 0x08, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x32,
+        0x01, 0x03, 12, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32,
     ];
     let crc = modbus_rtu::crc16(&frame);
     frame.extend_from_slice(&crc);
 
     // Should decode for X (slave 1) but not Y (slave 2), Z (slave 3), or XKC (slave 6)
-    assert!(adapter.decode_response("stepper_motor.laiyu_xyz.X", &frame).is_some());
-    assert!(adapter.decode_response("stepper_motor.laiyu_xyz.Y", &frame).is_none());
-    assert!(adapter.decode_response("stepper_motor.laiyu_xyz.Z", &frame).is_none());
-    assert!(adapter.decode_response("sensor.chinwe.xkc", &frame).is_none());
+    assert!(adapter
+        .decode_response("stepper_motor.laiyu_xyz.X", &frame)
+        .is_some());
+    assert!(adapter
+        .decode_response("stepper_motor.laiyu_xyz.Y", &frame)
+        .is_none());
+    assert!(adapter
+        .decode_response("stepper_motor.laiyu_xyz.Z", &frame)
+        .is_none());
+    assert!(adapter
+        .decode_response("sensor.chinwe.xkc", &frame)
+        .is_none());
 
     // An Emm frame for device 4 should not decode as Modbus
     let emm_frame = vec![4, 0x32, 0, 0x00, 0x00, 0x03, 0xE8, 0x6B];
-    assert!(adapter.decode_response("stepper_motor.laiyu_xyz.X", &emm_frame).is_none());
-    assert!(adapter.decode_response("stepper_motor.chinwe.emm4", &emm_frame).is_some());
-    assert!(adapter.decode_response("stepper_motor.chinwe.emm5", &emm_frame).is_none());
+    assert!(adapter
+        .decode_response("stepper_motor.laiyu_xyz.X", &emm_frame)
+        .is_none());
+    assert!(adapter
+        .decode_response("stepper_motor.chinwe.emm4", &emm_frame)
+        .is_some());
+    assert!(adapter
+        .decode_response("stepper_motor.chinwe.emm5", &emm_frame)
+        .is_none());
 }

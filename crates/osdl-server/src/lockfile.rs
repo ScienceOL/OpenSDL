@@ -93,8 +93,7 @@ pub fn write(lock_dir: &Path, record: &InstanceRecord) -> Result<LockfileGuard, 
         .map_err(|e| format!("create lock dir {}: {}", lock_dir.display(), e))?;
 
     let final_path = lock_dir.join(format!("{}.json", sanitize(&record.instance)));
-    let json = serde_json::to_vec_pretty(record)
-        .map_err(|e| format!("serialize record: {e}"))?;
+    let json = serde_json::to_vec_pretty(record).map_err(|e| format!("serialize record: {e}"))?;
 
     for attempt in 0..2 {
         match std::fs::OpenOptions::new()
@@ -161,7 +160,9 @@ pub fn list(lock_dir: &Path) -> Vec<InstanceRecord> {
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let Some(rec) = read_record(&path) else { continue };
+        let Some(rec) = read_record(&path) else {
+            continue;
+        };
         if pid_alive(rec.pid) {
             out.push(rec);
         } else {

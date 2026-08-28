@@ -77,8 +77,8 @@ pub fn decode(config: &XkcConfig, bytes: &[u8]) -> Option<HashMap<String, serde_
 
 // --------------- Driver trait impl ---------------
 
-use crate::driver::Driver;
 use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 
 /// XKC liquid level sensor driver instance (pre-configured).
 pub struct XkcDriver {
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn test_decode_level_above_threshold() {
         let config = default_config(); // threshold = 300
-        // Response: slave=6, fn=0x03, 2 registers: reg0=0, reg1=500 (above 300)
+                                       // Response: slave=6, fn=0x03, 2 registers: reg0=0, reg1=500 (above 300)
         let mut frame = vec![0x06, 0x03, 0x04, 0x00, 0x00, 0x01, 0xF4];
         let crc = modbus_rtu::crc16(&frame);
         frame.extend_from_slice(&crc);
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_decode_level_below_threshold() {
         let config = default_config(); // threshold = 300
-        // Response: slave=6, fn=0x03, 2 registers: reg0=0, reg1=100 (below 300)
+                                       // Response: slave=6, fn=0x03, 2 registers: reg0=0, reg1=100 (below 300)
         let mut frame = vec![0x06, 0x03, 0x04, 0x00, 0x00, 0x00, 0x64];
         let crc = modbus_rtu::crc16(&frame);
         frame.extend_from_slice(&crc);
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_decode_wrong_slave_returns_none() {
         let config = default_config(); // slave_id = 6
-        // Response from slave 1
+                                       // Response from slave 1
         let mut frame = vec![0x01, 0x03, 0x04, 0x00, 0x00, 0x01, 0xF4];
         let crc = modbus_rtu::crc16(&frame);
         frame.extend_from_slice(&crc);

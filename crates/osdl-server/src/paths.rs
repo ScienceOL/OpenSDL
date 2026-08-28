@@ -58,8 +58,7 @@ impl Paths {
         };
 
         for d in [&config_dir, &state_dir, &cache_dir, &runtime_dir] {
-            std::fs::create_dir_all(d)
-                .map_err(|e| format!("create {}: {}", d.display(), e))?;
+            std::fs::create_dir_all(d).map_err(|e| format!("create {}: {}", d.display(), e))?;
         }
 
         // Tighten runtime dir perms (Unix only). The XDG-supplied dir is
@@ -134,8 +133,7 @@ fn current_uid() -> u32 {
 fn tighten_perms(path: &std::path::Path, mode: u32) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     let perms = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(path, perms)
-        .map_err(|e| format!("chmod {}: {}", path.display(), e))
+    std::fs::set_permissions(path, perms).map_err(|e| format!("chmod {}: {}", path.display(), e))
 }
 
 #[cfg(test)]

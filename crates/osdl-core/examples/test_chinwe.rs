@@ -139,10 +139,7 @@ async fn send_and_decode(
                     println!("  收到 {} 字节: {:02X?}", msg.data.len(), msg.data);
                     match adapter.decode_response(device_type, &msg.data) {
                         Some(props) => {
-                            println!(
-                                "  解码: {}",
-                                serde_json::to_string_pretty(&props).unwrap()
-                            );
+                            println!("  解码: {}", serde_json::to_string_pretty(&props).unwrap());
                         }
                         None => println!("  解码失败 (地址不匹配或帧格式错误)"),
                     }

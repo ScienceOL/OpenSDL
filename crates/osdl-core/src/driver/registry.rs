@@ -39,11 +39,7 @@ impl DriverRegistry {
 
     /// Create a `Driver` instance by looking up the factory for `name`
     /// and calling it with the given YAML config.
-    pub fn create(
-        &self,
-        name: &str,
-        yaml: &serde_yaml::Value,
-    ) -> Result<Box<dyn Driver>, String> {
+    pub fn create(&self, name: &str, yaml: &serde_yaml::Value) -> Result<Box<dyn Driver>, String> {
         let factory = self
             .factories
             .get(name)

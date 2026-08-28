@@ -222,8 +222,8 @@ pub fn decode(config: &RunzeConfig, bytes: &[u8]) -> Option<HashMap<String, serd
 
 // --------------- Driver trait impl ---------------
 
-use crate::driver::Driver;
 use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 
 /// Runze syringe pump driver instance (pre-configured).
 pub struct RunzeDriver {

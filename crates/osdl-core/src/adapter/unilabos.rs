@@ -58,9 +58,7 @@ impl ProtocolAdapter for UniLabOsAdapter {
                     Ok(yaml) => {
                         let device_nodes = collect_device_nodes(&yaml);
                         for device_yaml in device_nodes {
-                            if let Some((entry, driver_name)) =
-                                parse_registry_entry(&device_yaml)
-                            {
+                            if let Some((entry, driver_name)) = parse_registry_entry(&device_yaml) {
                                 log::info!(
                                     "  Loaded device: {} ({})",
                                     entry.device_type,
@@ -72,10 +70,7 @@ impl ProtocolAdapter for UniLabOsAdapter {
                                 if let Some(name) = driver_name {
                                     match self.driver_registry.create(&name, &device_yaml) {
                                         Ok(driver) => {
-                                            log::info!(
-                                                "    → {} driver configured",
-                                                driver.name()
-                                            );
+                                            log::info!("    → {} driver configured", driver.name());
                                             self.drivers.insert(dt, driver);
                                         }
                                         Err(e) => {
@@ -153,9 +148,7 @@ fn collect_device_nodes(yaml: &serde_yaml::Value) -> Vec<serde_yaml::Value> {
 /// This function only extracts framework-level fields (device_type,
 /// description, actions). Driver-specific config (address, slave_id, etc.)
 /// is handled by each driver's `create_from_yaml` factory.
-fn parse_registry_entry(
-    yaml: &serde_yaml::Value,
-) -> Option<(RegistryEntry, Option<String>)> {
+fn parse_registry_entry(yaml: &serde_yaml::Value) -> Option<(RegistryEntry, Option<String>)> {
     let device_type = yaml.get("device_type")?.as_str()?.to_string();
     let description = yaml
         .get("description")

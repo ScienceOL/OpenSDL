@@ -26,8 +26,7 @@ pub struct EventsArgs {
 pub async fn run(args: EventsArgs, opts: client::ClientOpts) -> anyhow::Result<()> {
     let _ = args.follow; // currently always-follow; silenced lint
 
-    let paths = osdl_server::paths::Paths::discover()
-        .map_err(|e| anyhow::anyhow!("paths: {e}"))?;
+    let paths = osdl_server::paths::Paths::discover().map_err(|e| anyhow::anyhow!("paths: {e}"))?;
     let resolved = client::resolve(&opts, &paths)?;
     let mut client = client::connect(&resolved, &opts).await?;
 
@@ -105,7 +104,10 @@ fn print_human(ev: &pb::Event) {
                 e.endpoints.len()
             );
             for ep in &e.endpoints {
-                println!("                   [{}] {}  {}", ep.location, ep.protocol, ep.url);
+                println!(
+                    "                   [{}] {}  {}",
+                    ep.location, ep.protocol, ep.url
+                );
             }
         }
         Some(pb::event::Kind::MediaGatewayDown(e)) => {
@@ -131,7 +133,10 @@ fn event_to_jsonl(ev: &pb::Event) -> String {
     let (kind, payload) = match &ev.kind {
         Some(pb::event::Kind::DeviceOnline(e)) => (
             "device_online",
-            e.device.as_ref().map(device_to_json).unwrap_or(serde_json::Value::Null),
+            e.device
+                .as_ref()
+                .map(device_to_json)
+                .unwrap_or(serde_json::Value::Null),
         ),
         Some(pb::event::Kind::DeviceOffline(e)) => (
             "device_offline",
@@ -180,10 +185,7 @@ fn event_to_jsonl(ev: &pb::Event) -> String {
             "media_gateway_down",
             serde_json::json!({"reason": e.reason}),
         ),
-        Some(pb::event::Kind::Lagged(e)) => (
-            "lagged",
-            serde_json::json!({"dropped": e.dropped}),
-        ),
+        Some(pb::event::Kind::Lagged(e)) => ("lagged", serde_json::json!({"dropped": e.dropped})),
         None => ("unknown", serde_json::Value::Null),
     };
     obj.insert("kind".into(), serde_json::Value::String(kind.into()));

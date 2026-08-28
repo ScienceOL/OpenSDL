@@ -14,7 +14,9 @@ use osdl_core::protocol::{
 };
 use osdl_core::{OsdlEvent as CoreEvent, OsdlStatus as CoreStatus};
 use osdl_proto::v1 as pb;
-use prost_types::{value::Kind as PbKind, ListValue, NullValue, Struct as PbStruct, Value as PbValue};
+use prost_types::{
+    value::Kind as PbKind, ListValue, NullValue, Struct as PbStruct, Value as PbValue,
+};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
@@ -207,7 +209,10 @@ pub fn now_ts() -> prost_types::Timestamp {
 pub fn unix_ms_to_ts(ms: i64) -> prost_types::Timestamp {
     let secs = ms.div_euclid(1000);
     let nanos = (ms.rem_euclid(1000) * 1_000_000) as i32;
-    prost_types::Timestamp { seconds: secs, nanos }
+    prost_types::Timestamp {
+        seconds: secs,
+        nanos,
+    }
 }
 
 // === serde_json ↔ prost_types::Struct ===
@@ -275,10 +280,7 @@ pub fn json_to_struct(v: &serde_json::Value) -> PbStruct {
                 .collect(),
         },
         _ => PbStruct {
-            fields: std::collections::BTreeMap::from([(
-                "_value".to_string(),
-                json_to_value(v),
-            )]),
+            fields: std::collections::BTreeMap::from([("_value".to_string(), json_to_value(v))]),
         },
     }
 }
@@ -296,9 +298,7 @@ fn json_to_value(v: &serde_json::Value) -> PbValue {
     let kind = match v {
         serde_json::Value::Null => PbKind::NullValue(NullValue::NullValue as i32),
         serde_json::Value::Bool(b) => PbKind::BoolValue(*b),
-        serde_json::Value::Number(n) => {
-            PbKind::NumberValue(n.as_f64().unwrap_or(0.0))
-        }
+        serde_json::Value::Number(n) => PbKind::NumberValue(n.as_f64().unwrap_or(0.0)),
         serde_json::Value::String(s) => PbKind::StringValue(s.clone()),
         serde_json::Value::Array(arr) => PbKind::ListValue(ListValue {
             values: arr.iter().map(json_to_value).collect(),

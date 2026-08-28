@@ -14,7 +14,7 @@ use std::time::Duration;
 use osdl_core::adapter::{unilabos::UniLabOsAdapter, ProtocolAdapter};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::protocol::DeviceCommand;
-use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
+use osdl_core::transport::espnow_dongle::{EspNowDongleClient, EspNowNodeTransport};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -22,8 +22,8 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_DONGLE_PORT")
-        .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
+    let port =
+        env::var("OSDL_DONGLE_PORT").unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
     let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let mut adapter = UniLabOsAdapter::new(DriverRegistry::with_builtins());

@@ -90,7 +90,11 @@ async fn main() {
                         println!("[{}轴] 收到 {} 字节: {:02X?}", axis, data.len(), data);
                         match adapter.decode_response(device_type, &data) {
                             Some(props) => {
-                                println!("[{}轴] 解码结果: {}", axis, serde_json::to_string_pretty(&props).unwrap());
+                                println!(
+                                    "[{}轴] 解码结果: {}",
+                                    axis,
+                                    serde_json::to_string_pretty(&props).unwrap()
+                                );
                             }
                             None => println!("[{}轴] 解码失败 (可能是其他设备的响应)", axis),
                         }
@@ -123,7 +127,10 @@ async fn main() {
                 Some(data) => {
                     println!("[移液器] 收到: {:02X?}", data);
                     match adapter.decode_response("pipette.sopa.YYQ", &data) {
-                        Some(props) => println!("[移液器] 解码: {}", serde_json::to_string_pretty(&props).unwrap()),
+                        Some(props) => println!(
+                            "[移液器] 解码: {}",
+                            serde_json::to_string_pretty(&props).unwrap()
+                        ),
                         None => println!("[移液器] 解码失败"),
                     }
                 }
@@ -136,4 +143,3 @@ async fn main() {
     transport.stop().await.ok();
     println!("\n=== 测试完成 ===");
 }
-

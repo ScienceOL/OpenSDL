@@ -183,9 +183,7 @@ fn build_remote_endpoints(id: &str, remote: &onvif_camera::RemoteRtmpConfig) -> 
             source_id: id.to_string(),
             path: stream.to_string(),
             protocol: Protocol::Webrtc,
-            url: format!(
-                "{scheme}://{host}/rtc/v1/whep/?app={app_q}&stream={stream}&codec=h264"
-            ),
+            url: format!("{scheme}://{host}/rtc/v1/whep/?app={app_q}&stream={stream}&codec=h264"),
             location: Location::Remote,
         });
     }

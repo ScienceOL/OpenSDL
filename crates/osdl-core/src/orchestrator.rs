@@ -37,11 +37,7 @@ impl Orchestrator {
 
     fn make_cmd(&self, device_id: &str, action: &str, params: serde_json::Value) -> DeviceCommand {
         DeviceCommand {
-            command_id: format!(
-                "orch-{}-{}",
-                action,
-                Instant::now().elapsed().as_nanos()
-            ),
+            command_id: format!("orch-{}-{}", action, Instant::now().elapsed().as_nanos()),
             device_id: device_id.to_string(),
             action: action.to_string(),
             params,
@@ -153,11 +149,7 @@ impl Orchestrator {
     // === Emm V5.0 stepper motors ===
 
     /// Poll an Emm motor until its position stabilizes (3 consecutive identical readings).
-    pub async fn wait_emm_stable(
-        &self,
-        device_id: &str,
-        timeout: Duration,
-    ) -> Result<i64, String> {
+    pub async fn wait_emm_stable(&self, device_id: &str, timeout: Duration) -> Result<i64, String> {
         let start = Instant::now();
         let mut last_position: Option<i64> = None;
         let mut stable_count: u32 = 0;
@@ -221,7 +213,12 @@ impl Orchestrator {
     // === Generic helpers ===
 
     /// Send a command and return immediately (no waiting).
-    pub async fn fire(&self, device_id: &str, action: &str, params: serde_json::Value) -> Result<(), String> {
+    pub async fn fire(
+        &self,
+        device_id: &str,
+        action: &str,
+        params: serde_json::Value,
+    ) -> Result<(), String> {
         let cmd = self.make_cmd(device_id, action, params);
         self.engine.send_command(cmd).await?;
         Ok(())

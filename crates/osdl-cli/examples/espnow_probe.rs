@@ -24,7 +24,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
+use osdl_core::transport::espnow_dongle::{EspNowDongleClient, EspNowNodeTransport};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -32,8 +32,8 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_DONGLE_PORT")
-        .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
+    let port =
+        env::var("OSDL_DONGLE_PORT").unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
     let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
@@ -47,7 +47,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!(
         "discovered {} = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         node_id,
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        mac[0],
+        mac[1],
+        mac[2],
+        mac[3],
+        mac[4],
+        mac[5]
     );
 
     let node = EspNowNodeTransport::new(mac, client.clone());
@@ -61,9 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 1: passive listen
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     let mut rx_count = 0usize;
-    while let Ok(Some(frame)) =
-        tokio::time::timeout_at(deadline, rx.recv()).await
-    {
+    while let Ok(Some(frame)) = tokio::time::timeout_at(deadline, rx.recv()).await {
         rx_count += 1;
         log::info!(
             "[probe rx #{}] transport_id={} {}B  {}",
@@ -94,9 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Phase 3: listen again for follow-up frames
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-    while let Ok(Some(frame)) =
-        tokio::time::timeout_at(deadline, rx.recv()).await
-    {
+    while let Ok(Some(frame)) = tokio::time::timeout_at(deadline, rx.recv()).await {
         rx_count += 1;
         log::info!(
             "[probe rx #{}] transport_id={} {}B  {}",

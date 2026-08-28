@@ -101,7 +101,10 @@ impl pb::osdl_server::Osdl for OsdlService {
             .into_iter()
             .filter(|d| {
                 filter.adapter.as_deref().is_none_or(|a| d.adapter == a)
-                    && filter.device_type.as_deref().is_none_or(|t| d.device_type == t)
+                    && filter
+                        .device_type
+                        .as_deref()
+                        .is_none_or(|t| d.device_type == t)
                     && filter
                         .role
                         .as_deref()
@@ -156,7 +159,13 @@ impl pb::osdl_server::Osdl for OsdlService {
             }
         };
 
-        if let Some(d) = self.engine.list_devices().await.into_iter().find(|d| matcher(d)) {
+        if let Some(d) = self
+            .engine
+            .list_devices()
+            .await
+            .into_iter()
+            .find(|d| matcher(d))
+        {
             return Ok(Response::new(device_to_pb(&d)));
         }
 

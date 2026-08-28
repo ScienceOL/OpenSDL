@@ -14,7 +14,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
-use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
+use osdl_core::transport::espnow_dongle::{EspNowDongleClient, EspNowNodeTransport};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -22,8 +22,8 @@ use tokio::sync::mpsc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_DONGLE_PORT")
-        .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
+    let port =
+        env::var("OSDL_DONGLE_PORT").unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
     let node_id = env::var("OSDL_NODE_ID").unwrap_or_else(|_| "pump-01".to_string());
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TransportRx>();
@@ -53,9 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         b"/1Q\r".to_vec(),
         b"/2Q\r".to_vec(),
         b"/3Q\r".to_vec(),
-        b"UUUU".to_vec(),       // alternating bit pattern — best self-echo candidate
-        b"AAAAAAAA".to_vec(),   // repeating char — stress auto-direction turnaround
-        vec![0x55; 16],         // ten 0x55 bytes — longest continuous transition density
+        b"UUUU".to_vec(),     // alternating bit pattern — best self-echo candidate
+        b"AAAAAAAA".to_vec(), // repeating char — stress auto-direction turnaround
+        vec![0x55; 16],       // ten 0x55 bytes — longest continuous transition density
     ];
 
     for bytes in &test_patterns {

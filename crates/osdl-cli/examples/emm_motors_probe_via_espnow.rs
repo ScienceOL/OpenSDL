@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use osdl_core::driver::builtins::emm::{self, EmmConfig};
 use osdl_core::protocol::DeviceCommand;
-use osdl_core::transport::espnow_dongle::{EspNowNodeTransport, EspNowDongleClient};
+use osdl_core::transport::espnow_dongle::{EspNowDongleClient, EspNowNodeTransport};
 use osdl_core::transport::{Transport, TransportRx};
 use tokio::sync::mpsc;
 
@@ -39,8 +39,8 @@ const REPLY_WINDOW: Duration = Duration::from_millis(600);
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let port = env::var("OSDL_DONGLE_PORT")
-        .unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
+    let port =
+        env::var("OSDL_DONGLE_PORT").unwrap_or_else(|_| "/dev/cu.usbserial-A5069RR4".to_string());
     let node_id = env::var("OSDL_NODE_ID")
         .unwrap_or_else(|_| "syringe_pump_with_valve.runze.SY03B-T06".to_string());
 
@@ -61,7 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     log::info!(
         "discovered {} = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-        node_id, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        node_id,
+        mac[0],
+        mac[1],
+        mac[2],
+        mac[3],
+        mac[4],
+        mac[5]
     );
     let node = EspNowNodeTransport::new(mac, client.clone());
     node.start().await.map_err(|e| e.to_string())?;
@@ -93,7 +99,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if replies.is_empty() {
                 log::warn!(
                     "[motor {}] no reply within {:?} for {}",
-                    id, REPLY_WINDOW, action
+                    id,
+                    REPLY_WINDOW,
+                    action
                 );
                 continue;
             }

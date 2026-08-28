@@ -117,7 +117,9 @@ fn parse_explicit(ep: &str) -> anyhow::Result<Resolved> {
              use a TCP endpoint like `http://127.0.0.1:PORT` instead"
         ));
     }
-    let uri: Uri = ep.parse().with_context(|| format!("invalid endpoint: {ep}"))?;
+    let uri: Uri = ep
+        .parse()
+        .with_context(|| format!("invalid endpoint: {ep}"))?;
     Ok(Resolved::Tcp(uri))
 }
 

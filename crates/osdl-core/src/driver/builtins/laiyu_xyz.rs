@@ -199,8 +199,8 @@ pub fn machine_steps_to_work_mm(config: &LaiyuXyzConfig, steps: i32, origin_step
 
 // --------------- Driver trait impl ---------------
 
-use crate::driver::Driver;
 use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 
 /// Laiyu XYZ stepper motor driver instance (pre-configured).
 pub struct LaiyuXyzDriver {
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn test_decode_wrong_slave_returns_none() {
         let config = x_config(); // slave_id = 1
-        // Response from slave 2
+                                 // Response from slave 2
         let mut frame = vec![0x02, 0x03, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let crc = modbus_rtu::crc16(&frame);
         frame.extend_from_slice(&crc);

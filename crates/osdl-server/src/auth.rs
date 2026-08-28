@@ -44,7 +44,10 @@ fn verify_bearer(header: &MetadataValue<tonic::metadata::Ascii>, expected: &str)
         Ok(s) => s,
         Err(_) => return false,
     };
-    let presented = match raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer ")) {
+    let presented = match raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))
+    {
         Some(t) => t,
         None => return false,
     };

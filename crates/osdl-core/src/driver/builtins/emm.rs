@@ -102,7 +102,9 @@ pub fn encode(config: &EmmConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, String
             Ok(build_frame(
                 config.device_id,
                 0xFD,
-                &[direction, sp[0], sp[1], accel, pl[0], pl[1], pl[2], pl[3], is_abs, 0],
+                &[
+                    direction, sp[0], sp[1], accel, pl[0], pl[1], pl[2], pl[3], is_abs, 0,
+                ],
             ))
         }
 
@@ -132,11 +134,7 @@ pub fn decode(config: &EmmConfig, bytes: &[u8]) -> Option<HashMap<String, serde_
         let sign = bytes[2];
         if bytes.len() >= 7 {
             let val = u32::from_be_bytes([bytes[3], bytes[4], bytes[5], bytes[6]]);
-            let position = if sign == 1 {
-                -(val as i64)
-            } else {
-                val as i64
-            };
+            let position = if sign == 1 { -(val as i64) } else { val as i64 };
             props.insert("position".into(), serde_json::json!(position));
             props.insert("status".into(), serde_json::json!("ok"));
         }
@@ -152,8 +150,8 @@ pub fn decode(config: &EmmConfig, bytes: &[u8]) -> Option<HashMap<String, serde_
 
 // --------------- Driver trait impl ---------------
 
-use crate::driver::Driver;
 use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 
 /// Emm V5.0 stepper motor driver instance (pre-configured).
 pub struct EmmDriver {
@@ -259,7 +257,7 @@ mod tests {
         assert_eq!(bytes[0], 4); // device_id
         assert_eq!(bytes[1], 0xF6); // func
         assert_eq!(bytes[2], 0); // direction
-        // speed=60 big-endian: 0x00, 0x3C
+                                 // speed=60 big-endian: 0x00, 0x3C
         assert_eq!(bytes[3], 0x00);
         assert_eq!(bytes[4], 0x3C);
         assert_eq!(bytes[5], 10); // accel
@@ -281,7 +279,7 @@ mod tests {
         assert_eq!(bytes[3], 0x00); // speed hi
         assert_eq!(bytes[4], 0x3C); // speed lo = 60
         assert_eq!(bytes[5], 10); // accel (default)
-        // pulses=800 big-endian: 0x00, 0x00, 0x03, 0x20
+                                  // pulses=800 big-endian: 0x00, 0x00, 0x03, 0x20
         assert_eq!(bytes[6], 0x00);
         assert_eq!(bytes[7], 0x00);
         assert_eq!(bytes[8], 0x03);

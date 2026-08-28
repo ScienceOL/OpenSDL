@@ -29,28 +29,28 @@ impl MdnsAdvertiser {
                 #[cfg(unix)]
                 {
                     // gethostname via nix-style: read /etc/hostname or use libc
-                    std::fs::read_to_string("/etc/hostname")
-                        .map(|s| s.trim().to_string())
+                    std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string())
                 }
                 #[cfg(not(unix))]
                 {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "no hostname"))
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "no hostname",
+                    ))
                 }
             })
             .unwrap_or_else(|_| "osdl-mother".into());
 
         let instance_name = format!("OpenSDL on {}", hostname);
 
-        let host_label = hostname
-            .trim_end_matches(".local")
-            .trim_end_matches('.');
+        let host_label = hostname.trim_end_matches(".local").trim_end_matches('.');
         let fqdn = format!("{}.local.", host_label);
 
         let service = ServiceInfo::new(
             SERVICE_TYPE,
             &instance_name,
             &fqdn,
-            "",  // empty = auto-detect IP
+            "", // empty = auto-detect IP
             mqtt_port,
             None,
         )

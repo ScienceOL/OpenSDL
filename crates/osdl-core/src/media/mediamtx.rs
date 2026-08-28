@@ -554,7 +554,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: None,
                 push_to: None,
-            pushes_to_srs: false,
+                pushes_to_srs: false,
             },
             MediaPath {
                 name: "cam1_h264".into(),
@@ -562,7 +562,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: Some("rtsp://1.2.3.4/sub".into()),
                 push_to: None,
-            pushes_to_srs: false,
+                pushes_to_srs: false,
             },
         ];
         let yaml = render_config(&cfg, &paths).unwrap();
@@ -682,7 +682,7 @@ mod tests {
                 rtsp_transport_tcp: true,
                 transcode_from: None,
                 push_to: None,
-            pushes_to_srs: false,
+                pushes_to_srs: false,
             }];
             assert!(
                 matches!(

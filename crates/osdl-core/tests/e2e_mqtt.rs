@@ -56,7 +56,9 @@ impl TestHarness {
             ..Default::default()
         };
 
-        let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins()))];
+        let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(UniLabOsAdapter::new(
+            DriverRegistry::with_builtins(),
+        ))];
         let mut engine = if with_store {
             OsdlEngine::new(config, adapters).with_store(EventStore::in_memory().unwrap())
         } else {
@@ -188,10 +190,7 @@ impl TestHarness {
 
         // Subscribe to TX topic
         let tx_topic = format!("osdl/serial/{}/tx", node_id);
-        client
-            .subscribe(tx_topic, QoS::AtLeastOnce)
-            .await
-            .unwrap();
+        client.subscribe(tx_topic, QoS::AtLeastOnce).await.unwrap();
 
         (NodeSim { client, pump }, tx_msg_rx)
     }
@@ -372,7 +371,10 @@ async fn test_serial_rx_decoding() {
     let event = TestHarness::recv_event(&mut rx).await;
     match event {
         OsdlEvent::DeviceStatus(status) => {
-            assert_eq!(status.device_id, "pump-02:syringe_pump_with_valve.runze.SY03B-T06");
+            assert_eq!(
+                status.device_id,
+                "pump-02:syringe_pump_with_valve.runze.SY03B-T06"
+            );
             assert_eq!(status.properties["status"], "Idle");
             assert_eq!(status.properties["position"], 12.5);
         }
@@ -388,8 +390,9 @@ async fn test_send_command_publishes_serial_tx() {
     let mut harness = TestHarness::start("osdl-test-cmd", true).await;
     let mut rx = harness.take_event_rx();
 
-    let (node, mut tx_msg_rx) =
-        harness.node_client_with_tx_capture("pump-03-sim", "pump-03").await;
+    let (node, mut tx_msg_rx) = harness
+        .node_client_with_tx_capture("pump-03-sim", "pump-03")
+        .await;
 
     // Register
     node.register("pump-03", RUNZE_T06, 9600).await;
@@ -427,8 +430,7 @@ async fn test_unknown_node_event() {
     let mut rx = harness.take_event_rx();
 
     let node = harness.node_client("mystery-node").await;
-    node
-        .register("mystery-01", "totally_unknown_device_xyz", 9600)
+    node.register("mystery-01", "totally_unknown_device_xyz", 9600)
         .await;
 
     let event = TestHarness::recv_event(&mut rx).await;

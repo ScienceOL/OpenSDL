@@ -14,12 +14,12 @@
 //!     Http        → REST API → device
 //! ```
 
-pub mod mqtt_serial;
 pub mod direct_serial;
-pub mod onvif;
-pub mod tcp;
 #[cfg_attr(not(feature = "espnow"), allow(dead_code))]
 pub mod espnow_dongle;
+pub mod mqtt_serial;
+pub mod onvif;
+pub mod tcp;
 
 use async_trait::async_trait;
 

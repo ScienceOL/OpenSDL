@@ -197,7 +197,12 @@ impl EspNowDongleClient {
     pub async fn send_to_mac(&self, mac: Mac, bytes: &[u8]) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let line = format!("TX {} {}\n", mac_hex(&mac), bytes_hex(bytes));
-        log::debug!("dongle TX → {} ({} bytes): {}", mac_hex(&mac), bytes.len(), bytes_hex(bytes));
+        log::debug!(
+            "dongle TX → {} ({} bytes): {}",
+            mac_hex(&mac),
+            bytes.len(),
+            bytes_hex(bytes)
+        );
         let mut guard = self.writer.lock().await;
         let writer = guard.as_mut().ok_or("Dongle serial port not open")?;
         writer

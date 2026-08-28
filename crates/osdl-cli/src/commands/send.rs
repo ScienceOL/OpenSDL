@@ -46,8 +46,7 @@ pub async fn run(args: SendArgs, opts: client::ClientOpts) -> anyhow::Result<()>
             std::io::stdin().read_to_string(&mut s)?;
             s
         } else {
-            std::fs::read_to_string(path)
-                .with_context(|| format!("read params file {path}"))?
+            std::fs::read_to_string(path).with_context(|| format!("read params file {path}"))?
         };
         serde_json::from_str::<serde_json::Value>(&raw).context("parse params file as JSON")?
     } else {
@@ -56,8 +55,8 @@ pub async fn run(args: SendArgs, opts: client::ClientOpts) -> anyhow::Result<()>
             let (k, v) = kv
                 .split_once('=')
                 .ok_or_else(|| anyhow!("--param must be K=V (got '{kv}')"))?;
-            let val: serde_json::Value =
-                serde_json::from_str(v).unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
+            let val: serde_json::Value = serde_json::from_str(v)
+                .unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
             map.insert(k.to_string(), val);
         }
         serde_json::Value::Object(map)
@@ -74,8 +73,7 @@ pub async fn run(args: SendArgs, opts: client::ClientOpts) -> anyhow::Result<()>
         }
     };
 
-    let paths = osdl_server::paths::Paths::discover()
-        .map_err(|e| anyhow::anyhow!("paths: {e}"))?;
+    let paths = osdl_server::paths::Paths::discover().map_err(|e| anyhow::anyhow!("paths: {e}"))?;
     let resolved = client::resolve(&opts, &paths)?;
     let mut client = client::connect(&resolved, &opts).await?;
 

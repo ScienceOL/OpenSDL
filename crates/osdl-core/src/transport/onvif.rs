@@ -132,9 +132,8 @@ impl OnvifTransport {
         // parsing fails, send a clear error: GetProfiles must hit /Media,
         // not /device_service, and pretending otherwise produces a 404
         // far from where the misconfiguration actually lives.
-        let media_url = extract_xaddr(&caps, "Media").ok_or_else(|| {
-            "GetCapabilities response missing <tt:Media><tt:XAddr>".to_string()
-        })?;
+        let media_url = extract_xaddr(&caps, "Media")
+            .ok_or_else(|| "GetCapabilities response missing <tt:Media><tt:XAddr>".to_string())?;
         let ptz_url = extract_xaddr(&caps, "PTZ").unwrap_or_else(|| media_url.clone());
 
         let token = match self.inner.profile_token_override.clone() {
@@ -223,7 +222,10 @@ impl OnvifTransport {
         let pan = args.get("pan").and_then(Value::as_f64).unwrap_or(0.0);
         let tilt = args.get("tilt").and_then(Value::as_f64).unwrap_or(0.0);
         let zoom = args.get("zoom").and_then(Value::as_f64).unwrap_or(0.0);
-        let duration_ms = args.get("duration_ms").and_then(Value::as_u64).unwrap_or(500);
+        let duration_ms = args
+            .get("duration_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(500);
 
         let ep = self.endpoints().await?;
         let body = format!(
@@ -317,8 +319,7 @@ impl OnvifTransport {
             token = xml_escape(&ep.profile_token),
         );
         let resp = self.soap(&ep.media_url, &body).await?;
-        let snap_uri = extract_tag(&resp, "Uri")
-            .ok_or("GetSnapshotUri: no Uri in response")?;
+        let snap_uri = extract_tag(&resp, "Uri").ok_or("GetSnapshotUri: no Uri in response")?;
 
         // Cameras commonly require Basic auth on the snapshot URI even
         // when the SOAP endpoint accepted UsernameToken.
@@ -343,11 +344,9 @@ impl OnvifTransport {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         let cam_dir = self.inner.snapshot_root.join(&self.inner.camera_id);
-        std::fs::create_dir_all(&cam_dir)
-            .map_err(|e| format!("create snapshot dir: {e}"))?;
+        std::fs::create_dir_all(&cam_dir).map_err(|e| format!("create snapshot dir: {e}"))?;
         let path = cam_dir.join(format!("{now_ms}.jpg"));
-        std::fs::write(&path, &bytes)
-            .map_err(|e| format!("write snapshot: {e}"))?;
+        std::fs::write(&path, &bytes).map_err(|e| format!("write snapshot: {e}"))?;
 
         let path_str = path.display().to_string();
         let url = match &self.inner.snapshot_url_base {
@@ -377,7 +376,10 @@ impl Transport for OnvifTransport {
     }
 
     fn description(&self) -> String {
-        format!("ONVIF camera {} ({})", self.inner.camera_id, self.inner.onvif_url)
+        format!(
+            "ONVIF camera {} ({})",
+            self.inner.camera_id, self.inner.onvif_url
+        )
     }
 
     /// `bytes` is a JSON envelope from `OnvifAdapter::encode_command`.
@@ -385,8 +387,8 @@ impl Transport for OnvifTransport {
     /// rx_tx so the engine's standard receive path turns it into a
     /// `DeviceStatus` event.
     async fn send(&self, bytes: &[u8]) -> Result<(), String> {
-        let envelope: Value = serde_json::from_slice(bytes)
-            .map_err(|e| format!("onvif: parse envelope: {e}"))?;
+        let envelope: Value =
+            serde_json::from_slice(bytes).map_err(|e| format!("onvif: parse envelope: {e}"))?;
         let op = envelope
             .get("op")
             .and_then(Value::as_str)
@@ -599,7 +601,11 @@ fn extract_tag(body: &str, tag: &str) -> Option<String> {
         }
         buf.clear();
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 /// First `token="..."` attribute on a `<*:Profiles ...>` element.
@@ -613,10 +619,7 @@ fn first_profile_token(body: &str) -> Option<String> {
                 if local_name(e.name().as_ref()) == "Profiles" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"token" {
-                            return attr
-                                .unescape_value()
-                                .ok()
-                                .map(|c| c.into_owned());
+                            return attr.unescape_value().ok().map(|c| c.into_owned());
                         }
                     }
                 }
@@ -649,7 +652,11 @@ fn xml_escape(s: &str) -> String {
 }
 
 fn first_chars(s: &str, n: usize) -> &str {
-    if s.len() <= n { s } else { &s[..n] }
+    if s.len() <= n {
+        s
+    } else {
+        &s[..n]
+    }
 }
 
 #[cfg(test)]

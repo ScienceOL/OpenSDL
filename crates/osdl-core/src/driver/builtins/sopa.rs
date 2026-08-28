@@ -232,8 +232,8 @@ pub fn decode(config: &SopaConfig, bytes: &[u8]) -> Option<HashMap<String, serde
 
 // --------------- Driver trait impl ---------------
 
-use crate::driver::Driver;
 use crate::driver::registry::DriverRegistry;
+use crate::driver::Driver;
 
 /// SOPA pipette driver instance (pre-configured).
 pub struct SopaDriver {
@@ -302,7 +302,9 @@ mod tests {
         // Frame should be: "/4HEE" + checksum
         let expected_prefix = b"/4HEE";
         assert_eq!(&frame[..5], expected_prefix);
-        let checksum: u8 = expected_prefix.iter().fold(0u8, |acc, &b| acc.wrapping_add(b));
+        let checksum: u8 = expected_prefix
+            .iter()
+            .fold(0u8, |acc, &b| acc.wrapping_add(b));
         assert_eq!(frame[5], checksum);
         assert_eq!(frame.len(), 6);
     }
@@ -374,7 +376,7 @@ mod tests {
     #[test]
     fn test_decode_tip_present_binary_addr() {
         let config = default_config(); // address = 4
-        // Binary address 0x04 instead of ASCII '4' (0x34)
+                                       // Binary address 0x04 instead of ASCII '4' (0x34)
         let response = b"/\x04\x00T1\x00\x00\x00\x00\x00\x00\x00E\xFC";
         let props = decode(&config, response).unwrap();
         assert_eq!(props["tip_present"], true);
@@ -397,8 +399,8 @@ mod tests {
         // Frame 2: /[0x04]T0[nulls]E[FC]
         // We should pick frame 2 (last match) and decode T0.
         let response: &[u8] = &[
-            0x2F, 0x04, 0x06, 0x0A, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0xB8,
-            0x2F, 0x04, 0x54, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0xFC,
+            0x2F, 0x04, 0x06, 0x0A, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0xB8, 0x2F,
+            0x04, 0x54, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0xFC,
         ];
         let props = decode(&config, response).unwrap();
         assert_eq!(props["tip_present"], false); // T0 from frame 2

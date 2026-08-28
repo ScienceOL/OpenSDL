@@ -179,11 +179,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let transport = TcpTransport::new(
-            addr.ip().to_string(),
-            addr.port(),
-            tx,
-        );
+        let transport = TcpTransport::new(addr.ip().to_string(), addr.port(), tx);
 
         // Accept connection in background
         let server = tokio::spawn(async move {
@@ -195,7 +191,10 @@ mod tests {
 
             // Send a response back
             tokio::time::sleep(Duration::from_millis(10)).await;
-            stream.write_all(&[0x01, 0x03, 0x02, 0x00, 0x64]).await.unwrap();
+            stream
+                .write_all(&[0x01, 0x03, 0x02, 0x00, 0x64])
+                .await
+                .unwrap();
             stream.flush().await.unwrap();
 
             received
@@ -206,7 +205,10 @@ mod tests {
         assert!(transport.is_connected());
 
         // Send data
-        transport.send(&[0x01, 0x03, 0x00, 0x00, 0x00, 0x01]).await.unwrap();
+        transport
+            .send(&[0x01, 0x03, 0x00, 0x00, 0x00, 0x01])
+            .await
+            .unwrap();
 
         // Wait for the response to come through the channel
         let rx_msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())

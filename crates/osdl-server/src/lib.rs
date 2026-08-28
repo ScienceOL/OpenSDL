@@ -126,13 +126,15 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     // real address in the lockfile. If TCP binding fails we haven't
     // touched any shared state yet.
     let tcp_listener = if let Some(addr) = cfg.listen.tcp_addr {
-        Some(tokio::net::TcpListener::bind(addr).await.map_err(ServeError::Io)?)
+        Some(
+            tokio::net::TcpListener::bind(addr)
+                .await
+                .map_err(ServeError::Io)?,
+        )
     } else {
         None
     };
-    let bound_tcp_addr = tcp_listener
-        .as_ref()
-        .and_then(|l| l.local_addr().ok());
+    let bound_tcp_addr = tcp_listener.as_ref().and_then(|l| l.local_addr().ok());
 
     // UDS is Unix-only. On Windows the field is ignored — even if a
     // caller hands us a `socket_path` we drop it from the lockfile so
