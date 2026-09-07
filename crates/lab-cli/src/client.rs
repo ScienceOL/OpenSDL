@@ -81,7 +81,7 @@ pub fn resolve(opts: &ClientOpts, paths: &Paths) -> anyhow::Result<Resolved> {
     if let Some(name) = &opts.instance {
         let rec = lockfile::find(&paths.lock_dir(), name).ok_or_else(|| {
             anyhow!(
-                "no running osdl server with instance '{name}' — start one with 'osdl serve --instance {name}'"
+                "no running OpenSDL server with instance '{name}' — start one with 'lab serve --instance {name}'"
             )
         })?;
         return record_to_resolved(&rec);
@@ -91,14 +91,14 @@ pub fn resolve(opts: &ClientOpts, paths: &Paths) -> anyhow::Result<Resolved> {
     let entries = lockfile::list(&paths.lock_dir());
     match entries.len() {
         0 => Err(anyhow!(
-            "no running osdl server — start one with 'osdl serve' (looked in {})",
+            "no running OpenSDL server — start one with 'lab serve' (looked in {})",
             paths.lock_dir().display()
         )),
         1 => record_to_resolved(&entries[0]),
         _ => {
             let names: Vec<&str> = entries.iter().map(|e| e.instance.as_str()).collect();
             Err(anyhow!(
-                "multiple osdl servers running ({}) — pick one with --instance NAME or OSDL_INSTANCE=NAME",
+                "multiple OpenSDL servers running ({}) — pick one with --instance NAME or OSDL_INSTANCE=NAME",
                 names.join(", ")
             ))
         }
@@ -144,7 +144,7 @@ fn record_to_resolved(rec: &lockfile::InstanceRecord) -> anyhow::Result<Resolved
         return Err(anyhow!(
             "instance '{}' is bound to a Unix domain socket which Windows cannot \
              connect to. Restart the server with a TCP listener (e.g. \
-             `osdl serve --listen 127.0.0.1:0`).",
+             `lab serve --listen 127.0.0.1:0`).",
             rec.instance
         ));
     }

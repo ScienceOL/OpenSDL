@@ -25,18 +25,18 @@ gearing.
 ```sh
 M5='espnow:30EDA0B65B38:motor-5'
 
-osdl --instance chinwe send "$M5" enable -p enable=true
+lab --instance chinwe send "$M5" enable -p enable=true
 sleep 0.3
 
 # Open the funnel.
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" run_position \
   -p pulses=800 -p speed=5 -p direction=0 -p acceleration=10 -p absolute=false
 
 sleep 10                       # let the funnel drain
 
 # Close the funnel — opposite direction, same pulse count returns the
 # valve to the seat. Net Δposition = 0.
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" run_position \
   -p pulses=800 -p speed=5 -p direction=1 -p acceleration=10 -p absolute=false
 ```
 
@@ -47,10 +47,10 @@ find the right open angle. Each invocation is reversible (Δ=0):
 
 ```sh
 NUDGE=100
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" run_position \
   -p pulses=$NUDGE -p speed=5 -p direction=0 -p acceleration=10 -p absolute=false
 sleep 10
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" run_position \
   -p pulses=$NUDGE -p speed=5 -p direction=1 -p acceleration=10 -p absolute=false
 ```
 
@@ -117,8 +117,8 @@ with reality even without software bounds.
 - If a command appears to stall (motor humming but not turning), stop
   immediately:
   ```sh
-  osdl --instance chinwe send "$M5" stop
-  osdl --instance chinwe send "$M5" enable -p enable=false
+  lab --instance chinwe send "$M5" stop
+  lab --instance chinwe send "$M5" enable -p enable=false
   ```
   This cuts holding current so the motor isn't drawing power against
   the bind. Inspect the valve mechanically before re-energizing.

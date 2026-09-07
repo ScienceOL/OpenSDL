@@ -1,4 +1,4 @@
-//! `osdl device list|get|wait` — inspect known devices.
+//! `lab device list|get|wait` — inspect known devices.
 
 use std::time::Duration;
 

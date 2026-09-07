@@ -113,8 +113,8 @@ crates/
 ├── osdl-core/tests/
 │   ├── e2e_mqtt.rs             # e2e tests (broker + engine + simulated ESP32)
 │   └── integration.rs          # integration tests (adapters, store, engine)
-├── osdl-cli/src/               # `osdl` binary — subcommands: serve, status, device, send, events, stop
-├── osdl-server/                # gRPC server (tonic) — what `osdl serve` runs (TCP + UDS)
+├── lab-cli/src/                # `lab` binary — subcommands: serve, status, device, send, events, stop
+├── osdl-server/                # gRPC server (tonic) — what `lab serve` runs (TCP + UDS)
 ├── osdl-proto/                 # tonic-generated gRPC protobuf crate (consumed by the runner)
 ├── osdl-firmware-protocol/     # Shared types between core and firmware
 registry/unilabos/              # Device YAML schemas
@@ -136,14 +136,14 @@ firmware/
 
 ```bash
 cargo build              # Build all crates
-cargo run --bin osdl serve   # Boot engine + gRPC server (TCP + UDS)
+cargo run --bin lab serve    # Boot engine + gRPC server (TCP + UDS)
 cargo test               # Run all tests (e2e + integration)
 ```
 
 ## Integration with Xyzen
 
 ```
-Xyzen Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `osdl serve` (OsdlEngine) → Transport → Device
+Xyzen Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `lab serve` (OsdlEngine) → Transport → Device
 ```
 
 The runner is a **pure gRPC client** of OpenSDL, not an embedded crate:

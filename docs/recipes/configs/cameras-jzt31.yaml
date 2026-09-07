@@ -9,7 +9,7 @@
 # Move these to env-templated values before sharing the host.
 #
 # Use with:
-#   osdl serve --config docs/recipes/configs/cameras-jzt31.yaml
+#   lab serve --config docs/recipes/configs/cameras-jzt31.yaml
 #
 # After it boots, paths come up at:
 #   rtsp://<advertise_host>:8554/cam131    (H.264 passthrough)

@@ -17,16 +17,16 @@ for n in 4 5; do
   DEV="espnow:30EDA0B65B38:motor-$n"
   echo "--- motor-$n ---"
 
-  osdl --instance chinwe send "$DEV" enable -p enable=true
+  lab --instance chinwe send "$DEV" enable -p enable=true
   sleep 0.3
 
   # Forward.
-  osdl --instance chinwe send "$DEV" run_position \
+  lab --instance chinwe send "$DEV" run_position \
     -p pulses=800 -p speed=5 -p direction=0 -p acceleration=10 -p absolute=false
   sleep 5
 
   # Back.
-  osdl --instance chinwe send "$DEV" run_position \
+  lab --instance chinwe send "$DEV" run_position \
     -p pulses=800 -p speed=5 -p direction=1 -p acceleration=10 -p absolute=false
   sleep 5
 done
@@ -35,7 +35,7 @@ done
 Watch decoded events:
 
 ```sh
-osdl --instance chinwe events --kinds device_status,command_result --json
+lab --instance chinwe events --kinds device_status,command_result --json
 ```
 
 ## Identification

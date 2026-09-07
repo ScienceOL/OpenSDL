@@ -1,18 +1,18 @@
 [package]
-name = "osdl-cli"
+name = "lab-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "CLI for OpenSDL — standalone lab hardware bridge"
+description = "OpenSDL laboratory command-line interface"
 
 [[bin]]
-name = "osdl"
+name = "lab"
 path = "src/main.rs"
 
 # Raw-transport probes — kept as Rust binaries because they bypass the
 # engine and write arbitrary bytes for hardware bring-up. They'll be
-# replaced when an `osdl probe` RPC lands. Engine-based examples have
+# replaced when a `lab probe` RPC lands. Engine-based examples have
 # moved to docs/recipes/ as CLI scripts.
 [[example]]
 name = "espnow_probe"
@@ -36,6 +36,7 @@ required-features = ["osdl-core/espnow"]
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile.workspace = true
 
 [features]
 default = ["espnow"]
@@ -45,6 +46,7 @@ espnow = ["osdl-core/espnow"]
 osdl-core = { path = "../osdl-core" }
 osdl-proto = { path = "../osdl-proto" }
 osdl-server = { path = "../osdl-server" }
+opensdl-assets = { path = "../opensdl-assets" }
 tokio.workspace = true
 tokio-stream.workspace = true
 log.workspace = true

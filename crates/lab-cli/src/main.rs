@@ -1,4 +1,4 @@
-//! `osdl` — the OpenSDL command-line tool.
+//! `lab` — the OpenSDL command-line tool.
 //!
 //! Subcommands split into two families:
 //!   * `serve` boots the engine + gRPC server in this process.
@@ -9,8 +9,8 @@ mod commands;
 
 use clap::{Parser, Subcommand};
 
-#[derive(Debug, Parser)]
-#[command(name = "osdl", version, about = "OpenSDL command-line interface")]
+#[derive(Parser)]
+#[command(name = "lab", version, about = "OpenSDL command-line interface")]
 struct Cli {
     /// Connect to this endpoint instead of auto-discovering. Examples:
     /// `unix:/run/osdl/default.sock`, `http://lab-pi.local:50051`.
@@ -18,7 +18,7 @@ struct Cli {
     endpoint: Option<String>,
 
     /// Resolve to this server instance via the lockfile dir. Use when
-    /// multiple `osdl serve` processes are running on the host.
+    /// multiple `lab serve` processes are running on the host.
     #[arg(long, env = "OSDL_INSTANCE", global = true)]
     instance: Option<String>,
 
@@ -32,7 +32,7 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum Command {
     /// Boot the engine + gRPC server in this process.
     Serve(commands::serve::ServeArgs),
@@ -49,6 +49,16 @@ enum Command {
     Events(commands::events::EventsArgs),
     /// Ask the running server to shut down.
     Stop,
+    /// Validate a portable OpenSDL virtual asset directory.
+    Validate(commands::validate::ValidateArgs),
+    /// Pack a portable asset into a deterministic OCI image layout.
+    Pack(commands::pack::PackArgs),
+    /// Inspect a portable asset directory or OCI image layout.
+    Inspect(commands::inspect::InspectArgs),
+    /// Push a packed virtual asset to an OCI registry.
+    Push(commands::push::PushArgs),
+    /// Pull a virtual asset into the local cache and optionally materialize it.
+    Pull(commands::pull::PullArgs),
 }
 
 fn main() {
@@ -61,6 +71,9 @@ fn main() {
     // and keep `#[tokio::main]`-equivalent behavior for everything else.
     let result: anyhow::Result<()> = match cli.command {
         Command::Serve(args) => commands::serve::main_entrypoint(args),
+        Command::Validate(args) => commands::validate::run(args),
+        Command::Pack(args) => commands::pack::run(args),
+        Command::Inspect(args) => commands::inspect::run(args),
         other => {
             // Client subcommands run a vanilla tokio runtime in the foreground.
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -71,7 +84,7 @@ fn main() {
             {
                 Ok(rt) => rt,
                 Err(e) => {
-                    eprintln!("osdl: failed to build tokio runtime: {e}");
+                    eprintln!("lab: failed to build tokio runtime: {e}");
                     std::process::exit(1);
                 }
             };
@@ -88,13 +101,16 @@ fn main() {
                     Command::Send(args) => commands::send::run(args, opts).await,
                     Command::Events(args) => commands::events::run(args, opts).await,
                     Command::Stop => commands::stop::run(opts).await,
+                    Command::Push(args) => commands::push::run(args).await,
+                    Command::Pull(args) => commands::pull::run(args).await,
+                    Command::Validate(_) | Command::Pack(_) | Command::Inspect(_) => unreachable!(),
                 }
             })
         }
     };
 
     if let Err(e) = result {
-        eprintln!("osdl: {e:#}");
+        eprintln!("lab: {e:#}");
         std::process::exit(1);
     }
 }

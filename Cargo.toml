@@ -21,6 +21,8 @@ async-trait = "0.1"
 mdns-sd = "0.13"
 log = "0.4"
 thiserror = "2"
+oci-client = { version = "0.17", default-features = false, features = ["rustls-tls"] }
+http = "1"
 tokio-serial = "5.4"
 env_logger = "0.11"
 tempfile = "3"
@@ -39,6 +41,12 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 sha1 = "0.10"
 base64 = "0.22"
 quick-xml = "0.36"
+semver = "1"
+sha2 = "0.10"
+spdx = "0.13"
+tar = "0.4"
+zstd = "0.14"
+walkdir = "2"
 
 # The profile that 'dist' will build with
 [profile.dist]

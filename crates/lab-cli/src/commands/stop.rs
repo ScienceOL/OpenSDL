@@ -1,4 +1,4 @@
-//! `osdl stop` — ask the running server to shut down.
+//! `lab stop` — ask the running server to shut down.
 
 use anyhow::Context;
 use osdl_proto::v1 as pb;

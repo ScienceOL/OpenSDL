@@ -1,4 +1,4 @@
-//! `osdl serve` — boot the engine + broker + mDNS, expose gRPC over UDS/TCP.
+//! `lab serve` — boot the engine + broker + mDNS, expose gRPC over UDS/TCP.
 //!
 //! Foreground is the default — that's what process supervisors (launchd,
 //! systemd, docker) expect. `--detach` reuses the `daemonize` crate to
@@ -61,7 +61,7 @@ pub struct ServeArgs {
     /// redirected to `--log-file`. The current process forks twice,
     /// detaches from the controlling terminal, and exits — leaving the
     /// daemon to run independently of your shell session. Use
-    /// `osdl stop --instance NAME` to terminate it.
+    /// `lab stop --instance NAME` to terminate it.
     ///
     /// Foreground (the default) is preferred under launchd, systemd,
     /// docker, or any other supervisor.
@@ -234,18 +234,18 @@ fn run_detached(args: ServeArgs, log_path: PathBuf) -> anyhow::Result<()> {
             // Print the human-readable handoff to the *original* terminal.
             // The child inherits the redirected stdio and won't see this.
             println!(
-                "osdl: started instance '{}' in background; logs → {}",
+                "lab: started instance '{}' in background; logs → {}",
                 args.instance,
                 log_path.display(),
             );
-            println!("      stop with: osdl --instance {} stop", args.instance);
+            println!("      stop with: lab --instance {} stop", args.instance);
             Ok(())
         }
         Outcome::Parent(Err(e)) => Err(anyhow!("daemonize: {e}")),
         Outcome::Child(Err(e)) => {
             // The child failed mid-fork; surface to the log file then
             // exit non-zero so launchd-style supervisors notice.
-            eprintln!("osdl: daemonize child failed: {e}");
+            eprintln!("lab: daemonize child failed: {e}");
             std::process::exit(1);
         }
         Outcome::Child(Ok(_)) => {

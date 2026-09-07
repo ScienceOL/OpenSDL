@@ -1,6 +1,6 @@
 //! Per-instance lockfile for multi-server discovery.
 //!
-//! Inspired by VS Code's per-window socket files: each `osdl serve` writes
+//! Inspired by VS Code's per-window socket files: each `lab serve` writes
 //! a JSON descriptor to `runtime_dir/instances/<NAME>.json`. Clients scan
 //! this directory to discover running servers, skipping entries whose PID
 //! is no longer alive.

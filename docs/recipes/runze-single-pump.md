@@ -19,7 +19,7 @@ This is the simplest path: no bus manifest, the engine takes the legacy
 ### 1. Start the server
 
 ```sh
-osdl serve --detach \
+lab serve --detach \
   --instance pump \
   --registry $(pwd)/registry/unilabos \
   --dongle-port /dev/cu.usbserial-A5069RR4
@@ -32,7 +32,7 @@ log output directly (drop the flag entirely).
 ### 2. Wait for the pump to register
 
 ```sh
-osdl --instance pump device wait \
+lab --instance pump device wait \
   type:syringe_pump_with_valve.runze.SY03B-T06 \
   --timeout 20s
 ```
@@ -41,7 +41,7 @@ The device id will be `espnow:<MAC>` (e.g. `espnow:30EDA0B65B38`). Capture
 it for later commands:
 
 ```sh
-DEV=$(osdl --instance pump device list --json \
+DEV=$(lab --instance pump device list --json \
        | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
 echo "$DEV"
 ```
@@ -49,23 +49,23 @@ echo "$DEV"
 ### 3. Initialize and probe
 
 ```sh
-osdl --instance pump send "$DEV" initialize
+lab --instance pump send "$DEV" initialize
 # pump goes Busy for ~6s while homing, then Idle.
 
-osdl --instance pump send "$DEV" query_status
-osdl --instance pump send "$DEV" query_position
-osdl --instance pump send "$DEV" query_valve_position
+lab --instance pump send "$DEV" query_status
+lab --instance pump send "$DEV" query_position
+lab --instance pump send "$DEV" query_valve_position
 
 # Snapshot decoded properties (status / position / etc.).
-osdl --instance pump device get "$DEV"
+lab --instance pump device get "$DEV"
 ```
 
 ### 4. Move the valve
 
 ```sh
-osdl --instance pump send "$DEV" set_valve_position -p position=3
+lab --instance pump send "$DEV" set_valve_position -p position=3
 sleep 2
-osdl --instance pump send "$DEV" set_valve_position -p position=1
+lab --instance pump send "$DEV" set_valve_position -p position=1
 ```
 
 Integer JSON params arrive at the codec as `u64` (the
@@ -77,13 +77,13 @@ Integer JSON params arrive at the codec as `u64` (the
 In another terminal:
 
 ```sh
-osdl --instance pump events --kinds device_status,command_result
+lab --instance pump events --kinds device_status,command_result
 ```
 
 ### 6. Stop the server
 
 ```sh
-osdl --instance pump stop
+lab --instance pump stop
 ```
 
 ## Success criteria

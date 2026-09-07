@@ -13,14 +13,14 @@ Bus manifest:
 ## Boot
 
 ```sh
-osdl serve --detach \
+lab serve --detach \
   --instance chinwe \
   --config docs/recipes/configs/chinwe-station.yaml \
   --registry $(pwd)/registry/unilabos \
   --dongle-port /dev/cu.usbserial-A5069RR4
 
-osdl --instance chinwe device wait id:'espnow:30EDA0B65B38:pump-1' --timeout 25s
-osdl --instance chinwe device list
+lab --instance chinwe device wait id:'espnow:30EDA0B65B38:pump-1' --timeout 25s
+lab --instance chinwe device list
 ```
 
 The five expected rows look like (replace MAC with yours):
@@ -39,25 +39,25 @@ The five expected rows look like (replace MAC with yours):
 P1='espnow:30EDA0B65B38:pump-1'
 
 # Home plunger and valve.
-osdl --instance chinwe send "$P1" initialize
+lab --instance chinwe send "$P1" initialize
 sleep 8     # initialization takes ~6s, give it slack
 
 # Aspirate 1 mL through valve port 1.
-osdl --instance chinwe send "$P1" set_valve_position -p position=1
+lab --instance chinwe send "$P1" set_valve_position -p position=1
 sleep 1
-osdl --instance chinwe send "$P1" pull_plunger -p volume=1.0
+lab --instance chinwe send "$P1" pull_plunger -p volume=1.0
 sleep 5
 
 # Dispense through valve port 2.
-osdl --instance chinwe send "$P1" set_valve_position -p position=2
+lab --instance chinwe send "$P1" set_valve_position -p position=2
 sleep 1
-osdl --instance chinwe send "$P1" push_plunger -p volume=1.0
+lab --instance chinwe send "$P1" push_plunger -p volume=1.0
 ```
 
 Watch state in real time from another shell:
 
 ```sh
-osdl --instance chinwe events --kinds device_status,command_result
+lab --instance chinwe events --kinds device_status,command_result
 ```
 
 ## Independent stirrer + drain commands
@@ -67,22 +67,22 @@ M4='espnow:30EDA0B65B38:motor-4'   # stirrer
 M5='espnow:30EDA0B65B38:motor-5'   # drain valve
 
 # Stir at 60 RPM for 10s, then stop. See stir-10s.md for the full recipe.
-osdl --instance chinwe send "$M4" enable     -p enable=true
-osdl --instance chinwe send "$M4" run_speed  -p speed=60 -p direction=0 -p acceleration=10
+lab --instance chinwe send "$M4" enable     -p enable=true
+lab --instance chinwe send "$M4" run_speed  -p speed=60 -p direction=0 -p acceleration=10
 sleep 10
-osdl --instance chinwe send "$M4" stop
+lab --instance chinwe send "$M4" stop
 
 # Open drain valve ~1/4 turn, hold 10s, close.
-osdl --instance chinwe send "$M5" enable     -p enable=true
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" enable     -p enable=true
+lab --instance chinwe send "$M5" run_position \
    -p pulses=800 -p speed=30 -p direction=0 -p acceleration=10 -p absolute=false
 sleep 10
-osdl --instance chinwe send "$M5" run_position \
+lab --instance chinwe send "$M5" run_position \
    -p pulses=800 -p speed=30 -p direction=1 -p acceleration=10 -p absolute=false
 ```
 
 ## Shutdown
 
 ```sh
-osdl --instance chinwe stop
+lab --instance chinwe stop
 ```

@@ -11,7 +11,7 @@ No commands are sent; the recipe is purely about REG-time validation.
 ## The recipe
 
 ```sh
-osdl serve --detach \
+lab serve --detach \
   --instance bus-check \
   --config docs/recipes/configs/chinwe-station.yaml \
   --registry $(pwd)/registry/unilabos \
@@ -19,13 +19,13 @@ osdl serve --detach \
 
 # Block on the first device — the bus manifest registers all 5 at once,
 # so any one appearing means we're good.
-osdl --instance bus-check device wait \
+lab --instance bus-check device wait \
   id:'espnow:30EDA0B65B38:pump-1' --timeout 25s
 
 # Show the full set.
-osdl --instance bus-check device list
+lab --instance bus-check device list
 
-osdl --instance bus-check stop
+lab --instance bus-check stop
 ```
 
 ## Pass criteria

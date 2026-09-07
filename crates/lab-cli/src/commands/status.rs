@@ -1,4 +1,4 @@
-//! `osdl status` — quick health check of the running server.
+//! `lab status` — quick health check of the running server.
 
 use anyhow::Context;
 use osdl_proto::v1 as pb;

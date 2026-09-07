@@ -50,7 +50,7 @@ impl OnvifAdapter {
 
     /// Action schemas exposed by the combined PTZ + snapshot device type.
     /// Used by the engine when constructing the `Device` record so callers
-    /// see actions in `osdl device get`.
+    /// see actions in `lab device get`.
     pub fn combined_actions() -> Vec<ActionSchema> {
         vec![
             ptz_move_schema(),
@@ -148,7 +148,7 @@ fn action_supported(device_type: &str, action: &str) -> bool {
 /// Wrap (action, params) into the JSON envelope the transport understands.
 /// We accept both ergonomic shorthand (`direction: "up"`) and the literal
 /// PTZ vector (`pan`/`tilt`/`zoom`) so CLI users can type
-/// `osdl send cam1 ptz_move -p direction=up` without thinking in vectors.
+/// `lab send cam1 ptz_move -p direction=up` without thinking in vectors.
 fn build_envelope(action: &str, params: &Value) -> Result<Value, String> {
     let args = match action {
         "ptz_move" => normalize_ptz_move(params)?,

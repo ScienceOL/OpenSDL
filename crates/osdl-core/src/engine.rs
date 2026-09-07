@@ -735,7 +735,7 @@ impl OsdlEngine {
         drop(sources_map);
 
         // Register ONVIF control devices for any camera with a `control:`
-        // block. This is what makes `osdl send cam1 ptz_move ...` work
+        // block. This is what makes `lab send cam1 ptz_move ...` work
         // without a separate camera-control RPC — the camera shows up in
         // `list_devices`, and `send_command` routes through OnvifTransport
         // exactly the way it does for pumps and stirrers.

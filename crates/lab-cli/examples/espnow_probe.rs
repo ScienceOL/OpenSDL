@@ -13,12 +13,12 @@
 //!   5. Listens 2 more seconds for follow-up frames.
 //!
 //! Run with:
-//!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
+//!   cargo run -p lab-cli --example espnow_probe --features osdl-core/espnow
 //!
 //! Override via env vars:
 //!   OSDL_DONGLE_PORT=/dev/cu.usbserial-XXXX \
 //!   OSDL_NODE_ID=pump-01 \
-//!   cargo run -p osdl-cli --example espnow_probe --features osdl-core/espnow
+//!   cargo run -p lab-cli --example espnow_probe --features osdl-core/espnow
 
 use std::env;
 use std::sync::Arc;

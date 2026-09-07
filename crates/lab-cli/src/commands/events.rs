@@ -1,4 +1,4 @@
-//! `osdl events [--follow]` — stream engine events.
+//! `lab events [--follow]` — stream engine events.
 
 use anyhow::Context;
 use clap::Args;

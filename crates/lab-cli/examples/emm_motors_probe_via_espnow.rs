@@ -10,7 +10,7 @@
 //! even if the drain valve is not in a benign position.
 //!
 //! Run:
-//!   cargo run -p osdl-cli --example emm_motors_probe_via_espnow \
+//!   cargo run -p lab-cli --example emm_motors_probe_via_espnow \
 //!       --features osdl-core/espnow
 //!
 //! Success criterion: both motors 4 and 5 return an 8-byte frame starting

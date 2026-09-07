@@ -150,7 +150,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     let listen_addr_str = bound_tcp_addr.as_ref().map(|a| a.to_string());
 
     // Reserve the lockfile *before* we touch the UDS path. Otherwise a
-    // second `osdl serve --instance default` could `remove_file` the
+    // second `lab serve --instance default` could `remove_file` the
     // live server's socket as part of "stale-socket cleanup" before its
     // own lockfile-write fails — leaving the live server with a missing
     // socket. Reserving first means the live PID check rejects the

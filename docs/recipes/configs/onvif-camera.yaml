@@ -24,9 +24,9 @@ media_sources:
     rtsp_transport_tcp: true
     # Optional control plane. When present, the engine registers `cam1`
     # as a Device under the `onvif` adapter so you can:
-    #   osdl send cam1 ptz_move -p direction=up
-    #   osdl send cam1 ptz_stop
-    #   osdl send cam1 snapshot
+    #   lab send cam1 ptz_move -p direction=up
+    #   lab send cam1 ptz_stop
+    #   lab send cam1 snapshot
     # Snapshots land under <data_dir>/snapshots/cam1/<ts>.jpg; the path
     # surfaces as `snapshot_path` on the next device_status event.
     control:

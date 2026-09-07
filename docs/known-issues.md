@@ -86,6 +86,6 @@ short replies). Until this lands:
 The `chinwe_scan`, `laiyu_scan`, `espnow_probe`, `emm_motors_probe_via_espnow`,
 `test_chinwe`, `test_laiyu` examples bypass the engine and write
 arbitrary bytes for hardware bring-up. They're kept under
-`crates/{osdl-cli,osdl-core}/examples/` until an `osdl probe` RPC
+`crates/{lab-cli,osdl-core}/examples/` until an `lab probe` RPC
 lands. The recipe README points there. Not urgent — these are bring-up
 tools, not user-facing flows.

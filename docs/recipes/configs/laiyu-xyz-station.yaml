@@ -11,7 +11,7 @@
 # fans out to 4 logical devices.
 #
 # Use with:
-#   osdl serve --config docs/recipes/configs/laiyu-xyz-station.yaml \
+#   lab serve --config docs/recipes/configs/laiyu-xyz-station.yaml \
 #              --registry $(pwd)/registry/unilabos \
 #              --dongle-port /dev/cu.usbmodem1101
 

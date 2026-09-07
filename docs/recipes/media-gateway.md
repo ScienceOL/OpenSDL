@@ -27,7 +27,7 @@ cp docs/recipes/configs/onvif-camera.yaml /tmp/cam1.yaml
 ### 2. Boot the server
 
 ```sh
-osdl serve --detach \
+lab serve --detach \
   --instance camgw \
   --config /tmp/cam1.yaml \
   --registry $(pwd)/registry/unilabos
@@ -40,7 +40,7 @@ error and exits without leaving a process behind.
 ### 3. Discover the published URLs
 
 ```sh
-osdl --instance camgw events --kinds media_source_online,media_gateway_down --json &
+lab --instance camgw events --kinds media_source_online,media_gateway_down --json &
 ```
 
 You'll see one event per media source with the full list of endpoints,
@@ -64,7 +64,7 @@ open http://127.0.0.1:8888/cam1_h264          # HLS in browser
 ### 5. Stop
 
 ```sh
-osdl --instance camgw stop
+lab --instance camgw stop
 ```
 
 The engine signals mediamtx to terminate gracefully on shutdown.
@@ -135,7 +135,7 @@ remote_rtmp:
   webrtc_host: localhost:1985    # WHEP signalling port (http_api)
 ```
 
-Restart `osdl serve`. The `MediaSourceOnline` event will now include
+Restart `lab serve`. The `MediaSourceOnline` event will now include
 four extra `location: "remote"` endpoints alongside the three local
 mediamtx ones:
 

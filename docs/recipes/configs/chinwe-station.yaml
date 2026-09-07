@@ -11,7 +11,7 @@
 # bus manifest and fans out to 5 logical devices.
 #
 # Use with:
-#   osdl serve --config docs/recipes/configs/chinwe-station.yaml \
+#   lab serve --config docs/recipes/configs/chinwe-station.yaml \
 #              --registry $(pwd)/registry/unilabos \
 #              --dongle-port /dev/cu.usbmodem1101
 

@@ -27,10 +27,10 @@ crates/
 ├── osdl-core/      engine, transports, adapters, registry, store
 ├── osdl-proto/     protobuf schema + generated client/server stubs
 ├── osdl-server/    gRPC service wrapping the engine + lifecycle/lockfile/paths
-└── osdl-cli/       clap CLI: `serve` boots the engine, others are gRPC clients
+└── lab-cli/       clap CLI: `serve` boots the engine, others are gRPC clients
 ```
 
-`osdl-server` is a *library*. The CLI's `osdl serve` calls it; the
+`osdl-server` is a *library*. The CLI's `lab serve` calls it; the
 desktop bundle in mode 3 also calls it (in-process, against an
 EngineHandle the agent already holds). Two consumers, one
 implementation.
@@ -120,7 +120,7 @@ The runtime dir itself is 0700 (created by the `paths` module).
 
 ## Multi-instance discovery (the VS Code pattern)
 
-Each running `osdl serve` writes a JSON descriptor to a shared runtime
+Each running `lab serve` writes a JSON descriptor to a shared runtime
 dir. The lockfile contains: instance name, pid, version, started_at,
 socket path, listen addr.
 
@@ -132,10 +132,10 @@ Client-side endpoint resolution (in priority order):
    require `--instance`. If there are none, error with a hint.
 
 ```
-$ osdl status
-osdl: multiple osdl servers running (chinwe, dev) — pick one with --instance NAME
+$ lab status
+lab: multiple osdl servers running (chinwe, dev) — pick one with --instance NAME
 
-$ osdl --instance chinwe status
+$ lab --instance chinwe status
 instance:    chinwe
 version:     0.1.0
 pid:         12345
@@ -163,19 +163,19 @@ Resolved per platform via the `directories` crate:
 `<runtime_dir>/chinwe.sock`. `Paths::default_db_path("chinwe")` →
 `<state_dir>/chinwe.db`. Per-instance, so they don't collide.
 
-## CLI shape (osdl-cli)
+## CLI shape (lab-cli)
 
 ```
-osdl serve [--instance NAME] [--config PATH] [--listen ADDR]
+lab serve [--instance NAME] [--config PATH] [--listen ADDR]
            [--socket PATH|disabled] [--data-dir PATH] [--log-file PATH]
            [--detach] [--registry PATH] [--dongle-port PORT]
-osdl status
-osdl device list [--adapter X] [--type Y] [--role Z] [--json]
-osdl device get DEVICE_ID [--json]
-osdl device wait id:|type:|role:VALUE [--timeout 30s]
-osdl send DEVICE_ID ACTION [-p k=v ...] [--params-file FILE]
-osdl events [--kinds k1,k2,...] [--json]
-osdl stop
+lab status
+lab device list [--adapter X] [--type Y] [--role Z] [--json]
+lab device get DEVICE_ID [--json]
+lab device wait id:|type:|role:VALUE [--timeout 30s]
+lab send DEVICE_ID ACTION [-p k=v ...] [--params-file FILE]
+lab events [--kinds k1,k2,...] [--json]
+lab stop
 ```
 
 All commands honor `--endpoint URI` / `OSDL_ENDPOINT` and
@@ -190,7 +190,7 @@ redirected to `<state_dir>/<instance>.log`, working directory `/`.
 
 Daemonization has to happen *before* the tokio runtime starts —
 post-fork tokio is UB because the reactor's epoll/kqueue fds are
-inherited but stale. So `osdl serve` routes through a synchronous
+inherited but stale. So `lab serve` routes through a synchronous
 `main_entrypoint` that does the fork and only then builds the runtime.
 The other CLI subcommands keep their `#[tokio::main]`-equivalent
 behavior.
@@ -199,7 +199,7 @@ Relative paths in `--config`, `--registry`, `--data-dir`, `--log-file`,
 `--socket` are canonicalized to absolute paths in the parent before the
 fork — the daemon's chdir(`/`) would otherwise break them.
 
-The lockfile records the post-fork PID, so `osdl stop` works the same
+The lockfile records the post-fork PID, so `lab stop` works the same
 in either mode.
 
 ### Connecting to UDS
@@ -217,7 +217,7 @@ placeholder (`http://[::]`) since the connector ignores authority.
 [ user ]
   │
   ▼  CLI client over UDS
-[ osdl serve --detach --instance lab ]
+[ lab serve --detach --instance lab ]
   │ in-process
   ▼
 [ EngineHandle → OsdlEngine.run() → transports → devices ]
@@ -227,7 +227,7 @@ placeholder (`http://[::]`) since the connector ignores authority.
 
 ```
 [ workstation ]                              [ lab Pi ]
-osdl --endpoint http://lab.local:50051 …  ───→  osdl serve --listen 0.0.0.0:50051
+lab --endpoint http://lab.local:50051 …  ───→  lab serve --listen 0.0.0.0:50051
                                                   │
                                                   ▼
                                               EngineHandle → OsdlEngine
@@ -269,7 +269,7 @@ the local user.
 
 TCP gets a bearer-token interceptor:
 
-- `osdl serve --auth-token <T>` (or `OSDL_AUTH_TOKEN=<T>`) enables it.
+- `lab serve --auth-token <T>` (or `OSDL_AUTH_TOKEN=<T>`) enables it.
   Every TCP RPC must carry `authorization: Bearer <T>` in metadata or
   the server returns `Unauthenticated`. UDS skips the check.
 - A non-loopback bind (`0.0.0.0:…`, `192.168.x.y:…`, etc.) **without**

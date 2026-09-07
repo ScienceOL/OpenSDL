@@ -5,7 +5,7 @@
 //! our RS-485 bus reaches a live Laiyu controller.
 //!
 //! Run (requires LilyGO firmware with UART_BAUD = 115200):
-//!   cargo run -p osdl-cli --example laiyu_scan --features osdl-core/espnow
+//!   cargo run -p lab-cli --example laiyu_scan --features osdl-core/espnow
 
 use std::env;
 use std::sync::Arc;

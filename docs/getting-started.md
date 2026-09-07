@@ -268,7 +268,7 @@ pio device monitor
 cd OpenSDL
 
 # 启动引擎 (带日志输出)
-RUST_LOG=info cargo run --release --bin osdl
+RUST_LOG=info cargo run --release --bin lab
 ```
 
 启动后你会看到：

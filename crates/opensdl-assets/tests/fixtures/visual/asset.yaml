@@ -1,0 +1,35 @@
+apiVersion: assets.opensdl.org/v1alpha1
+kind: VirtualAsset
+
+metadata:
+  name: ur5e
+  displayName: Universal Robots UR5e
+  version: 1.0.0
+  description: Six-axis collaborative robot prepared for laboratory scenes.
+  tags: [robot, manipulator, collaborative]
+  license:
+    spdx: CC-BY-4.0
+    file: LICENSE
+
+spec:
+  type: robot
+  source:
+    format: openusd
+    root: scene.usda
+  preview:
+    model: preview.glb
+    thumbnail: thumbnail.png
+  capabilities:
+    - visual
+    - simulation
+    - opensdl-device
+  compatibility:
+    standards:
+      - opensdl-portable-v1
+    runtimes:
+      - name: isaac-sim
+        versions: ["5.1"]
+        status: expected
+  bindings:
+    deviceTypes:
+      - robot.universal_robots.UR5e

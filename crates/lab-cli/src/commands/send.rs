@@ -1,10 +1,10 @@
-//! `osdl send <device> <action> [-p k=v ...]` — dispatch a single command.
+//! `lab send <device> <action> [-p k=v ...]` — dispatch a single command.
 //!
 //! Note: the returned `status` is always `PENDING` today. The engine
 //! hands the encoded bytes to the transport and returns immediately —
 //! it does not correlate the device's reply back to the originating
-//! command. For now, watch device state via `osdl device get` (or
-//! `osdl events --kinds device_status`) to see the effect of a command;
+//! command. For now, watch device state via `lab device get` (or
+//! `lab events --kinds device_status`) to see the effect of a command;
 //! treat `PENDING` as "command was dispatched without error", not "the
 //! device confirmed completion". Tracked under issue: `SendCommand`
 //! returns dispatch result, not completion.
@@ -19,7 +19,7 @@ use crate::client;
 pub struct SendArgs {
     /// Device id, e.g. `espnow:30EDA0B65B38:pump-1`.
     pub device_id: String,
-    /// Action name (whatever the device's adapter exposes — see `osdl device get`).
+    /// Action name (whatever the device's adapter exposes — see `lab device get`).
     pub action: String,
     /// Parameter `k=v`. Repeat for multiple. Values are parsed as JSON when
     /// they look like JSON (numbers, true/false, "quoted strings",

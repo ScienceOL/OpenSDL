@@ -46,7 +46,7 @@ pub struct OsdlConfig {
     #[serde(default)]
     pub media_gateway: MediaGatewayConfig,
     /// Where snapshots and other transient camera artifacts get written.
-    /// The CLI (`osdl serve`) sets this from its `--data-dir` flag; tests
+    /// The CLI (`lab serve`) sets this from its `--data-dir` flag; tests
     /// that build configs directly can leave it `None` and the engine
     /// will fall back to the system temp directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]

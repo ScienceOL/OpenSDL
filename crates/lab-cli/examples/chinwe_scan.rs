@@ -8,7 +8,7 @@
 //! Sends `/<addr>?0\r` to addresses 1..=3 and prints any reply.
 //!
 //! Run:
-//!   cargo run -p osdl-cli --example chinwe_scan --features osdl-core/espnow
+//!   cargo run -p lab-cli --example chinwe_scan --features osdl-core/espnow
 
 use std::env;
 use std::sync::Arc;

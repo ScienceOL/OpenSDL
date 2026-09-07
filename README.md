@@ -67,7 +67,7 @@ OpenSDL connects laboratory hardware to your application through a unified contr
 - **ProtocolAdapter** — What bytes mean. Adapts a device driver ecosystem's description standard. Encodes commands to bytes, decodes responses to status. First supported: UniLabOS.
 - **Lightweight node (~$5)** — ESP32 as a serial-to-MQTT bridge. No OS, no drivers, no Docker. ~220 lines of firmware with mDNS auto-discovery.
 - **Event Store** — Append-only SQLite log of all events, commands, and raw serial bytes for forensic replay and debugging.
-- **Embeddable** — Use `osdl-core` as a Rust library in your application, or run `osdl-cli` as a standalone process.
+- **Embeddable** — Use `osdl-core` as a Rust library in your application, or run `lab-cli` as a standalone process.
 
 ## Project Structure
 
@@ -91,7 +91,7 @@ crates/
 │       ├── protocol.rs          # Unified device model
 │       ├── event.rs             # OsdlEvent enum
 │       └── config.rs            # OsdlConfig
-├── osdl-cli/                    # Standalone binary (mother node)
+├── lab-cli/                    # Standalone binary (mother node)
 │   └── src/main.rs
 registry/
 └── unilabos/                    # Device YAML schemas
@@ -105,15 +105,15 @@ Pre-built binaries for Linux (glibc + musl), macOS (Intel + Apple Silicon), and 
 
 **Linux & macOS:**
 ```bash
-curl -LsSf https://github.com/ScienceOL/OpenSDL/releases/latest/download/osdl-installer.sh | sh
+curl -LsSf https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-installer.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-powershell -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/osdl-installer.ps1 | iex"
+powershell -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-installer.ps1 | iex"
 ```
 
-After install, verify with `osdl --version`. Update later with `osdl-update`.
+After install, verify with `lab --version`. Update later with `lab-update`.
 
 Prefer downloading a tarball directly? Pick your platform on the [latest release page](https://github.com/ScienceOL/OpenSDL/releases/latest).
 
@@ -121,7 +121,7 @@ Prefer downloading a tarball directly? Pick your platform on the [latest release
 
 ```bash
 cargo build              # Build all crates
-cargo run --bin osdl     # Run mother node
+cargo run --bin lab     # Run mother node
 cargo test               # Run tests (24 tests: unit + integration + e2e)
 ```
 
