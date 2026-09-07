@@ -22,3 +22,6 @@ thiserror.workspace = true
 tokio.workspace = true
 walkdir.workspace = true
 zstd.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"

@@ -188,7 +188,7 @@ fn rejects_special_files_inside_the_asset_root() {
 
 #[cfg(unix)]
 #[test]
-fn rejects_links_inside_the_asset_root() {
+fn rejects_symbolic_links_inside_the_asset_root() {
     use std::os::unix::fs::symlink;
 
     let symlink_fixture = AssetFixture::visual();
@@ -199,7 +199,11 @@ fn rejects_links_inside_the_asset_root() {
     .expect("create symlink");
     let error = VirtualAssetManifest::load(&symlink_fixture.root).expect_err("symlink fails");
     assert!(error.to_string().contains("symbolic link"));
+}
 
+#[cfg(any(unix, windows))]
+#[test]
+fn rejects_hard_links_inside_the_asset_root() {
     let hardlink_fixture = AssetFixture::visual();
     fs::hard_link(
         hardlink_fixture.root.join("scene.usda"),

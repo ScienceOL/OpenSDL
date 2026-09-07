@@ -82,7 +82,7 @@ pub(crate) fn validate_asset_tree(root: &Path) -> Result<PathBuf, AssetError> {
             let metadata = entry
                 .metadata()
                 .map_err(|error| AssetError::invalid(format!("read metadata: {error}")))?;
-            if has_multiple_hard_links(&metadata) {
+            if has_multiple_hard_links(entry.path(), &metadata)? {
                 return Err(AssetError::invalid(format!(
                     "hard link is not allowed: {}",
                     entry.path().display()
@@ -241,18 +241,20 @@ fn hash_file(path: &Path) -> Result<[u8; 32], AssetError> {
 }
 
 #[cfg(unix)]
-fn has_multiple_hard_links(metadata: &fs::Metadata) -> bool {
+fn has_multiple_hard_links(_path: &Path, metadata: &fs::Metadata) -> Result<bool, AssetError> {
     use std::os::unix::fs::MetadataExt;
-    metadata.nlink() > 1
+    Ok(metadata.nlink() > 1)
 }
 
 #[cfg(windows)]
-fn has_multiple_hard_links(metadata: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    metadata.number_of_links() > 1
+fn has_multiple_hard_links(path: &Path, _metadata: &fs::Metadata) -> Result<bool, AssetError> {
+    let file = File::open(path).map_err(|source| AssetError::read(path, source))?;
+    let information =
+        winapi_util::file::information(&file).map_err(|source| AssetError::read(path, source))?;
+    Ok(information.number_of_links() > 1)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn has_multiple_hard_links(_metadata: &fs::Metadata) -> bool {
-    false
+fn has_multiple_hard_links(_path: &Path, _metadata: &fs::Metadata) -> Result<bool, AssetError> {
+    Ok(false)
 }
