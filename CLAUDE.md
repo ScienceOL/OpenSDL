@@ -140,16 +140,16 @@ cargo run --bin lab serve    # Boot engine + gRPC server (TCP + UDS)
 cargo test               # Run all tests (e2e + integration)
 ```
 
-## Integration with Xyzen
+## Integration with SciLaxy
 
 ```
-Xyzen Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `lab serve` (OsdlEngine) → Transport → Device
+SciLaxy Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `lab serve` (OsdlEngine) → Transport → Device
 ```
 
 The runner is a **pure gRPC client** of OpenSDL, not an embedded crate:
 it depends on `osdl-proto` (the generated tonic crate) behind the
-`feature = "osdl"`. The engine + gRPC server live in a separate `osdl
-serve` process — spawned and supervised by the desktop host (see
+`feature = "osdl"`. The engine + gRPC server live in a separate `lab serve`
+process — spawned and supervised by the desktop host (see
 `desktop/electron`'s `lab_server.ts`) or run independently on a lab Pi.
 The runner connects to whatever endpoint the user configured.
 

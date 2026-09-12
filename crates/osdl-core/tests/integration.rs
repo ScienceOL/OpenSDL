@@ -26,7 +26,7 @@ fn test_load_registry() {
 fn test_bus_config_round_trips_and_device_types_resolve() {
     use osdl_core::config::{BusConfig, BusDeviceConfig};
 
-    // Simulate what a user would put in ~/.xyzen/config.yaml — one bus
+    // Simulate a user configuration containing one bus
     // fronted by a Runze pump hardware_id, five real devices behind it.
     let yaml = r#"
 match_hardware_id: syringe_pump_with_valve.runze.SY03B-T06

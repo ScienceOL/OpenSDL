@@ -106,7 +106,7 @@ pub enum H264TranscodeSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteRtmpConfig {
     /// Base URL up to and including the app, no trailing slash. Example:
-    /// `rtmp://srs.sciol.ac.cn:1935/openSDL`.
+    /// `rtmp://ingest.media.example:1935/openSDL`.
     pub base_url: String,
 
     /// Stream name. Defaults to the camera id.
@@ -114,13 +114,13 @@ pub struct RemoteRtmpConfig {
     pub stream: Option<String>,
 
     /// Public host:port for HTTP-FLV / HLS playback URLs published by the
-    /// SRS server, e.g. `srs.sciol.ac.cn:8080`. Used only to assemble
+    /// SRS server, e.g. `https://playback.media.example`. Used only to assemble
     /// `MediaEndpoint`s for callers.
     #[serde(default)]
     pub http_host: Option<String>,
 
     /// Public host[:port] for WebRTC playback. Example:
-    /// `srs.sciol.ac.cn:1985`. Used only to assemble `MediaEndpoint`s.
+    /// `https://playback.media.example`. Used only to assemble `MediaEndpoint`s.
     #[serde(default)]
     pub webrtc_host: Option<String>,
 }

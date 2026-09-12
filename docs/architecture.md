@@ -187,18 +187,19 @@ osdl/devices/{device_id}/status            # mother publishes parsed device stat
 osdl/devices/{device_id}/online            # retained + LWT
 ```
 
-## Integration with Xyzen
+## Integration with SciLaxy
 
-When embedded in Xyzen Desktop (Tauri):
+SciLaxy Desktop supervises a standalone `lab serve` process:
 
 ```
-Xyzen Cloud → WebSocket → Runner → OsdlEngine → Transport → Device
+SciLaxy Cloud → WebSocket → Runner (gRPC client) → `lab serve` → Transport → Device
 ```
 
-- `osdl-core` as optional crate dependency in `xyzen-runner` (`feature = "osdl"`)
-- New Runner message types: `osdl_list_devices`, `osdl_send_command`, etc.
-- OsdlEvent forwarded to cloud via existing WebSocket (same pattern as PTY events)
-- Desktop Tauri app also gets direct access for local device UI
+- The Electron main process starts, monitors, and stops `lab serve`.
+- `scilaxy-runner` depends only on `osdl-proto` behind `feature = "osdl"`.
+- The Runner connects to the configured gRPC endpoint and forwards commands and
+  `OsdlEvent` data over its existing cloud WebSocket.
+- `osdl-core` and `osdl-server` remain in the standalone OpenSDL process.
 
 ## Wireless Communication Options
 
