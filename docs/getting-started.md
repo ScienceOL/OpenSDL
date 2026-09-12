@@ -440,13 +440,15 @@ mosquitto_pub -h localhost -t "osdl/serial/pump-01/tx" -m "/1ZR
 3. 在 `adapter/unilabos.rs` 中注册路由
 4. 写测试 → 跑通 → 提交
 
-### 接入 Xyzen Desktop
+### 接入 SciLaxy Desktop
 
 ```
-Xyzen Desktop (Tauri) → Runner → OsdlEngine → ESP32 → 设备
+SciLaxy Desktop (Electron) → Runner (gRPC 客户端) → `lab serve` → ESP32 → 设备
 ```
 
-OpenSDL 引擎会嵌入到 Xyzen Desktop 应用中，通过 Runner 暴露给前端 UI 和云端 Agent，实现 AI 直接控制实验室硬件。
+Electron 主进程负责启动和监管独立的 `lab serve` 进程。Runner 仅依赖
+`osdl-proto`，连接用户配置的 gRPC 端点，并通过现有 WebSocket 在云端与
+OpenSDL 之间转发命令和事件；OpenSDL 引擎不会嵌入 Runner。
 
 ---
 

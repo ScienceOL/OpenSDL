@@ -4,12 +4,17 @@
 
 ## What is OpenSDL?
 
-OpenSDL connects laboratory hardware to your application through a unified control layer. It reuses existing device driver ecosystems (starting with [Uni-Lab-OS](https://github.com/deepmodeling/Uni-Lab-OS)) without requiring their platform software to run.
+OpenSDL connects laboratory hardware to your application through a unified
+control layer. Protocol adapters let it consume device descriptions and encode
+commands for multiple driver ecosystems without running their platform software.
+The included UniLabOS adapter supports the
+[Uni-Lab-OS](https://github.com/deepmodeling/Uni-Lab-OS) device-description
+ecosystem.
 
 ```
-              Your Application (Xyzen, LIMS, custom)
+              Your Application (SciLaxy, LIMS, custom)
                         │
-                        │  Rust crate / CLI
+                        │  gRPC / CLI
                         │
 ┌───────────────────────▼────────────────────────────────────┐
 │                     Mother Node                             │

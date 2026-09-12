@@ -1,10 +1,9 @@
 # Recipe — Verify a bus manifest
 
-Replaces `bus_manifest_live.rs`. Boots a server with the ChinWe bus
-manifest, waits for the node to register, and prints the resulting
-device set so you can confirm the engine built 5 independently-
-addressable records — same end state Xyzen Runner reaches when the user
-drops the same manifest into `~/.xyzen/config.yaml`.
+Boots a server with the ChinWe bus manifest, waits for the node to
+register, and prints the resulting device set so you can confirm the
+engine built 5 independently-addressable records from the configured
+manifest.
 
 No commands are sent; the recipe is purely about REG-time validation.
 

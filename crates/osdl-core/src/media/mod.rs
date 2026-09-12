@@ -103,16 +103,14 @@ impl MediaSourceConfig {
 }
 
 /// Split an optional `scheme://` prefix off a host string. Lets the YAML
-/// author opt into HTTPS by writing `https://srs.xyzen.cc` for `http_host`
-/// / `webrtc_host`; bare `host[:port]` keeps the historical `http://`
-/// default so existing dev recipes (`localhost:18085`) still work.
+/// author opt into HTTPS by writing `https://playback.media.example` for
+/// `http_host` / `webrtc_host`; bare `host[:port]` uses the `http://`
+/// default used by local recipes (`localhost:18085`).
 ///
-/// Why this matters: Xyzen's web frontend is served over HTTPS, and
+/// Why this matters: the SciLaxy web frontend is served over HTTPS, and
 /// browsers refuse to `fetch()` `http://...` from an HTTPS page (mixed
-/// content). Production SRS lives behind ingress-nginx with a real cert,
-/// so the playback URLs must be `https://`; without this knob the runner
-/// emitted `http://srs.xyzen.cc/...` and every WHEP POST was silently
-/// blocked before leaving the renderer.
+/// content). Deployments behind TLS termination must therefore include the
+/// `https://` prefix so playback requests can leave the renderer.
 fn split_scheme(host: &str) -> (&'static str, &str) {
     if let Some(rest) = host.strip_prefix("https://") {
         ("https", rest)
@@ -225,10 +223,15 @@ mod scheme_tests {
 
     #[test]
     fn https_prefix_is_honored() {
-        let out = endpoints(Some("https://srs.xyzen.cc"), Some("https://srs.xyzen.cc"));
-        assert!(find(&out, Protocol::Flv).starts_with("https://srs.xyzen.cc/"));
-        assert!(find(&out, Protocol::Hls).starts_with("https://srs.xyzen.cc/"));
-        assert!(find(&out, Protocol::Webrtc).starts_with("https://srs.xyzen.cc/rtc/v1/whep/"));
+        let out = endpoints(
+            Some("https://playback.media.example"),
+            Some("https://playback.media.example"),
+        );
+        assert!(find(&out, Protocol::Flv).starts_with("https://playback.media.example/"));
+        assert!(find(&out, Protocol::Hls).starts_with("https://playback.media.example/"));
+        assert!(
+            find(&out, Protocol::Webrtc).starts_with("https://playback.media.example/rtc/v1/whep/")
+        );
     }
 
     #[test]

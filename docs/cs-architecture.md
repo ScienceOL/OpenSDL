@@ -1,8 +1,8 @@
 # OpenSDL Client/Server Architecture
 
-This document describes the post-refactor C/S architecture: how the
-engine, the gRPC server, and the CLI compose, what ships in each crate,
-and how the same code runs in three different deployment modes.
+This document describes the C/S architecture: how the engine, the gRPC
+server, and the CLI compose, what ships in each crate, and how the same
+code runs in three different deployment modes.
 
 If you want a higher-level orientation, start with
 [`architecture.md`](architecture.md) (the engine's transport layer +
@@ -10,17 +10,16 @@ hardware path) and then come back here.
 
 ## Why C/S
 
-The engine has always been a long-running, async, stateful thing —
-broker, mDNS, mediamtx, ESP-NOW dongles, SQLite event store, dozens of
-in-flight devices. We needed three deployment shapes:
+The engine is a long-running, async, stateful service that owns the
+broker, mDNS, mediamtx, ESP-NOW dongles, SQLite event store, and
+in-flight devices. It supports three deployment shapes:
 
 1. **Local box** — engine + client on the same lab machine.
 2. **Remote** — client on a workstation, engine on the lab Pi.
-3. **Bundled** — desktop app embeds the engine in-process for the agent.
+3. **Desktop-supervised** — Electron supervises a standalone local server.
 
-The dominant constraint was that all three modes have to run the same
-code paths. So we split the codebase into four crates with the engine
-sitting under a thin gRPC adapter:
+All three modes use the same engine and gRPC code paths. The workspace
+separates those responsibilities into four crates:
 
 ```
 crates/
@@ -30,16 +29,14 @@ crates/
 └── lab-cli/       clap CLI: `serve` boots the engine, others are gRPC clients
 ```
 
-`osdl-server` is a *library*. The CLI's `lab serve` calls it; the
-desktop bundle in mode 3 also calls it (in-process, against an
-EngineHandle the agent already holds). Two consumers, one
-implementation.
+`osdl-server` is a library used by the CLI's `lab serve` command. Desktop
+mode launches that command as a child process and reaches it only through
+the generated gRPC interface.
 
 ## Engine: handle + loop
 
-`OsdlEngine` was previously a single `&mut self` thing where `run()`
-consumed unique receivers. That doesn't compose with multiple gRPC
-subscribers. We split it into:
+The engine exposes a cloneable handle so multiple gRPC subscribers can
+share state while one `OsdlEngine::run()` loop owns the receivers:
 
 - **`OsdlEngine`** — owns the loop. Holds the per-loop `mpsc` receivers
   (transport RX, command injection, ESP-NOW REG events). One
@@ -233,21 +230,24 @@ lab --endpoint http://lab.local:50051 …  ───→  lab serve --listen 0.0.
                                               EngineHandle → OsdlEngine
 ```
 
-### Mode 3 — bundled (desktop)
+### Mode 3 — desktop-supervised
 
 ```
-[ Tauri app ]
-  ├── agent (LLM)
-  ├── EngineHandle (direct)         ←── no IPC for the agent
-  └── osdl_server::serve()  on UDS  ←── for the in-app CLI / external tools
-       │
-       ▼
-   OsdlEngine.run()
+[ Electron main process ]
+  └── supervises `lab serve`
+          │
+          ├── UDS (Linux/macOS) or loopback TCP (Windows)
+          │
+[ scilaxy-runner: osdl-proto gRPC client ]
+          │
+          ▼
+   SciLaxy Cloud WebSocket
 ```
 
-The agent gets the same `EngineHandle` API the gRPC service uses, so
-agent code looks identical to library code. The UDS surface is there
-for everything else (debugging, scripting, packaged tools).
+The Runner does not link `osdl-core` or hold an `EngineHandle`. Electron
+selects the endpoint, starts the server, waits for readiness, and keeps
+the Runner configuration aligned with that endpoint. A lab Pi may instead
+run `lab serve` independently and expose a configured TCP endpoint.
 
 ## Observability and error handling
 

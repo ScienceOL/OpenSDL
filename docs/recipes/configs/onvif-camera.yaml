@@ -43,25 +43,20 @@ media_sources:
     #   http_host: localhost:18085            # HLS / FLV egress (http_server port)
     #   webrtc_host: localhost:1985           # WHEP signalling (http_api port)
     #
-    # --- Production Xyzen Shanghai SRS ---
-    # Why two hosts:
-    #   * base_url uses srs-rtc.xyzen.cc — that name resolves to the
-    #     dedicated NLB which exposes RTMP 1935/TCP and WebRTC media
-    #     8000/UDP.
-    #   * http_host / webrtc_host use srs.xyzen.cc — that name resolves
-    #     to the cluster's ingress-nginx LB and serves HLS playlists +
-    #     WHEP signalling over HTTPS. The WebRTC media itself still goes
-    #     to srs-rtc:8000/UDP via the SDP `a=candidate` line that SRS
-    #     fills in from its CANDIDATE env var.
+    # --- Configurable remote SRS example ---
+    # `base_url` is the RTMP ingest endpoint. `http_host` and `webrtc_host`
+    # are browser-reachable playback and signalling endpoints; they may be
+    # the same host when one TLS proxy serves both routes. Replace the
+    # reserved example domains with endpoints from your deployment.
     #
     # Note the `https://` prefix on http_host / webrtc_host below.
     # When the host is bare (e.g. `localhost:18085`) the engine emits
     # `http://...` URLs; prefix with `https://` (or `http://` to be
     # explicit) when SRS is fronted by HTTPS ingress. Browser frontends
     # served over HTTPS will refuse to fetch `http://` endpoints, so
-    # production deployments must use the prefixed form.
+    # TLS deployments must use the prefixed form.
     # remote_rtmp:
-    #   base_url: rtmp://srs-rtc.xyzen.cc:1935/live
+    #   base_url: rtmp://ingest.media.example:1935/live
     #   stream: lab-1
-    #   http_host: https://srs.xyzen.cc
-    #   webrtc_host: https://srs.xyzen.cc
+    #   http_host: https://playback.media.example
+    #   webrtc_host: https://playback.media.example
