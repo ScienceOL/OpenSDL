@@ -187,7 +187,7 @@ the HTTP plane have different transport requirements:
 - The playback endpoint serves **HLS playlists**, HTTP-FLV, and **WHEP
   signalling**. Do not send RTMP to an HTTP-only ingress.
 
-The reserved domains below are placeholders, not deployed SciLaxy services:
+The reserved domains below are placeholders, not deployed Liyan Labs services:
 
 ```yaml
 remote_rtmp:

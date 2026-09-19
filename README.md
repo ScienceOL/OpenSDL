@@ -12,7 +12,7 @@ The included UniLabOS adapter supports the
 ecosystem.
 
 ```
-              Your Application (SciLaxy, LIMS, custom)
+              Your Application (Liyan Labs, LIMS, custom)
                         │
                         │  gRPC / CLI
                         │

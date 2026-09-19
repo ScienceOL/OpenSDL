@@ -440,10 +440,10 @@ mosquitto_pub -h localhost -t "osdl/serial/pump-01/tx" -m "/1ZR
 3. 在 `adapter/unilabos.rs` 中注册路由
 4. 写测试 → 跑通 → 提交
 
-### 接入 SciLaxy Desktop
+### 接入 Liyan Labs Desktop
 
 ```
-SciLaxy Desktop (Electron) → Runner (gRPC 客户端) → `lab serve` → ESP32 → 设备
+Liyan Labs Desktop (Electron) → Runner (gRPC 客户端) → `lab serve` → ESP32 → 设备
 ```
 
 Electron 主进程负责启动和监管独立的 `lab serve` 进程。Runner 仅依赖

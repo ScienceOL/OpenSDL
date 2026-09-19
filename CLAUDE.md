@@ -140,10 +140,10 @@ cargo run --bin lab serve    # Boot engine + gRPC server (TCP + UDS)
 cargo test               # Run all tests (e2e + integration)
 ```
 
-## Integration with SciLaxy
+## Integration with Liyan Labs
 
 ```
-SciLaxy Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `lab serve` (OsdlEngine) → Transport → Device
+Liyan Labs Cloud ←WebSocket→ Runner (gRPC client) ←gRPC→ `lab serve` (OsdlEngine) → Transport → Device
 ```
 
 The runner is a **pure gRPC client** of OpenSDL, not an embedded crate:

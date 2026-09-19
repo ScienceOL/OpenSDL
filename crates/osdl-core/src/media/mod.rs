@@ -107,7 +107,7 @@ impl MediaSourceConfig {
 /// `http_host` / `webrtc_host`; bare `host[:port]` uses the `http://`
 /// default used by local recipes (`localhost:18085`).
 ///
-/// Why this matters: the SciLaxy web frontend is served over HTTPS, and
+/// Why this matters: the Liyan Labs web frontend is served over HTTPS, and
 /// browsers refuse to `fetch()` `http://...` from an HTTPS page (mixed
 /// content). Deployments behind TLS termination must therefore include the
 /// `https://` prefix so playback requests can leave the renderer.

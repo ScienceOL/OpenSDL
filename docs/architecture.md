@@ -187,16 +187,16 @@ osdl/devices/{device_id}/status            # mother publishes parsed device stat
 osdl/devices/{device_id}/online            # retained + LWT
 ```
 
-## Integration with SciLaxy
+## Integration with Liyan Labs
 
-SciLaxy Desktop supervises a standalone `lab serve` process:
+Liyan Labs Desktop supervises a standalone `lab serve` process:
 
 ```
-SciLaxy Cloud → WebSocket → Runner (gRPC client) → `lab serve` → Transport → Device
+Liyan Labs Cloud → WebSocket → Runner (gRPC client) → `lab serve` → Transport → Device
 ```
 
 - The Electron main process starts, monitors, and stops `lab serve`.
-- `scilaxy-runner` depends only on `osdl-proto` behind `feature = "osdl"`.
+- `liyanlabs-runner` depends only on `osdl-proto` behind `feature = "osdl"`.
 - The Runner connects to the configured gRPC endpoint and forwards commands and
   `OsdlEvent` data over its existing cloud WebSocket.
 - `osdl-core` and `osdl-server` remain in the standalone OpenSDL process.
