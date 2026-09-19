@@ -238,10 +238,10 @@ lab --endpoint http://lab.local:50051 …  ───→  lab serve --listen 0.0.
           │
           ├── UDS (Linux/macOS) or loopback TCP (Windows)
           │
-[ scilaxy-runner: osdl-proto gRPC client ]
+[ liyanlabs-runner: osdl-proto gRPC client ]
           │
           ▼
-   SciLaxy Cloud WebSocket
+   Liyan Labs Cloud WebSocket
 ```
 
 The Runner does not link `osdl-core` or hold an `EngineHandle`. Electron
