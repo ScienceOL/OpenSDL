@@ -1,0 +1,2 @@
+# Keep source archives and text fixtures byte-stable across platform checkouts.
+* text=auto eol=lf
