@@ -44,38 +44,41 @@ pub fn expand_vars(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn absolute_passes_through() {
-        let r = expand("/tmp/foo", Path::new("/base"));
-        assert_eq!(r, PathBuf::from("/tmp/foo"));
+        let absolute = std::env::temp_dir().join("opensdl-path");
+        let r = expand(absolute.to_str().expect("UTF-8 path"), Path::new("unused"));
+        assert_eq!(r, absolute);
     }
 
     #[test]
     fn relative_joins_base() {
-        let r = expand("registry/unilabos", Path::new("/etc/osdl/recipes"));
-        assert_eq!(r, PathBuf::from("/etc/osdl/recipes/registry/unilabos"));
+        let base = std::env::temp_dir().join("osdl/recipes");
+        let r = expand("registry/unilabos", &base);
+        assert_eq!(r, base.join("registry/unilabos"));
     }
 
     #[test]
     fn tilde_expands_to_home() {
-        std::env::set_var("HOME", "/home/alice");
-        let r = expand("~/lab/registry", Path::new("/anywhere"));
-        assert_eq!(r, PathBuf::from("/home/alice/lab/registry"));
+        let home = std::env::home_dir().expect("test user has a home directory");
+        let r = expand("~/lab/registry", Path::new("unused"));
+        assert_eq!(r, home.join("lab/registry"));
     }
 
     #[test]
     fn dollar_brace_var() {
-        std::env::set_var("LAB_DIR", "/var/lab");
-        let r = expand("${LAB_DIR}/registry", Path::new("/anywhere"));
-        assert_eq!(r, PathBuf::from("/var/lab/registry"));
+        let base = std::env::temp_dir().join("lab");
+        std::env::set_var("OPENSDL_TEST_BRACED_PATH", &base);
+        let r = expand("${OPENSDL_TEST_BRACED_PATH}/registry", Path::new("unused"));
+        assert_eq!(r, base.join("registry"));
     }
 
     #[test]
     fn bare_dollar_var_with_separator() {
-        std::env::set_var("FOO", "/srv");
-        let r = expand("$FOO/data", Path::new("/anywhere"));
-        assert_eq!(r, PathBuf::from("/srv/data"));
+        let base = std::env::temp_dir().join("lab");
+        std::env::set_var("OPENSDL_TEST_BARE_PATH", &base);
+        let r = expand("$OPENSDL_TEST_BARE_PATH/data", Path::new("unused"));
+        assert_eq!(r, base.join("data"));
     }
 }

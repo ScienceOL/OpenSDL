@@ -7,6 +7,9 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
+# Exercise the release builds before merging, including both installers.
+pr-run-mode = "upload"
+local-artifacts-jobs = ["./checks"]
 # The installers to generate for each app
 installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)

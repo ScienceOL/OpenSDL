@@ -1,0 +1,60 @@
+name: Checks
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check README installer URLs against the release plan
+        if: runner.os == 'Linux'
+        env:
+          DIST_PLAN: ${{ inputs.plan }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          plan = json.loads(os.environ["DIST_PLAN"])
+          readme = pathlib.Path("README.md").read_text()
+          urls = re.findall(r"https://github.com/ScienceOL/OpenSDL/releases/latest/download/([^\s\"|]+)", readme)
+          assert len(urls) == 2, f"Expected shell and PowerShell installer URLs, got {urls}"
+          assert {pathlib.Path(name).suffix for name in urls} == {".sh", ".ps1"}
+          for name in urls:
+              assert plan["artifacts"][name]["kind"] == "installer", f"Not a planned installer: {name}"
+          PY
+      - run: cargo fmt --all --check
+      - name: Start disposable OCI registry
+        if: runner.os == 'Linux'
+        run: |
+          docker run --detach --publish 127.0.0.1:5000:5000 registry:3
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused --retry-max-time 30 --max-time 2 http://127.0.0.1:5000/v2/
+      - name: Test workspace including OCI integration
+        if: runner.os == 'Linux'
+        env:
+          OPENSDL_TEST_REGISTRY: localhost:5000
+        run: cargo test --workspace --locked -- --include-ignored
+      - name: Test workspace on macOS and Windows
+        if: runner.os != 'Linux'
+        run: cargo test --workspace --locked
