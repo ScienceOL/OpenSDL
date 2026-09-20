@@ -47,7 +47,9 @@ jobs:
       - run: cargo fmt --all --check
       - name: Start disposable OCI registry
         if: runner.os == 'Linux'
-        run: docker run --detach --publish 127.0.0.1:5000:5000 registry:3
+        run: |
+          docker run --detach --publish 127.0.0.1:5000:5000 registry:3
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-connrefused --retry-max-time 30 --max-time 2 http://127.0.0.1:5000/v2/
       - name: Test workspace including OCI integration
         if: runner.os == 'Linux'
         env:
