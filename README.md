@@ -2,6 +2,99 @@
 
 **Open Self-Drive Lab** — A mesh-based system for laboratory hardware control with pluggable transports.
 
+## Install the CLI
+
+Install the pre-built **`lab`** command. Rust, Docker, and a source checkout are
+not required. The installer detects your operating system and CPU.
+
+**Linux / macOS:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-cli-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-cli-installer.ps1 | iex"
+```
+
+Open a new terminal after installation, then check:
+
+```bash
+lab --version
+lab --help
+```
+
+The default install directory is `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on
+Windows), or `$CARGO_HOME/bin` when configured. If `lab` is not found, follow
+the installer's PATH instructions or add that directory to your PATH.
+
+Update to the latest release by running the installer again, or use the
+installed updater:
+
+```bash
+lab-cli-update
+```
+
+| Platform | Pre-built targets |
+|---|---|
+| macOS | Apple Silicon (ARM64), Intel (x86-64) |
+| Linux | x86-64 GNU / musl, ARM64 GNU |
+| Windows | x86-64 MSVC |
+
+Archives and SHA-256 checksums are also available on the
+[latest release page](https://github.com/ScienceOL/OpenSDL/releases/latest).
+The installer filenames and updater use the package name `lab-cli`; the
+command you run is `lab`.
+
+## Quick start
+
+Start a local server in one terminal:
+
+```bash
+lab serve
+```
+
+In a second terminal:
+
+```bash
+lab status
+lab device list
+lab stop
+```
+
+With no hardware configured, an empty device list is expected. By default,
+`lab serve` starts an MQTT broker on port 1883 and uses a local Unix socket
+on Linux/macOS or loopback TCP on Windows. `lab` discovers the local server
+automatically. On Linux/macOS, use `lab serve --detach` to run it in the
+background.
+
+To connect laboratory hardware, download the matching source archive from the
+release page (or clone this repository) for its `registry/unilabos` device
+schemas and [recipe configurations](docs/recipes/README.md). The CLI installer
+installs executables; it does not install device schemas or flash ESP32 boards.
+From the repository root, start with:
+
+```bash
+lab serve --registry registry/unilabos
+```
+
+Without those schemas, the default server logs a registry-loading warning;
+its API remains available, but it cannot match UniLabOS devices. Follow the
+recipe for your hardware to configure transports and firmware. For all options,
+run `lab serve --help`.
+
+Portable asset commands run independently of the hardware server:
+
+```bash
+lab validate path/to/asset
+lab pack path/to/asset --output path/to/oci-layout
+lab inspect path/to/oci-layout
+lab push --help
+lab pull --help
+```
+
 ## What is OpenSDL?
 
 OpenSDL connects laboratory hardware to your application through a unified
@@ -70,7 +163,7 @@ ecosystem.
 
 - **Transport** — How bytes reach a device (MQTT serial, direct USB, TCP socket). Each device has one transport. The engine doesn't care which kind.
 - **ProtocolAdapter** — What bytes mean. Adapts a device driver ecosystem's description standard. Encodes commands to bytes, decodes responses to status. First supported: UniLabOS.
-- **Lightweight node (~$5)** — ESP32 as a serial-to-MQTT bridge. No OS, no drivers, no Docker. ~220 lines of firmware with mDNS auto-discovery.
+- **Lightweight node (~$5)** — ESP32 as a serial-to-MQTT bridge. No OS, no drivers, no Docker. Firmware bridges bytes and supports node discovery.
 - **Event Store** — Append-only SQLite log of all events, commands, and raw serial bytes for forensic replay and debugging.
 - **Embeddable** — Use `osdl-core` as a Rust library in your application, or run `lab-cli` as a standalone process.
 
@@ -84,55 +177,81 @@ crates/
 │       ├── transport/           # Transport trait + implementations
 │       │   ├── mod.rs           # Transport trait, TransportRx
 │       │   ├── mqtt_serial.rs   # MQTT serial (ESP32 bridge)
-│       │   ├── direct_serial.rs # Direct USB/RS-232 (stub)
-│       │   └── tcp.rs           # TCP socket (stub)
+│       │   ├── direct_serial.rs # Direct USB/RS-232/RS-485 (serial feature)
+│       │   └── tcp.rs           # TCP socket
 │       ├── adapter/             # ProtocolAdapter trait + implementations
 │       │   ├── mod.rs           # ProtocolAdapter trait
 │       │   ├── unilabos.rs      # UniLabOS ecosystem adapter
-│       │   └── runze.rs         # Runze syringe pump codec
+│       │   └── onvif.rs         # ONVIF camera adapter
+│       ├── driver/builtins/      # Runze, Emm, Laiyu, Sopa, XKC codecs
+│       ├── media/               # Camera streaming gateway
 │       ├── broker.rs            # Embedded MQTT broker (rumqttd)
 │       ├── mdns.rs              # mDNS service discovery
 │       ├── store.rs             # SQLite event store
 │       ├── protocol.rs          # Unified device model
 │       ├── event.rs             # OsdlEvent enum
 │       └── config.rs            # OsdlConfig
-├── lab-cli/                    # Standalone binary (mother node)
-│   └── src/main.rs
+├── lab-cli/                    # lab CLI: server, client, portable assets
+├── osdl-server/                # gRPC service over local sockets / TCP
+├── osdl-proto/                 # Shared protobuf / gRPC contract
+├── opensdl-assets/             # Asset validation, OCI packaging and registry I/O
+└── osdl-firmware-protocol/      # Shared ESP-NOW wire protocol
 registry/
 └── unilabos/                    # Device YAML schemas
 firmware/
-└── esp32/                       # Child node firmware (PlatformIO)
+├── esp32/                       # ESP32 Rust firmware
+├── esp32s3/                     # ESP32-S3 Rust firmware
+└── esp32-cpp/                   # MQTT bridge (C++ / PlatformIO)
 ```
-
-## Install
-
-Pre-built binaries for Linux (glibc + musl), macOS (Intel + Apple Silicon), and Windows are published to [GitHub Releases](https://github.com/ScienceOL/OpenSDL/releases). The installer auto-detects your platform.
-
-**Linux & macOS:**
-```bash
-curl -LsSf https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-installer.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-powershell -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-installer.ps1 | iex"
-```
-
-After install, verify with `lab --version`. Update later with `lab-update`.
-
-Prefer downloading a tarball directly? Pick your platform on the [latest release page](https://github.com/ScienceOL/OpenSDL/releases/latest).
 
 ## Build from source
 
+Install a current stable [Rust toolchain](https://rustup.rs/) and your platform's
+C/C++ build tools (Xcode Command Line Tools on macOS, a C compiler on Linux,
+or Visual Studio Build Tools with the C++ workload on Windows). Protobuf's
+compiler is supplied by the build; you do not need to install it separately.
+
 ```bash
-cargo build              # Build all crates
-cargo run --bin lab     # Run mother node
-cargo test               # Run tests (24 tests: unit + integration + e2e)
+git clone https://github.com/ScienceOL/OpenSDL.git
+cd OpenSDL
+cargo build --locked --release -p lab-cli
+cargo run --locked --bin lab -- serve --registry registry/unilabos
+cargo test --workspace --locked
+```
+
+To install the CLI from this checkout:
+
+```bash
+cargo install --locked --path crates/lab-cli
+```
+
+Direct USB/RS-232/RS-485 transport is implemented behind the
+`osdl-core/serial` feature. Enable it when building for direct serial hardware:
+
+```bash
+cargo install --locked --path crates/lab-cli --features osdl-core/serial
 ```
 
 ## Status
 
-Early development. Core engine, MQTT serial transport, Runze syringe pump driver, and ESP32 firmware are functional. Direct serial and TCP transports are stubbed.
+OpenSDL is in early development. The current CLI is `lab` (since v0.2.0).
+Implemented components include the gRPC server, embedded MQTT broker, mDNS
+discovery, SQLite event store, MQTT serial, ESP-NOW, TCP, optional direct
+serial, ONVIF camera control, and portable assets distributed through OCI
+registries. Camera streaming additionally requires MediaMTX and, for the
+recipes that use it, FFmpeg; these are not installed by the CLI installer.
+
+Hardware command dispatch does not yet correlate replies into completed
+command results. A `PENDING` response means dispatched, not physically
+completed. See [known issues](docs/known-issues.md) and the
+[hardware recipes](docs/recipes/README.md) for current operational limits.
+
+## Development and releases
+
+Pull requests run the workspace tests on Linux, macOS, and Windows, and build
+all six release targets and generate the shell and PowerShell installers.
+Tagged versions run the same checks before publication. See
+[the release procedure](docs/releases.md) for versioning and installation checks.
 
 ## License
 
