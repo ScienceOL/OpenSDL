@@ -1,3 +1,4 @@
+pub mod api;
 pub mod device;
 pub mod events;
 pub mod inspect;
