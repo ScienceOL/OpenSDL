@@ -34,6 +34,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Authenticate to SciLaxy and inspect online lab devices.
+    Api {
+        #[command(subcommand)]
+        cmd: commands::api::ApiCmd,
+    },
     /// Boot the engine + gRPC server in this process.
     Serve(commands::serve::ServeArgs),
     /// Show server identity and engine status.
@@ -103,6 +108,7 @@ fn main() {
                     Command::Stop => commands::stop::run(opts).await,
                     Command::Push(args) => commands::push::run(args).await,
                     Command::Pull(args) => commands::pull::run(args).await,
+                    Command::Api { cmd } => commands::api::run(cmd).await,
                     Command::Validate(_) | Command::Pack(_) | Command::Inspect(_) => unreachable!(),
                 }
             })

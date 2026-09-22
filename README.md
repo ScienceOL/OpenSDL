@@ -204,6 +204,26 @@ firmware/
 └── esp32-cpp/                   # MQTT bridge (C++ / PlatformIO)
 ```
 
+## View devices connected to your SciLaxy account
+
+Create an OpenSDL API token in SciLaxy **Settings → Clients**. The token is
+shown once. Save it with the CLI, then query your online runners and devices:
+
+```bash
+lab api login --server https://scilaxy.ai
+lab api devices
+lab api devices --json
+lab api logout
+```
+
+`lab api login` prompts for the token without showing it on the terminal.
+For scripts, pipe it to `lab api login --server URL --token-stdin`. The token
+grants only the read-only OpenSDL account API; revoke it in Settings when it
+is no longer needed. Devices appear after the selected Desktop or Runner is
+online, its Lab Server is running, and the corresponding hardware transport
+and device registry are configured. A USB plug-in alone does not configure
+a serial port or identify a device driver.
+
 ## Build from source
 
 Install a current stable [Rust toolchain](https://rustup.rs/) and your platform's
