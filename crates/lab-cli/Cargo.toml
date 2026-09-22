@@ -36,7 +36,6 @@ required-features = ["osdl-core/espnow"]
 
 [dev-dependencies]
 serde_json.workspace = true
-tempfile.workspace = true
 
 [features]
 default = ["espnow"]
@@ -62,7 +61,7 @@ prost-types.workspace = true
 hyper-util.workspace = true
 tower.workspace = true
 anyhow = "1"
-reqwest = { workspace = true, features = ["json"] }
+reqwest.workspace = true
 rpassword = "7"
 tempfile.workspace = true
 

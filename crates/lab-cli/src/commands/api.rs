@@ -90,6 +90,10 @@ async fn login(args: LoginArgs, path: &Path) -> anyhow::Result<()> {
     } else {
         rpassword::prompt_password("OpenSDL API token: ")?
     };
+    verify_and_save(server, token, path).await
+}
+
+async fn verify_and_save(server: String, token: String, path: &Path) -> anyhow::Result<()> {
     if !token.starts_with("sdl_") || token.len() != 47 {
         bail!("invalid OpenSDL API token format");
     }
@@ -218,6 +222,7 @@ fn save_credentials(path: &Path, credentials: &Credentials) -> anyhow::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn server_must_be_a_secure_origin() {
@@ -255,5 +260,44 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[tokio::test]
+    async fn login_and_devices_use_the_scoped_account_api() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server = format!("http://{}", listener.local_addr().unwrap());
+        let token = format!("sdl_{}", "a".repeat(43));
+        let expected_token = token.clone();
+        let responder = tokio::spawn(async move {
+            for (path, body) in [
+                ("/liyanlabs/api/v1/osdl/me", r#"{"user_id":"owner"}"#),
+                ("/liyanlabs/api/v1/osdl/devices", r#"{"runners":[]}"#),
+            ] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = [0u8; 2048];
+                let mut request = Vec::new();
+                while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    let size = socket.read(&mut bytes).await.unwrap();
+                    assert!(size > 0);
+                    request.extend_from_slice(&bytes[..size]);
+                }
+                let request = String::from_utf8_lossy(&request);
+                assert!(request.starts_with(&format!("GET {path} HTTP/1.1")));
+                assert!(request.contains(&format!("Bearer {expected_token}")));
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                socket.write_all(reply.as_bytes()).await.unwrap();
+            }
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("account-api.json");
+        verify_and_save(parse_server(&server).unwrap(), token, &path)
+            .await
+            .unwrap();
+        devices(DevicesArgs { json: false }, &path).await.unwrap();
+        responder.await.unwrap();
     }
 }
