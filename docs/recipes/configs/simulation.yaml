@@ -31,6 +31,12 @@ simulation:
         temperature: 22.0
         target_temperature: 22.0
         running: false
+      # Optional pinned Hub model. The preview is resolved by the workbench;
+      # OpenSDL only carries this immutable identity in telemetry.
+      # asset_ref:
+      #   namespace: scienceol
+      #   name: ur5e
+      #   version: 1.0.0
     - id: stirrer-1
       device_type: simulation.stirrer
       role: stirrer
