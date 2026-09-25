@@ -98,9 +98,23 @@ pub struct SimulationDeviceConfig {
     pub actions: Vec<ActionSchema>,
     #[serde(default)]
     pub properties: HashMap<String, serde_json::Value>,
+    /// Optional immutable Hub asset identity used by visual workbenches.
+    #[serde(default)]
+    pub asset_ref: Option<SimulationAssetRef>,
     /// Initial scene position in metres. The UI uses this to place entities.
     #[serde(default)]
     pub position: [f64; 3],
+}
+
+/// Pinned Hub identity for a device model. The source bytes remain in the Hub;
+/// simulation telemetry carries this reference so clients can resolve a
+/// verified preview without copying model data through OpenSDL.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationAssetRef {
+    pub namespace: String,
+    pub name: String,
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 fn default_simulation_world_id() -> String {
@@ -144,6 +158,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                 ("target_temperature".into(), serde_json::json!(22.0)),
                 ("running".into(), serde_json::json!(false)),
             ]),
+            asset_ref: None,
             position: [-1.6, 0.0, 0.0],
         },
         SimulationDeviceConfig {
@@ -172,6 +187,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                 ("speed".into(), serde_json::json!(0.0)),
                 ("running".into(), serde_json::json!(false)),
             ]),
+            asset_ref: None,
             position: [0.0, 0.0, 0.0],
         },
         SimulationDeviceConfig {
@@ -192,6 +208,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                 ),
             ],
             properties: HashMap::from([("state".into(), serde_json::json!("closed"))]),
+            asset_ref: None,
             position: [1.6, 0.0, 0.0],
         },
         SimulationDeviceConfig {
@@ -208,6 +225,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                 ("temperature".into(), serde_json::json!(22.0)),
                 ("unit".into(), serde_json::json!("°C")),
             ]),
+            asset_ref: None,
             position: [0.0, 0.0, 1.8],
         },
     ]
@@ -254,6 +272,24 @@ impl SimulationConfig {
                     "simulation device id '{}' is empty or duplicated",
                     device.id
                 ));
+            }
+            if let Some(asset) = &device.asset_ref {
+                if asset.namespace.trim().is_empty() || asset.name.trim().is_empty() {
+                    return Err(format!(
+                        "simulation device '{}' has an incomplete asset_ref",
+                        device.id
+                    ));
+                }
+                if asset
+                    .version
+                    .as_deref()
+                    .is_some_and(|version| version.trim().is_empty())
+                {
+                    return Err(format!(
+                        "simulation device '{}' has an empty asset_ref version",
+                        device.id
+                    ));
+                }
             }
         }
         Ok(())

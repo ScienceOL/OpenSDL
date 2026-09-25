@@ -15,7 +15,7 @@ use crate::transport::mqtt_serial::MqttSerialTransport;
 use crate::transport::onvif::{transport_id_for as onvif_transport_id, OnvifTransport};
 use crate::transport::simulation::{
     device_id_for as simulation_device_id, transport_id_for as simulation_transport_id,
-    SimulationTransport,
+    BuiltinSimulationBackendFactory, SimulationBackendFactory, SimulationTransport,
 };
 use crate::transport::{Transport, TransportRx};
 
@@ -66,6 +66,8 @@ pub struct EngineHandle {
 
     /// Sender for transports to push received bytes back to the engine.
     transport_rx_tx: mpsc::UnboundedSender<TransportRx>,
+    /// Factory for the physics runtime used by configured simulation worlds.
+    simulation_backend_factory: Arc<dyn SimulationBackendFactory>,
     /// External command injection — drop a `DeviceCommand` in here and the
     /// engine's main loop dispatches it via `send_command`.
     cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
@@ -346,6 +348,7 @@ impl OsdlEngine {
             devices: Arc::new(RwLock::new(HashMap::new())),
             transports: Arc::new(RwLock::new(HashMap::new())),
             transport_rx_tx,
+            simulation_backend_factory: Arc::new(BuiltinSimulationBackendFactory),
             cmd_inject_tx,
             events_tx,
             media_sources: Arc::new(RwLock::new(HashMap::new())),
@@ -371,6 +374,17 @@ impl OsdlEngine {
     /// Attach an event store for safety logging. Must be called before `run()`.
     pub fn with_store(mut self, store: EventStore) -> Self {
         self.handle.store = Some(Arc::new(store));
+        self
+    }
+
+    /// Inject a physics backend factory while retaining OpenSDL's device and
+    /// event contract. Hosts can use this to register native runtimes such as
+    /// Rapier, Bullet, MuJoCo, Isaac Sim, or Gazebo.
+    pub fn with_simulation_backend_factory(
+        mut self,
+        factory: Arc<dyn SimulationBackendFactory>,
+    ) -> Self {
+        self.handle.simulation_backend_factory = factory;
         self
     }
 
@@ -693,12 +707,18 @@ impl OsdlEngine {
 
         for device_config in &config.devices {
             let transport_id = simulation_transport_id(&config.world_id, &device_config.id);
-            let transport = Arc::new(SimulationTransport::new(
+            let backend = self.handle.simulation_backend_factory.create(
+                &config.engine,
+                &config.world_id,
+                device_config,
+            )?;
+            let backend_engine = backend.engine_id().to_string();
+            let transport = Arc::new(SimulationTransport::with_backend(
                 config.world_id.clone(),
-                config.engine.clone(),
                 device_config,
                 config.tick_hz,
                 self.handle.transport_rx_tx.clone(),
+                backend,
             )?);
             transport.start().await?;
             self.handle
@@ -710,12 +730,22 @@ impl OsdlEngine {
             properties.insert("simulation".into(), serde_json::Value::Bool(true));
             properties.insert(
                 "simulation_engine".into(),
-                serde_json::Value::String(config.engine.clone()),
+                serde_json::Value::String(backend_engine),
             );
             properties.insert(
                 "simulation_world".into(),
                 serde_json::Value::String(config.world_id.clone()),
             );
+            if let Some(asset_ref) = &device_config.asset_ref {
+                properties.insert(
+                    "simulation_asset".into(),
+                    serde_json::json!({
+                        "namespace": asset_ref.namespace,
+                        "name": asset_ref.name,
+                        "version": asset_ref.version,
+                    }),
+                );
+            }
             properties.insert("position".into(), serde_json::json!(device_config.position));
 
             let description = if device_config.description.is_empty() {
