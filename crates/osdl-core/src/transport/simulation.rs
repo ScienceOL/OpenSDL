@@ -56,6 +56,21 @@ pub trait SimulationBackend: Send + Sync {
     async fn advance(&self, state: &mut SimulationState, dt: f64);
 }
 
+/// Creates a physics backend for one configured simulation world.
+///
+/// Hosts that embed OpenSDL can inject a factory for a native runtime while
+/// keeping device identity, commands, telemetry, and events on the OpenSDL
+/// contract. The default implementation only exposes the deterministic
+/// kinematic backend shipped in this crate.
+pub trait SimulationBackendFactory: Send + Sync {
+    fn create(
+        &self,
+        engine: &str,
+        world_id: &str,
+        device: &SimulationDeviceConfig,
+    ) -> Result<Arc<dyn SimulationBackend>, String>;
+}
+
 struct KinematicBackend;
 
 #[async_trait]
@@ -157,6 +172,20 @@ fn backend_for(engine: &str) -> Result<Arc<dyn SimulationBackend>, String> {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct BuiltinSimulationBackendFactory;
+
+impl SimulationBackendFactory for BuiltinSimulationBackendFactory {
+    fn create(
+        &self,
+        engine: &str,
+        _world_id: &str,
+        _device: &SimulationDeviceConfig,
+    ) -> Result<Arc<dyn SimulationBackend>, String> {
+        backend_for(engine)
+    }
+}
+
 impl SimulationTransport {
     pub fn new(
         world_id: String,
@@ -165,7 +194,8 @@ impl SimulationTransport {
         tick_hz: u32,
         rx_tx: mpsc::UnboundedSender<TransportRx>,
     ) -> Result<Self, String> {
-        let backend = backend_for(&engine)?;
+        let backend =
+            BuiltinSimulationBackendFactory::default().create(&engine, &world_id, device)?;
         Self::with_backend(world_id, device, tick_hz, rx_tx, backend)
     }
 
@@ -190,6 +220,16 @@ impl SimulationTransport {
         properties.insert("simulation_engine".into(), Value::String(engine.clone()));
         properties.insert("simulation_world".into(), Value::String(world_id.clone()));
         properties.insert("position".into(), json!(device.position));
+        if let Some(asset_ref) = &device.asset_ref {
+            properties.insert(
+                "simulation_asset".into(),
+                json!({
+                    "namespace": asset_ref.namespace,
+                    "name": asset_ref.name,
+                    "version": asset_ref.version,
+                }),
+            );
+        }
 
         Ok(Self {
             inner: Arc::new(Inner {
