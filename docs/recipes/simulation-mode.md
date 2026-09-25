@@ -44,3 +44,21 @@ action surface. Physics remains authoritative in the local OpenSDL runtime;
 the browser does not become a second physics engine. This makes an eventual
 desktop Runner integration and a headless lab host share the same world
 state.
+
+## Hub device models
+
+Each virtual device may pin a published Hub model without copying model bytes
+into the OpenSDL state:
+
+```yaml
+asset_ref:
+  namespace: scienceol
+  name: ur5e
+  version: 1.0.0
+```
+
+The reference is included in simulation telemetry as `simulation_asset`. The
+Web workbench resolves the immutable version through the Hub catalog, loads
+its verified GLB preview in Three, and falls back to a primitive when the
+preview is unavailable. If `asset_ref` is omitted, the workbench uses the
+asset's published `bindings.deviceTypes` declaration to choose a model.
