@@ -1,0 +1,71 @@
+# Deterministic local development world. No MQTT broker or hardware is needed.
+mqtt: null
+simulation:
+  world_id: lab-sim
+  engine: kinematic
+  tick_hz: 10
+  seed: 42
+  devices:
+    - id: heater-1
+      device_type: simulation.heater
+      role: heater
+      description: Virtual temperature-controlled hotplate
+      position: [-1.6, 0.0, 0.0]
+      actions:
+        - name: set_temperature
+          description: Set the target temperature
+          params:
+            type: object
+            properties:
+              temperature:
+                type: number
+                unit: °C
+            required: [temperature]
+        - name: start
+          description: Start heating
+          params: {type: object, properties: {}}
+        - name: stop
+          description: Stop heating
+          params: {type: object, properties: {}}
+      properties:
+        temperature: 22.0
+        target_temperature: 22.0
+        running: false
+    - id: stirrer-1
+      device_type: simulation.stirrer
+      role: stirrer
+      description: Virtual magnetic stirrer
+      position: [0.0, 0.0, 0.0]
+      actions:
+        - name: set_speed
+          description: Set stirring speed
+          params:
+            type: object
+            properties:
+              speed:
+                type: number
+                unit: rpm
+            required: [speed]
+        - name: start
+          description: Start stirring
+          params: {type: object, properties: {}}
+        - name: stop
+          description: Stop stirring
+          params: {type: object, properties: {}}
+      properties:
+        speed: 0.0
+        running: false
+    - id: valve-1
+      device_type: simulation.valve
+      role: valve
+      description: Virtual fluid control valve
+      position: [1.6, 0.0, 0.0]
+      actions:
+        - name: open
+          description: Open the valve
+          params: {type: object, properties: {}}
+        - name: close
+          description: Close the valve
+          params: {type: object, properties: {}}
+      properties:
+        state: closed

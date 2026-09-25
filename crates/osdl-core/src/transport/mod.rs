@@ -19,6 +19,7 @@ pub mod direct_serial;
 pub mod espnow_dongle;
 pub mod mqtt_serial;
 pub mod onvif;
+pub mod simulation;
 pub mod tcp;
 
 use async_trait::async_trait;

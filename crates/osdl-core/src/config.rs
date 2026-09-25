@@ -1,4 +1,5 @@
 use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
+use crate::protocol::ActionSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -51,6 +52,233 @@ pub struct OsdlConfig {
     /// will fall back to the system temp directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_dir: Option<PathBuf>,
+    /// Optional local simulation world. Simulation devices use the same
+    /// Device/Transport/ProtocolAdapter path as physical hardware, so an
+    /// Agent and the UI can develop against them without a connected lab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulation: Option<SimulationConfig>,
+}
+
+/// Configuration for a local simulation world.
+///
+/// `engine` is deliberately a string at this boundary. It is the runtime
+/// capability negotiated by a future backend adapter (for example `rapier`,
+/// `mujoco`, `isaac-sim`, or `gazebo`). The built-in `kinematic` backend is
+/// deterministic and available in every OpenSDL build; unsupported engines
+/// fail with an actionable error instead of silently falling back to it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationConfig {
+    /// Stable world identifier used in simulated transport/device ids.
+    #[serde(default = "default_simulation_world_id")]
+    pub world_id: String,
+    /// Physics/runtime backend name. `kinematic` is the built-in backend.
+    #[serde(default = "default_simulation_engine")]
+    pub engine: String,
+    /// Fixed update frequency for telemetry and deterministic stepping.
+    #[serde(default = "default_simulation_tick_hz")]
+    pub tick_hz: u32,
+    /// Seed reserved for deterministic physics backends.
+    #[serde(default)]
+    pub seed: u64,
+    /// Virtual devices exposed through the normal OpenSDL device contract.
+    #[serde(default = "default_simulation_devices")]
+    pub devices: Vec<SimulationDeviceConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationDeviceConfig {
+    /// Local id inside the simulation world, e.g. `heater-1`.
+    pub id: String,
+    pub device_type: String,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub actions: Vec<ActionSchema>,
+    #[serde(default)]
+    pub properties: HashMap<String, serde_json::Value>,
+    /// Initial scene position in metres. The UI uses this to place entities.
+    #[serde(default)]
+    pub position: [f64; 3],
+}
+
+fn default_simulation_world_id() -> String {
+    "lab-sim".into()
+}
+
+fn default_simulation_engine() -> String {
+    "kinematic".into()
+}
+
+fn default_simulation_tick_hz() -> u32 {
+    10
+}
+
+fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
+    vec![
+        SimulationDeviceConfig {
+            id: "heater-1".into(),
+            device_type: "simulation.heater".into(),
+            role: Some("heater".into()),
+            description: "Virtual temperature-controlled hotplate".into(),
+            actions: vec![
+                action_schema(
+                    "set_temperature",
+                    "Set the target temperature",
+                    serde_json::json!({"type":"object","properties":{"temperature":{"type":"number","unit":"°C"}},"required":["temperature"]}),
+                ),
+                action_schema(
+                    "start",
+                    "Start heating",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+                action_schema(
+                    "stop",
+                    "Stop heating",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+            ],
+            properties: HashMap::from([
+                ("temperature".into(), serde_json::json!(22.0)),
+                ("target_temperature".into(), serde_json::json!(22.0)),
+                ("running".into(), serde_json::json!(false)),
+            ]),
+            position: [-1.6, 0.0, 0.0],
+        },
+        SimulationDeviceConfig {
+            id: "stirrer-1".into(),
+            device_type: "simulation.stirrer".into(),
+            role: Some("stirrer".into()),
+            description: "Virtual magnetic stirrer".into(),
+            actions: vec![
+                action_schema(
+                    "set_speed",
+                    "Set stirring speed",
+                    serde_json::json!({"type":"object","properties":{"speed":{"type":"number","unit":"rpm"}},"required":["speed"]}),
+                ),
+                action_schema(
+                    "start",
+                    "Start stirring",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+                action_schema(
+                    "stop",
+                    "Stop stirring",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+            ],
+            properties: HashMap::from([
+                ("speed".into(), serde_json::json!(0.0)),
+                ("running".into(), serde_json::json!(false)),
+            ]),
+            position: [0.0, 0.0, 0.0],
+        },
+        SimulationDeviceConfig {
+            id: "valve-1".into(),
+            device_type: "simulation.valve".into(),
+            role: Some("valve".into()),
+            description: "Virtual fluid control valve".into(),
+            actions: vec![
+                action_schema(
+                    "open",
+                    "Open the valve",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+                action_schema(
+                    "close",
+                    "Close the valve",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+            ],
+            properties: HashMap::from([("state".into(), serde_json::json!("closed"))]),
+            position: [1.6, 0.0, 0.0],
+        },
+        SimulationDeviceConfig {
+            id: "probe-1".into(),
+            device_type: "simulation.sensor".into(),
+            role: Some("temperature_sensor".into()),
+            description: "Virtual temperature probe".into(),
+            actions: vec![action_schema(
+                "read",
+                "Read the current measurement",
+                serde_json::json!({"type":"object","properties":{}}),
+            )],
+            properties: HashMap::from([
+                ("temperature".into(), serde_json::json!(22.0)),
+                ("unit".into(), serde_json::json!("°C")),
+            ]),
+            position: [0.0, 0.0, 1.8],
+        },
+    ]
+}
+
+fn action_schema(name: &str, description: &str, params: serde_json::Value) -> ActionSchema {
+    ActionSchema {
+        name: name.into(),
+        description: description.into(),
+        params,
+    }
+}
+
+impl Default for SimulationConfig {
+    fn default() -> Self {
+        Self {
+            world_id: default_simulation_world_id(),
+            engine: default_simulation_engine(),
+            tick_hz: default_simulation_tick_hz(),
+            seed: 0,
+            devices: default_simulation_devices(),
+        }
+    }
+}
+
+impl SimulationConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.world_id.trim().is_empty() {
+            return Err("simulation world_id must not be empty".into());
+        }
+        if self.tick_hz == 0 || self.tick_hz > 240 {
+            return Err("simulation tick_hz must be between 1 and 240".into());
+        }
+        if self.engine.trim().is_empty() {
+            return Err("simulation engine must not be empty".into());
+        }
+        if self.devices.is_empty() {
+            return Err("simulation must define at least one device".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for device in &self.devices {
+            if device.id.trim().is_empty() || !ids.insert(&device.id) {
+                return Err(format!(
+                    "simulation device id '{}' is empty or duplicated",
+                    device.id
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod simulation_tests {
+    use super::SimulationConfig;
+
+    #[test]
+    fn default_simulation_is_valid_and_deterministic() {
+        let config = SimulationConfig::default();
+        config.validate().expect("default simulation config");
+        assert_eq!(config.engine, "kinematic");
+        assert_eq!(config.devices.len(), 4);
+    }
+
+    #[test]
+    fn empty_engine_is_rejected() {
+        let mut config = SimulationConfig::default();
+        config.engine.clear();
+        let error = config.validate().expect_err("an empty engine is invalid");
+        assert!(error.contains("engine"));
+    }
 }
 
 /// One physical bus (e.g., RS-485) reached through a single transport,

@@ -12,8 +12,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context};
 use clap::Args;
 use osdl_core::adapter::onvif::OnvifAdapter;
+use osdl_core::adapter::simulation::SimulationAdapter;
 use osdl_core::adapter::unilabos::UniLabOsAdapter;
-use osdl_core::config::{AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig};
+use osdl_core::config::{
+    AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig, SimulationConfig,
+};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::path_expand;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
@@ -81,6 +84,12 @@ pub struct ServeArgs {
     /// non-loopback address; optional on loopback.
     #[arg(long, env = "OSDL_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
+
+    /// Start a deterministic local simulation world with virtual devices.
+    /// The world uses the same Lab Action Model and gRPC surface as physical
+    /// devices, so local development does not require hardware.
+    #[arg(long, env = "OSDL_SIMULATION")]
+    pub simulation: bool,
 }
 
 /// Synchronous entrypoint called from `main`. Handles `--detach` *before*
@@ -372,6 +381,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> = vec![
         Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins())),
         Box::new(OnvifAdapter::new()),
+        Box::new(SimulationAdapter::new()),
     ];
     let mut engine = OsdlEngine::new(config, adapters).with_store(store);
     let handle = engine.handle();
@@ -486,6 +496,10 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
                 baud_rate: args.dongle_baud,
             }];
         }
+    }
+
+    if args.simulation {
+        cfg.simulation = Some(SimulationConfig::default());
     }
 
     Ok(cfg)

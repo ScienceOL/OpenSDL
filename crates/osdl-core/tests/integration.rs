@@ -112,6 +112,67 @@ fn test_engine_creation() {
     let _rx = engine.subscribe_events();
 }
 
+#[tokio::test]
+async fn test_simulation_world_uses_the_device_contract() {
+    use osdl_core::adapter::simulation::SimulationAdapter;
+    use osdl_core::config::{OsdlConfig, SimulationConfig};
+    use osdl_core::event::OsdlEvent;
+    use osdl_core::{EventStore, OsdlEngine};
+
+    let config = OsdlConfig {
+        mqtt: None,
+        simulation: Some(SimulationConfig::default()),
+        ..Default::default()
+    };
+    let adapters: Vec<Box<dyn ProtocolAdapter>> = vec![Box::new(SimulationAdapter::new())];
+    let mut engine = OsdlEngine::new(config, adapters).with_store(EventStore::in_memory().unwrap());
+    let handle = engine.handle();
+    let mut events = handle.subscribe_events();
+    let task = tokio::spawn(async move { engine.run().await });
+
+    let device = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if let Some(device) = handle.get_device("sim:lab-sim:heater-1").await {
+                break device;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("simulation device registered");
+    assert_eq!(device.adapter, "simulation");
+    assert_eq!(device.role.as_deref(), Some("heater"));
+
+    let result = handle
+        .send_command(osdl_core::protocol::DeviceCommand {
+            command_id: "simulation-command".into(),
+            device_id: device.id.clone(),
+            action: "set_temperature".into(),
+            params: serde_json::json!({"temperature": 80.0}),
+        })
+        .await
+        .expect("simulation command");
+    assert_eq!(result.status, osdl_core::protocol::CommandStatus::Pending);
+
+    let status = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if let Ok(OsdlEvent::DeviceStatus(status)) = events.recv().await {
+                if status.device_id == device.id
+                    && status.properties.get("target_temperature") == Some(&serde_json::json!(80.0))
+                {
+                    break status;
+                }
+            }
+        }
+    })
+    .await
+    .expect("simulation status");
+    assert_eq!(status.properties["simulation"], serde_json::json!(true));
+
+    handle.request_stop();
+    task.await.expect("engine task");
+}
+
 #[test]
 fn test_event_store_logging() {
     use osdl_core::event::OsdlEvent;

@@ -1,4 +1,5 @@
 pub mod onvif;
+pub mod simulation;
 pub mod unilabos;
 
 use crate::protocol::*;
