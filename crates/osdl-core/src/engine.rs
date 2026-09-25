@@ -13,6 +13,10 @@ use crate::transport::espnow_dongle::{
 };
 use crate::transport::mqtt_serial::MqttSerialTransport;
 use crate::transport::onvif::{transport_id_for as onvif_transport_id, OnvifTransport};
+use crate::transport::simulation::{
+    device_id_for as simulation_device_id, transport_id_for as simulation_transport_id,
+    SimulationTransport,
+};
 use crate::transport::{Transport, TransportRx};
 
 use rumqttc::AsyncClient;
@@ -475,6 +479,16 @@ impl OsdlEngine {
             device_count: 0,
         });
 
+        if let Err(error) = self.start_simulation().await {
+            log::error!("Failed to start simulation world: {error}");
+            self.stop_simulation().await;
+            let _ = self
+                .handle
+                .status_tx
+                .send(OsdlStatus::Error { message: error });
+            return;
+        }
+
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
@@ -497,6 +511,7 @@ impl OsdlEngine {
         // that case.
         if *stop_rx.borrow() {
             log::info!("OSDL engine stop already requested before run() entered the loop");
+            self.stop_simulation().await;
             let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
             return;
         }
@@ -655,6 +670,8 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
+        self.stop_simulation().await;
+
         if let Some(p) = media_proc.take() {
             p.shutdown().await;
             // Drop the snapshot too so a fresh `run()` doesn't observe
@@ -663,6 +680,96 @@ impl OsdlEngine {
         }
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
+    }
+
+    /// Register the configured local simulation world before entering the
+    /// event loop. Virtual devices use the same transport and adapter path as
+    /// physical devices, which keeps the Agent/UI contract identical.
+    async fn start_simulation(&self) -> Result<(), String> {
+        let Some(config) = self.handle.config.simulation.clone() else {
+            return Ok(());
+        };
+        config.validate()?;
+
+        for device_config in &config.devices {
+            let transport_id = simulation_transport_id(&config.world_id, &device_config.id);
+            let transport = Arc::new(SimulationTransport::new(
+                config.world_id.clone(),
+                config.engine.clone(),
+                device_config,
+                config.tick_hz,
+                self.handle.transport_rx_tx.clone(),
+            )?);
+            transport.start().await?;
+            self.handle
+                .register_transport(transport_id.clone(), transport)
+                .await;
+
+            let device_id = simulation_device_id(&config.world_id, &device_config.id);
+            let mut properties = device_config.properties.clone();
+            properties.insert("simulation".into(), serde_json::Value::Bool(true));
+            properties.insert(
+                "simulation_engine".into(),
+                serde_json::Value::String(config.engine.clone()),
+            );
+            properties.insert(
+                "simulation_world".into(),
+                serde_json::Value::String(config.world_id.clone()),
+            );
+            properties.insert("position".into(), serde_json::json!(device_config.position));
+
+            let description = if device_config.description.is_empty() {
+                format!("Virtual {}", device_config.device_type)
+            } else {
+                device_config.description.clone()
+            };
+            self.handle
+                .register_device(Device {
+                    id: device_id,
+                    transport_id,
+                    device_type: device_config.device_type.clone(),
+                    adapter: crate::adapter::simulation::PLATFORM.into(),
+                    description,
+                    online: true,
+                    properties,
+                    actions: device_config.actions.clone(),
+                    role: device_config.role.clone(),
+                })
+                .await?;
+        }
+
+        log::info!(
+            "Simulation world '{}' started with '{}' backend ({} devices)",
+            config.world_id,
+            config.engine,
+            config.devices.len()
+        );
+        Ok(())
+    }
+
+    async fn stop_simulation(&self) {
+        let Some(config) = self.handle.config.simulation.as_ref() else {
+            return;
+        };
+        let transport_list = {
+            let transports = self.handle.transports.read().await;
+            config
+                .devices
+                .iter()
+                .filter_map(|device| {
+                    let id = simulation_transport_id(&config.world_id, &device.id);
+                    transports
+                        .get(&id)
+                        .cloned()
+                        .map(|transport| (id, transport))
+                })
+                .collect::<Vec<_>>()
+        };
+        for (id, transport) in transport_list {
+            if let Err(error) = transport.stop().await {
+                log::warn!("Failed to stop simulation transport {id}: {error}");
+            }
+        }
     }
 
     /// Spawn mediamtx if any media sources are configured. Emits
