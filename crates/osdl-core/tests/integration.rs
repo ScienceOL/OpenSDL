@@ -142,6 +142,7 @@ async fn test_simulation_world_uses_the_device_contract() {
     .expect("simulation device registered");
     assert_eq!(device.adapter, "simulation");
     assert_eq!(device.role.as_deref(), Some("heater"));
+    assert!(device.actions.iter().any(|action| action.name == "reset"));
 
     let result = handle
         .send_command(osdl_core::protocol::DeviceCommand {
