@@ -40,6 +40,9 @@ struct Inner {
 
 #[derive(Debug, Clone)]
 pub struct SimulationState {
+    /// Properties declared by the simulation device configuration. Backends
+    /// use this snapshot to make reset deterministic across repeated runs.
+    pub initial_properties: HashMap<String, Value>,
     pub properties: HashMap<String, Value>,
     pub step: u64,
     pub last_action: Option<String>,
@@ -54,6 +57,14 @@ pub trait SimulationBackend: Send + Sync {
     fn engine_id(&self) -> &str;
     async fn apply_action(&self, state: &mut SimulationState, action: &str, params: &Value);
     async fn advance(&self, state: &mut SimulationState, dt: f64);
+
+    /// Restore the device's configured state. Physics integrations can
+    /// override this to reset their world state alongside the OpenSDL view.
+    async fn reset(&self, state: &mut SimulationState) {
+        state.properties = state.initial_properties.clone();
+        state.step = 0;
+        state.last_action = Some("reset".into());
+    }
 }
 
 /// Creates a physics backend for one configured simulation world.
@@ -82,6 +93,7 @@ impl SimulationBackend for KinematicBackend {
     async fn apply_action(&self, state: &mut SimulationState, action: &str, params: &Value) {
         state.last_action = Some(action.to_string());
         match action {
+            "reset" => self.reset(state).await,
             "start" | "resume" => {
                 state.properties.insert("running".into(), Value::Bool(true));
             }
@@ -257,6 +269,7 @@ impl SimulationTransport {
                 position: device.position,
                 tick_hz,
                 state: Mutex::new(SimulationState {
+                    initial_properties: properties.clone(),
                     properties,
                     step: 0,
                     last_action: None,
@@ -494,6 +507,48 @@ mod tests {
         let cleared = rx.recv().await.expect("cleared telemetry");
         let payload: Value = serde_json::from_slice(&cleared.data).expect("json");
         assert!(payload["properties"].get("simulation_asset").is_none());
+        transport.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn reset_restores_configured_properties_and_step() {
+        let config = SimulationConfig::default();
+        let device = config.devices.first().expect("default heater");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let transport =
+            SimulationTransport::new(config.world_id, config.engine, device, config.tick_hz, tx)
+                .expect("kinematic backend");
+        transport.start().await.expect("start");
+        let _ = rx.recv().await.expect("initial telemetry");
+
+        let set_temperature = DeviceCommand {
+            command_id: "reset-temperature-command".into(),
+            device_id: device_id_for("lab-sim", &device.id),
+            action: "set_temperature".into(),
+            params: json!({"temperature": 80.0}),
+        };
+        transport
+            .send(&serde_json::to_vec(&set_temperature).expect("encode"))
+            .await
+            .expect("set temperature");
+        let _ = rx.recv().await.expect("temperature telemetry");
+
+        let reset = DeviceCommand {
+            command_id: "reset-command".into(),
+            device_id: device_id_for("lab-sim", &device.id),
+            action: "reset".into(),
+            params: json!({}),
+        };
+        transport
+            .send(&serde_json::to_vec(&reset).expect("encode"))
+            .await
+            .expect("reset");
+        let telemetry = rx.recv().await.expect("reset telemetry");
+        let payload: Value = serde_json::from_slice(&telemetry.data).expect("json");
+        assert_eq!(payload["properties"]["temperature"], json!(22.0));
+        assert_eq!(payload["properties"]["target_temperature"], json!(22.0));
+        assert_eq!(payload["properties"]["step"], json!(0));
+        assert_eq!(payload["last_action"], json!("reset"));
         transport.stop().await.expect("stop");
     }
 }

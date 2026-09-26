@@ -753,6 +753,15 @@ impl OsdlEngine {
             } else {
                 device_config.description.clone()
             };
+            let mut actions = device_config.actions.clone();
+            if actions.iter().all(|action| action.name != "reset") {
+                actions.push(ActionSchema {
+                    name: "reset".into(),
+                    description: "Restore this virtual device to its configured initial state"
+                        .into(),
+                    params: serde_json::json!({"type":"object","properties":{}}),
+                });
+            }
             self.handle
                 .register_device(Device {
                     id: device_id,
@@ -762,7 +771,7 @@ impl OsdlEngine {
                     description,
                     online: true,
                     properties,
-                    actions: device_config.actions.clone(),
+                    actions,
                     role: device_config.role.clone(),
                 })
                 .await?;
