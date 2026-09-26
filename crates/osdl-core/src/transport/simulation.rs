@@ -121,6 +121,23 @@ impl SimulationBackend for KinematicBackend {
                         .insert("position_value".into(), json!(value));
                 }
             }
+            "set_asset" => {
+                let namespace = params.get("namespace").and_then(Value::as_str);
+                let name = params.get("name").and_then(Value::as_str);
+                if let (Some(namespace), Some(name)) = (namespace, name) {
+                    let mut asset = json!({
+                        "namespace": namespace,
+                        "name": name,
+                    });
+                    if let Some(version) = params.get("version").and_then(Value::as_str) {
+                        asset["version"] = json!(version);
+                    }
+                    state.properties.insert("simulation_asset".into(), asset);
+                }
+            }
+            "clear_asset" => {
+                state.properties.remove("simulation_asset");
+            }
             _ => {
                 state
                     .properties
@@ -312,6 +329,23 @@ impl Transport for SimulationTransport {
             .and_then(Value::as_str)
             .ok_or("simulation: command missing action")?;
         let params = command.get("params").cloned().unwrap_or_else(|| json!({}));
+        if action == "set_asset" {
+            let namespace = params
+                .get("namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+            if namespace.trim().is_empty() || name.trim().is_empty() {
+                return Err("simulation: set_asset requires namespace and name".into());
+            }
+            if params
+                .get("version")
+                .and_then(Value::as_str)
+                .is_some_and(|version| version.trim().is_empty())
+            {
+                return Err("simulation: set_asset version must not be empty".into());
+            }
+        }
         self.apply_action(action, &params).await;
         self.emit_status().await;
         Ok(())
@@ -408,6 +442,58 @@ mod tests {
         let update = rx.recv().await.expect("action telemetry");
         let payload: Value = serde_json::from_slice(&update.data).expect("json");
         assert_eq!(payload["properties"]["target_temperature"], json!(80.0));
+        transport.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn binds_and_clears_a_hub_asset_at_runtime() {
+        let config = SimulationConfig::default();
+        let device = config.devices.first().expect("default heater");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let transport =
+            SimulationTransport::new(config.world_id, config.engine, device, config.tick_hz, tx)
+                .expect("kinematic backend");
+        transport.start().await.expect("start");
+        let _ = rx.recv().await.expect("initial telemetry");
+
+        let command = DeviceCommand {
+            command_id: "asset-command".into(),
+            device_id: device_id_for("lab-sim", &device.id),
+            action: "set_asset".into(),
+            params: json!({
+                "namespace": "scienceol",
+                "name": "heater-dalong",
+                "version": "1.0.0"
+            }),
+        };
+        transport
+            .send(&serde_json::to_vec(&command).expect("encode"))
+            .await
+            .expect("bind asset");
+        let bound = rx.recv().await.expect("asset telemetry");
+        let payload: Value = serde_json::from_slice(&bound.data).expect("json");
+        assert_eq!(
+            payload["properties"]["simulation_asset"],
+            json!({
+                "namespace": "scienceol",
+                "name": "heater-dalong",
+                "version": "1.0.0"
+            })
+        );
+
+        let clear = DeviceCommand {
+            command_id: "clear-asset-command".into(),
+            device_id: device_id_for("lab-sim", &device.id),
+            action: "clear_asset".into(),
+            params: json!({}),
+        };
+        transport
+            .send(&serde_json::to_vec(&clear).expect("encode"))
+            .await
+            .expect("clear asset");
+        let cleared = rx.recv().await.expect("cleared telemetry");
+        let payload: Value = serde_json::from_slice(&cleared.data).expect("json");
+        assert!(payload["properties"].get("simulation_asset").is_none());
         transport.stop().await.expect("stop");
     }
 }

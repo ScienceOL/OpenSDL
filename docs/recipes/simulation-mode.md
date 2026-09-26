@@ -62,3 +62,10 @@ Web workbench resolves the immutable version through the Hub catalog, loads
 its verified GLB preview in Three, and falls back to a primitive when the
 preview is unavailable. If `asset_ref` is omitted, the workbench uses the
 asset's published `bindings.deviceTypes` declaration to choose a model.
+
+The workbench can also bind a published model to a running virtual device. The
+`set_asset` and `clear_asset` actions only change the simulation world's visual
+identity; they never copy Hub bytes into OpenSDL or alter a physical device.
+The binding is emitted in the next telemetry snapshot, so Web and Mobile stay
+consistent while the process is running. Persist a durable binding in
+`asset_ref` when the world should start with the same model every time.
