@@ -598,11 +598,8 @@ mod tests {
 
     #[test]
     fn simulation_flag_preserves_recipe_world() {
-        let path = std::env::temp_dir().join(format!(
-            "opensdl-simulation-{}-{}.yaml",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("test")
-        ));
+        let path =
+            std::env::temp_dir().join(format!("opensdl-simulation-{}.yaml", std::process::id()));
         std::fs::write(&path, "mqtt: null\nsimulation:\n  world_id: custom-world\n")
             .expect("write simulation recipe");
 
