@@ -152,6 +152,8 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                     "Stop heating",
                     serde_json::json!({"type":"object","properties":{}}),
                 ),
+                simulation_set_asset_action(),
+                simulation_clear_asset_action(),
             ],
             properties: HashMap::from([
                 ("temperature".into(), serde_json::json!(22.0)),
@@ -182,6 +184,8 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                     "Stop stirring",
                     serde_json::json!({"type":"object","properties":{}}),
                 ),
+                simulation_set_asset_action(),
+                simulation_clear_asset_action(),
             ],
             properties: HashMap::from([
                 ("speed".into(), serde_json::json!(0.0)),
@@ -206,6 +210,8 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
                     "Close the valve",
                     serde_json::json!({"type":"object","properties":{}}),
                 ),
+                simulation_set_asset_action(),
+                simulation_clear_asset_action(),
             ],
             properties: HashMap::from([("state".into(), serde_json::json!("closed"))]),
             asset_ref: None,
@@ -216,11 +222,15 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
             device_type: "simulation.sensor".into(),
             role: Some("temperature_sensor".into()),
             description: "Virtual temperature probe".into(),
-            actions: vec![action_schema(
-                "read",
-                "Read the current measurement",
-                serde_json::json!({"type":"object","properties":{}}),
-            )],
+            actions: vec![
+                action_schema(
+                    "read",
+                    "Read the current measurement",
+                    serde_json::json!({"type":"object","properties":{}}),
+                ),
+                simulation_set_asset_action(),
+                simulation_clear_asset_action(),
+            ],
             properties: HashMap::from([
                 ("temperature".into(), serde_json::json!(22.0)),
                 ("unit".into(), serde_json::json!("°C")),
@@ -237,6 +247,30 @@ fn action_schema(name: &str, description: &str, params: serde_json::Value) -> Ac
         description: description.into(),
         params,
     }
+}
+
+fn simulation_set_asset_action() -> ActionSchema {
+    action_schema(
+        "set_asset",
+        "Bind a verified Hub model to this virtual device",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "namespace": {"type": "string"},
+                "name": {"type": "string"},
+                "version": {"type": "string"}
+            },
+            "required": ["namespace", "name"]
+        }),
+    )
+}
+
+fn simulation_clear_asset_action() -> ActionSchema {
+    action_schema(
+        "clear_asset",
+        "Use the built-in primitive preview for this virtual device",
+        serde_json::json!({"type":"object","properties":{}}),
+    )
 }
 
 impl Default for SimulationConfig {
