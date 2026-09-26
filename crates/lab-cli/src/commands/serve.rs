@@ -437,15 +437,24 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
             .unwrap_or_else(|| PathBuf::from("."));
         (cfg, dir)
     } else {
-        // No config: ship a sensible default — MQTT broker on, unilabos
-        // adapter, optional ESP-NOW dongle.
+        // No config: ship the physical default unless simulation was
+        // explicitly requested. A virtual lab must not probe a host's
+        // physical registry or broker just because no recipe was supplied.
         let dir = std::env::current_dir().context("read current dir")?;
         let cfg = OsdlConfig {
-            mqtt: Some(MqttConfig::default()),
-            adapters: vec![AdapterConfig {
-                adapter_type: "unilabos".into(),
-                registry_path: None,
-            }],
+            mqtt: if args.simulation {
+                None
+            } else {
+                Some(MqttConfig::default())
+            },
+            adapters: if args.simulation {
+                Vec::new()
+            } else {
+                vec![AdapterConfig {
+                    adapter_type: "unilabos".into(),
+                    registry_path: None,
+                }]
+            },
             ..Default::default()
         };
         (cfg, dir)
@@ -472,7 +481,7 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
                 a.registry_path = Some(reg_str.clone());
             }
         }
-    } else {
+    } else if !args.simulation {
         // Final fallback for adapters with no registry configured — pick
         // the registry that ships next to the config file. With a config
         // file, that's `<config_dir>/registry/unilabos`; without one,
@@ -491,15 +500,30 @@ fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
             // authoritative answer for "which serial device is plugged in
             // *right now*", and shipping multiple at once would just
             // confuse the engine.
-            cfg.espnow_dongles = vec![EspNowDongleConfig {
-                port: port.clone(),
-                baud_rate: args.dongle_baud,
-            }];
+            if args.simulation {
+                log::warn!("--simulation ignores --dongle-port; no physical hardware is started");
+            } else {
+                cfg.espnow_dongles = vec![EspNowDongleConfig {
+                    port: port.clone(),
+                    baud_rate: args.dongle_baud,
+                }];
+            }
         }
     }
 
     if args.simulation {
-        cfg.simulation = Some(SimulationConfig::default());
+        // Preserve a world declared by the recipe. The flag is an enablement
+        // shortcut, not a request to discard the user's device definitions.
+        if cfg.simulation.is_none() {
+            cfg.simulation = Some(SimulationConfig::default());
+        }
+        // A simulation process must not open a serial port from a recipe
+        // copied from a physical lab. Use an explicit simulation recipe for
+        // mixed deployments instead of silently combining the two modes.
+        if !cfg.espnow_dongles.is_empty() {
+            log::warn!("--simulation ignores ESP-NOW dongles from the recipe");
+            cfg.espnow_dongles.clear();
+        }
     }
 
     Ok(cfg)
@@ -531,5 +555,63 @@ fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
     }
     if let Some(bin) = cfg.media_gateway.binary.as_deref() {
         cfg.media_gateway.binary = Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(simulation: bool, config: Option<PathBuf>) -> ServeArgs {
+        ServeArgs {
+            config,
+            instance: "test-simulation".into(),
+            socket: None,
+            listen: None,
+            data_dir: None,
+            registry: None,
+            dongle_port: None,
+            dongle_baud: 115_200,
+            #[cfg(unix)]
+            detach: false,
+            log_file: None,
+            auth_token: None,
+            simulation,
+        }
+    }
+
+    #[test]
+    fn simulation_without_recipe_has_no_physical_defaults() {
+        let config = build_config(&args(true, None)).expect("simulation config");
+
+        assert!(config.mqtt.is_none());
+        assert!(config.adapters.is_empty());
+        assert!(config.espnow_dongles.is_empty());
+        assert_eq!(
+            config
+                .simulation
+                .expect("default simulation world")
+                .world_id,
+            "lab-sim"
+        );
+    }
+
+    #[test]
+    fn simulation_flag_preserves_recipe_world() {
+        let path = std::env::temp_dir().join(format!(
+            "opensdl-simulation-{}-{}.yaml",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        std::fs::write(&path, "mqtt: null\nsimulation:\n  world_id: custom-world\n")
+            .expect("write simulation recipe");
+
+        let config = build_config(&args(true, Some(path.clone()))).expect("recipe config");
+        let _ = std::fs::remove_file(path);
+
+        assert_eq!(
+            config.simulation.expect("recipe simulation world").world_id,
+            "custom-world"
+        );
     }
 }
