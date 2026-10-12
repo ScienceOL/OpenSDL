@@ -213,3 +213,61 @@ fn rejects_hard_links_inside_the_asset_root() {
     let error = VirtualAssetManifest::load(&hardlink_fixture.root).expect_err("hard link fails");
     assert!(error.to_string().contains("hard link"));
 }
+
+#[test]
+fn runnable_asset_preserves_a_closed_runtime_declaration() {
+    let fixture = AssetFixture::visual();
+    let yaml = base_manifest().replace(
+        "  type: robot",
+        "  type: robot\n  runtime:\n    engine: kinematic\n    config: world.yaml",
+    );
+    fixture.replace_manifest(&yaml);
+    fs::write(
+        fixture.root.join("world.yaml"),
+        "engine: kinematic\nworld_id: demo\n",
+    )
+    .unwrap();
+    let asset = VirtualAssetManifest::load(&fixture.root).expect("runnable asset");
+    let document = serde_json::to_value(asset.manifest).unwrap();
+    assert_eq!(
+        document["spec"]["runtime"],
+        serde_json::json!({"engine":"kinematic","config":"world.yaml"})
+    );
+}
+
+#[test]
+fn runtime_config_must_be_bundled_and_cannot_escape_the_asset() {
+    for config in [
+        "missing.yaml",
+        "../world.yaml",
+        "/world.yaml",
+        "https://example.org/world.yaml",
+    ] {
+        let fixture = AssetFixture::visual();
+        fixture.replace_manifest(&base_manifest().replace(
+            "  type: robot",
+            &format!("  type: robot\n  runtime:\n    engine: kinematic\n    config: {config}"),
+        ));
+        assert!(
+            VirtualAssetManifest::load(&fixture.root).is_err(),
+            "accepted {config}"
+        );
+    }
+}
+
+#[test]
+fn runtime_requires_simulation_capability_and_a_supported_engine() {
+    for (engine, capability) in [("mujoco", true), ("kinematic", false)] {
+        let fixture = AssetFixture::visual();
+        let mut yaml = base_manifest().replace(
+            "  type: robot",
+            &format!("  type: robot\n  runtime:\n    engine: {engine}\n    config: world.yaml"),
+        );
+        if !capability {
+            yaml = yaml.replace("    - simulation\n", "");
+        }
+        fixture.replace_manifest(&yaml);
+        fs::write(fixture.root.join("world.yaml"), "engine: kinematic\n").unwrap();
+        assert!(VirtualAssetManifest::load(&fixture.root).is_err());
+    }
+}

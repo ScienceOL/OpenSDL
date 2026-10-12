@@ -1,0 +1,23 @@
+apiVersion: assets.opensdl.org/v1alpha1
+kind: VirtualAsset
+metadata:
+  name: kinematic-lab
+  displayName: Kinematic Lab
+  version: 1.0.0
+  description: A deterministic local world with heater, stirrer, valve and sensor devices.
+  tags: [example, kinematic]
+  license:
+    spdx: MIT
+    file: LICENSE
+spec:
+  type: scene
+  source:
+    format: openusd
+    root: scene.usda
+  preview:
+    model: preview.glb
+    thumbnail: thumbnail.png
+  capabilities: [visual, scene, simulation]
+  runtime:
+    engine: kinematic
+    config: world.yaml

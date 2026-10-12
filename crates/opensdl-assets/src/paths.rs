@@ -15,6 +15,7 @@ pub struct ValidatedPaths {
     pub source_root: PathBuf,
     pub preview_model: PathBuf,
     pub thumbnail: PathBuf,
+    pub runtime_config: Option<PathBuf>,
 }
 
 impl ValidatedPaths {
@@ -32,6 +33,12 @@ impl ValidatedPaths {
                 "preview model",
             )?,
             thumbnail: resolve_declared_file(root, &manifest.spec.preview.thumbnail, "thumbnail")?,
+            runtime_config: manifest
+                .spec
+                .runtime
+                .as_ref()
+                .map(|runtime| resolve_declared_file(root, &runtime.config, "runtime config"))
+                .transpose()?,
         };
 
         validate_non_empty_license(&paths.license)?;

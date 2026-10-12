@@ -55,9 +55,15 @@ impl Catalog {
             Err(error) => return Err(AssetError::read(path, error)),
         }
         let connection = Connection::open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+                .map_err(|error| AssetError::read(path, error))?;
+        }
         connection.busy_timeout(std::time::Duration::from_secs(10))?;
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version > 1 {
+        if version > 2 {
             return Err(AssetError::invalid(
                 "unsupported local resource catalog version",
             ));
@@ -72,6 +78,16 @@ impl Catalog {
                 PRAGMA user_version = 1;
                 COMMIT;"
             ))?;
+        }
+        if version < 2 {
+            connection.execute_batch(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE managed_instance (
+                    name TEXT PRIMARY KEY, digest TEXT NOT NULL, created_at INTEGER NOT NULL,
+                    state TEXT NOT NULL, generation INTEGER NOT NULL, config TEXT NOT NULL,
+                    token TEXT NOT NULL, pid INTEGER, endpoint TEXT, error TEXT);
+                PRAGMA user_version = 2; COMMIT;",
+            )?;
         }
         Ok(Self { connection })
     }

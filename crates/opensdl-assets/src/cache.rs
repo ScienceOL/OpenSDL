@@ -314,6 +314,14 @@ impl AssetCache {
 }
 
 impl CacheLease {
+    pub fn materialize(
+        &self,
+        digest: &str,
+        destination: &Path,
+    ) -> Result<crate::ValidatedAsset, AssetError> {
+        crate::materialize::materialize_unlocked(&self.cache, digest, destination)
+    }
+
     pub fn import_layout(
         &self,
         layout: &Path,

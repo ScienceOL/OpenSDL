@@ -14,8 +14,9 @@ pub use catalog::{AssetSummary, PruneReport};
 pub use layout::inspect_layout;
 pub use manifest::{
     AssetBindings, AssetCompatibility, AssetError, AssetLicense, AssetMetadata, AssetPreview,
-    AssetSource, AssetSpec, AssetType, Capability, CompatibilityStatus, RuntimeCompatibility,
-    SourceFormat, ValidatedAsset, VirtualAssetManifest, API_VERSION, KIND,
+    AssetRuntime, AssetSource, AssetSpec, AssetType, Capability, CompatibilityStatus,
+    RuntimeCompatibility, RuntimeEngine, SourceFormat, ValidatedAsset, VirtualAssetManifest,
+    API_VERSION, KIND,
 };
 pub use materialize::materialize;
 pub use media_types::{

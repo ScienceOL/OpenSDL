@@ -2,12 +2,18 @@
 name = "osdl-server"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "gRPC server library wrapping the OpenSDL engine"
 
 [dependencies]
 osdl-core = { path = "../osdl-core" }
+opensdl-assets = { path = "../opensdl-assets" }
+rusqlite.workspace = true
+serde_yaml.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
 osdl-proto = { path = "../osdl-proto" }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
