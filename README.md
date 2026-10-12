@@ -295,3 +295,16 @@ lab asset prune --dry-run --json --cache-dir ./lab-store
 transactional local metadata; tags do not push packages to a registry. Pruning
 without `--dry-run` reclaims unreferenced, unoccupied packages and shared blobs
 only when no retained package still needs them.
+
+## CI and release delivery
+
+Pull requests and `main` run the complete Rust workspace on Linux, macOS and
+native Windows. Linux additionally runs the OCI registry integration tests.
+Instance command tests capture stdout/stderr and bound each CLI invocation to
+20 seconds, so detached workers cannot silently hang the job. Workflow tests
+also have explicit deadlines and preserve registry diagnostics before cleanup.
+
+PR release jobs validate the cargo-dist plan. The six release packages and
+installers are built only for version tags. Regenerate the release workflow
+with cargo-dist 0.32.0 after changing `dist-workspace.toml`; do not duplicate
+release packaging in the native test lanes.

@@ -1,17 +1,27 @@
 name: Checks
 
 on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
   workflow_call:
     inputs:
       plan:
-        required: true
+        required: false
+        default: ""
         type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -21,12 +31,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Check README installer URLs against the release plan
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && inputs.plan != ''
         env:
           DIST_PLAN: ${{ inputs.plan }}
         run: |
@@ -45,16 +55,24 @@ jobs:
               assert plan["artifacts"][name]["kind"] == "installer", f"Not a planned installer: {name}"
           PY
       - run: cargo fmt --all --check
+        timeout-minutes: 2
       - name: Start disposable OCI registry
         if: runner.os == 'Linux'
         run: |
-          docker run --detach --publish 127.0.0.1:5000:5000 registry:3
+          docker run --name opensdl-test-registry --detach --publish 127.0.0.1:5000:5000 registry:3
           curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors --retry-max-time 30 --max-time 2 http://127.0.0.1:5000/v2/
       - name: Test workspace including OCI integration
+        timeout-minutes: 12
         if: runner.os == 'Linux'
         env:
           OPENSDL_TEST_REGISTRY: localhost:5000
         run: cargo test --workspace --locked -- --include-ignored
       - name: Test workspace on macOS and Windows
+        timeout-minutes: 12
         if: runner.os != 'Linux'
         run: cargo test --workspace --locked
+      - name: Registry diagnostics and cleanup
+        if: always() && runner.os == 'Linux'
+        run: |
+          docker logs opensdl-test-registry || true
+          docker rm --force --volumes opensdl-test-registry || true
