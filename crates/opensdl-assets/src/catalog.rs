@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
 const APPLICATION_ID: u32 = 0x4f53444c;
 use serde::Serialize;
@@ -63,7 +63,7 @@ impl Catalog {
         }
         connection.busy_timeout(std::time::Duration::from_secs(10))?;
         let version: u32 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version > 2 {
+        if version > 3 {
             return Err(AssetError::invalid(
                 "unsupported local resource catalog version",
             ));
@@ -87,6 +87,14 @@ impl Catalog {
                     state TEXT NOT NULL, generation INTEGER NOT NULL, config TEXT NOT NULL,
                     token TEXT NOT NULL, pid INTEGER, endpoint TEXT, error TEXT);
                 PRAGMA user_version = 2; COMMIT;",
+            )?;
+        }
+        if version < 3 {
+            connection.execute_batch(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE instance_sequence(value INTEGER NOT NULL);
+                INSERT INTO instance_sequence SELECT COALESCE(MAX(generation),0) FROM managed_instance;
+                PRAGMA user_version = 3; COMMIT;",
             )?;
         }
         Ok(Self { connection })
@@ -113,15 +121,37 @@ impl Catalog {
 
     pub(crate) fn resolve(&self, reference: &AssetReference) -> Result<String, AssetError> {
         if let Some(digest) = reference.digest() {
+            self.require_package(digest)?;
             return Ok(digest.to_owned());
         }
-        self.connection
+        let digest: String = self
+            .connection
             .query_row(
                 "SELECT digest FROM reference WHERE name=?1",
                 [reference.to_string()],
                 |row| row.get(0),
             )
-            .map_err(Into::into)
+            .optional()?
+            .ok_or_else(|| AssetError::NotFound(reference.to_string()))?;
+        self.require_package(&digest).map_err(|error| match error {
+            AssetError::NotFound(_) => {
+                AssetError::invalid("reference points to a package missing from inventory")
+            }
+            other => other,
+        })?;
+        Ok(digest)
+    }
+
+    pub(crate) fn require_package(&self, digest: &str) -> Result<(), AssetError> {
+        let admitted: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM package WHERE digest=?1)",
+            [digest],
+            |row| row.get(0),
+        )?;
+        if !admitted {
+            return Err(AssetError::NotFound(digest.to_owned()));
+        }
+        Ok(())
     }
 
     pub(crate) fn packages(&self) -> Result<Vec<PackageDescriptor>, AssetError> {

@@ -204,13 +204,13 @@ firmware/
 └── esp32-cpp/                   # MQTT bridge (C++ / PlatformIO)
 ```
 
-## View devices connected to your SciLaxy account
+## View devices connected to your LiyanLabs account
 
-Create an OpenSDL API token in SciLaxy **Settings → Clients**. The token is
+Create an OpenSDL API token in LiyanLabs **Settings → Clients**. The token is
 shown once. Save it with the CLI, then query your online runners and devices:
 
 ```bash
-lab api login --server https://scilaxy.ai
+lab api login --server https://liyanlabs.ai
 lab api devices
 lab api devices --json
 lab api logout
@@ -226,7 +226,7 @@ a serial port or identify a device driver.
 
 ## Build from source
 
-Install a current stable [Rust toolchain](https://rustup.rs/) and your platform's
+Install Rust 1.89 or newer with [rustup](https://rustup.rs/) and your platform's
 C/C++ build tools (Xcode Command Line Tools on macOS, a C compiler on Linux,
 or Visual Studio Build Tools with the C++ workload on Windows). Protobuf's
 compiler is supplied by the build; you do not need to install it separately.

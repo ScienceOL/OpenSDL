@@ -5,7 +5,7 @@ use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::secrets::RegistryAuth;
 use oci_client::Client;
 
-use crate::cache::{AssetCache, CacheLease};
+use crate::cache::AssetCache;
 use crate::layout::{validate_manifest_shape, verify_blob};
 use crate::manifest::AssetError;
 use crate::media_types::{ARTIFACT_TYPE, MANIFEST_MEDIA_TYPE};
@@ -122,8 +122,8 @@ impl RegistryClient {
         credentials: &RegistryCredentials,
         offline: bool,
     ) -> Result<PullResult, AssetError> {
-        let lease = cache.lock_async().await?;
         if offline {
+            let _lease = cache.lock_async().await?;
             let resolved_digest = cache.resolve_reference(reference)?;
             let package = cache.package(&resolved_digest)?;
             return Ok(PullResult {
@@ -151,8 +151,34 @@ impl RegistryClient {
             artifact_type: Some(ARTIFACT_TYPE.to_owned()),
             annotations: Default::default(),
         };
+        // Keep each verified candidate in private staging until the whole graph
+        // can be published. Network waits never hold the artifact lease; GC
+        // cannot reclaim staging files owned by this pull.
+        let mut staged = Vec::new();
         let mut downloaded_blobs = 0_usize;
         let mut reused_blobs = 0_usize;
+        for descriptor in std::iter::once(&manifest.config).chain(manifest.layers.iter()) {
+            let temporary = cache.temporary_blob()?;
+            let reused = {
+                let _lease = cache.lock_async().await?;
+                if cache.contains(descriptor)? {
+                    std::fs::copy(cache.blob_path(&descriptor.digest)?, temporary.path())
+                        .map_err(|error| AssetError::read(temporary.path(), error))?;
+                    true
+                } else {
+                    false
+                }
+            };
+            if reused {
+                reused_blobs += 1;
+            } else {
+                self.pull_blob(&client, reference, descriptor, &temporary)
+                    .await?;
+                downloaded_blobs += 1;
+            }
+            staged.push((descriptor, temporary));
+        }
+        let lease = cache.lock_async().await?;
         if cache.contains(&manifest_descriptor)? {
             reused_blobs += 1;
         } else {
@@ -160,14 +186,8 @@ impl RegistryClient {
             downloaded_blobs += 1;
         }
 
-        for descriptor in std::iter::once(&manifest.config).chain(manifest.layers.iter()) {
-            if cache.contains(descriptor)? {
-                reused_blobs += 1;
-                continue;
-            }
-            self.pull_blob(&client, reference, descriptor, cache, &lease)
-                .await?;
-            downloaded_blobs += 1;
+        for (descriptor, temporary) in staged {
+            lease.persist(descriptor, temporary)?;
         }
 
         let package = lease.publish(&resolved_digest, Some(reference))?;
@@ -198,10 +218,8 @@ impl RegistryClient {
         client: &Client,
         reference: &AssetReference,
         descriptor: &OciDescriptor,
-        cache: &AssetCache,
-        lease: &CacheLease,
+        temporary: &tempfile::NamedTempFile,
     ) -> Result<(), AssetError> {
-        let temporary = cache.temporary_blob()?;
         let std_file = temporary
             .reopen()
             .map_err(|source| AssetError::read(temporary.path(), source))?;
@@ -214,7 +232,7 @@ impl RegistryClient {
             .await
             .map_err(|source| AssetError::read(temporary.path(), source))?;
         drop(file);
-        lease.persist(descriptor, temporary)
+        Ok(())
     }
 }
 
