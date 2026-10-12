@@ -5,7 +5,7 @@ use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::secrets::RegistryAuth;
 use oci_client::Client;
 
-use crate::cache::AssetCache;
+use crate::cache::{AssetCache, CacheLease};
 use crate::layout::{validate_manifest_shape, verify_blob};
 use crate::manifest::AssetError;
 use crate::media_types::{ARTIFACT_TYPE, MANIFEST_MEDIA_TYPE};
@@ -73,11 +73,7 @@ impl RegistryClient {
         reference: &AssetReference,
         credentials: &RegistryCredentials,
     ) -> Result<PushResult, AssetError> {
-        if reference.tag().is_none() || reference.digest().is_some() {
-            return Err(AssetError::invalid(
-                "push requires a tag reference, not a digest reference",
-            ));
-        }
+        reference.require_tag()?;
         let package = crate::inspect_layout(layout)?;
         let auth = credentials.as_oci();
         let client = self.client();
@@ -126,6 +122,7 @@ impl RegistryClient {
         credentials: &RegistryCredentials,
         offline: bool,
     ) -> Result<PullResult, AssetError> {
+        let lease = cache.lock_async().await?;
         if offline {
             let resolved_digest = cache.resolve_reference(reference)?;
             let package = cache.package(&resolved_digest)?;
@@ -159,7 +156,7 @@ impl RegistryClient {
         if cache.contains(&manifest_descriptor)? {
             reused_blobs += 1;
         } else {
-            cache.store_bytes(&manifest_descriptor, &manifest_bytes)?;
+            lease.store_bytes(&manifest_descriptor, &manifest_bytes)?;
             downloaded_blobs += 1;
         }
 
@@ -168,13 +165,12 @@ impl RegistryClient {
                 reused_blobs += 1;
                 continue;
             }
-            self.pull_blob(&client, reference, descriptor, cache)
+            self.pull_blob(&client, reference, descriptor, cache, &lease)
                 .await?;
             downloaded_blobs += 1;
         }
 
-        cache.record_reference(reference, &resolved_digest)?;
-        let package = cache.package(&resolved_digest)?;
+        let package = lease.publish(&resolved_digest, Some(reference))?;
         Ok(PullResult {
             reference: reference.to_string(),
             resolved_digest,
@@ -203,6 +199,7 @@ impl RegistryClient {
         reference: &AssetReference,
         descriptor: &OciDescriptor,
         cache: &AssetCache,
+        lease: &CacheLease,
     ) -> Result<(), AssetError> {
         let temporary = cache.temporary_blob()?;
         let std_file = temporary
@@ -217,7 +214,7 @@ impl RegistryClient {
             .await
             .map_err(|source| AssetError::read(temporary.path(), source))?;
         drop(file);
-        cache.persist(descriptor, temporary)
+        lease.persist(descriptor, temporary)
     }
 }
 

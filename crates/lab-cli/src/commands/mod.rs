@@ -1,4 +1,5 @@
 pub mod api;
+pub mod asset;
 pub mod device;
 pub mod events;
 pub mod inspect;

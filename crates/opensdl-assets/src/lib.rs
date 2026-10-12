@@ -1,4 +1,5 @@
 mod cache;
+mod catalog;
 mod layout;
 mod manifest;
 mod materialize;
@@ -8,7 +9,8 @@ mod paths;
 mod reference;
 mod registry;
 
-pub use cache::AssetCache;
+pub use cache::{AssetCache, CacheLease};
+pub use catalog::{AssetSummary, PruneReport};
 pub use layout::inspect_layout;
 pub use manifest::{
     AssetBindings, AssetCompatibility, AssetError, AssetLicense, AssetMetadata, AssetPreview,

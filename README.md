@@ -276,3 +276,22 @@ Tagged versions run the same checks before publication. See
 ## License
 
 MIT
+
+## Local resource management (source builds)
+
+The resource-management commands require building the current source; they are
+not yet in the public CLI release. Use one explicit store for an isolated lab:
+
+```bash
+lab asset import ./layout --tag localhost/lab/demo:1.0.0 --cache-dir ./lab-store
+lab asset list --json --cache-dir ./lab-store
+lab asset tag localhost/lab/demo:1.0.0 localhost/lab/demo:review --cache-dir ./lab-store
+lab asset inspect localhost/lab/demo:review --json --cache-dir ./lab-store
+lab asset remove localhost/lab/demo:review --cache-dir ./lab-store
+lab asset prune --dry-run --json --cache-dir ./lab-store
+```
+
+`layout` is an OCI layout created with `lab pack`. Inventory and references are
+transactional local metadata; tags do not push packages to a registry. Pruning
+without `--dry-run` reclaims unreferenced, unoccupied packages and shared blobs
+only when no retained package still needs them.

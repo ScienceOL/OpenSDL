@@ -20,6 +20,8 @@ pub enum AssetError {
     },
     #[error("invalid asset.yaml: {0}")]
     InvalidYaml(#[from] serde_yaml::Error),
+    #[error("local resource catalog: {0}")]
+    Catalog(#[from] rusqlite::Error),
     #[error("invalid virtual asset: {0}")]
     Invalid(String),
     #[error("registry {operation}: {message}")]

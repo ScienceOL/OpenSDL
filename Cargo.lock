@@ -2010,6 +2010,7 @@ dependencies = [
  "directories",
  "http 1.4.0",
  "oci-client",
+ "rusqlite",
  "semver",
  "serde",
  "serde_json",

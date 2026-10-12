@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use directories::ProjectDirs;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::catalog::{AssetSummary, Catalog, PruneReport};
 use crate::layout::validate_manifest_shape;
 use crate::manifest::{AssetError, VirtualAssetManifest};
 use crate::media_types::MANIFEST_MEDIA_TYPE;
@@ -17,43 +17,46 @@ use crate::reference::{validate_digest, AssetReference};
 pub struct AssetCache {
     root: PathBuf,
     blobs: PathBuf,
-    refs: PathBuf,
     quarantine: PathBuf,
     staging: PathBuf,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RefRecord {
-    reference: String,
-    manifest_digest: String,
+/// Holds the cross-process artifact lock through mutation or materialization.
+pub struct CacheLease {
+    cache: AssetCache,
+    _lock: File,
 }
 
 impl AssetCache {
     pub fn discover() -> Result<Self, AssetError> {
         let dirs = ProjectDirs::from("com", "scienceol", "osdl")
             .ok_or_else(|| AssetError::invalid("no valid user cache directory"))?;
-        Self::open(dirs.cache_dir().join("assets/v1"))
+        Self::open(
+            dirs.state_dir()
+                .unwrap_or_else(|| dirs.data_local_dir())
+                .join("resources/v1"),
+        )
     }
 
     pub fn open(root: impl AsRef<Path>) -> Result<Self, AssetError> {
-        let root = root.as_ref().to_path_buf();
+        ensure_owned_directory(root.as_ref())?;
+        let root =
+            fs::canonicalize(root.as_ref()).map_err(|e| AssetError::read(root.as_ref(), e))?;
         let cache = Self {
             blobs: root.join("blobs/sha256"),
-            refs: root.join("refs"),
             quarantine: root.join("quarantine"),
             staging: root.join("staging"),
             root,
         };
         for directory in [
-            &cache.root,
+            &cache.root.join("blobs"),
             &cache.blobs,
-            &cache.refs,
             &cache.quarantine,
             &cache.staging,
         ] {
-            fs::create_dir_all(directory).map_err(|source| AssetError::read(directory, source))?;
+            ensure_owned_directory(directory)?;
         }
+        let _lease = cache.lock()?;
         Ok(cache)
     }
 
@@ -82,6 +85,14 @@ impl AssetCache {
     }
 
     pub fn store_bytes(&self, descriptor: &OciDescriptor, bytes: &[u8]) -> Result<(), AssetError> {
+        self.lock()?.store_bytes(descriptor, bytes)
+    }
+
+    fn store_bytes_unlocked(
+        &self,
+        descriptor: &OciDescriptor,
+        bytes: &[u8],
+    ) -> Result<(), AssetError> {
         verify_bytes(bytes, &descriptor.digest, Some(descriptor.size))?;
         if self.contains(descriptor)? {
             return Ok(());
@@ -129,7 +140,78 @@ impl AssetCache {
             .map_err(|source| AssetError::read(&self.staging, source))
     }
 
+    pub fn lock(&self) -> Result<CacheLease, AssetError> {
+        let path = self.root.join("artifact.lock");
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|e| AssetError::read(&path, e))?;
+        file.lock().map_err(|e| AssetError::read(&path, e))?;
+        Catalog::open(&self.catalog_path())?;
+        Ok(CacheLease {
+            cache: self.clone(),
+            _lock: file,
+        })
+    }
+
+    pub fn catalog_path(&self) -> PathBuf {
+        self.root.join("catalog.sqlite")
+    }
+
     pub fn import_layout(&self, layout: &Path) -> Result<PackageDescriptor, AssetError> {
+        self.lock()?.import_layout(layout, None)
+    }
+
+    pub async fn lock_async(&self) -> Result<CacheLease, AssetError> {
+        let cache = self.clone();
+        tokio::task::spawn_blocking(move || cache.lock())
+            .await
+            .map_err(|e| AssetError::invalid(format!("artifact lock task: {e}")))?
+    }
+
+    pub fn list(&self) -> Result<Vec<AssetSummary>, AssetError> {
+        self.lock()?.catalog()?.list()
+    }
+
+    pub fn resolve(&self, selector: &str) -> Result<String, AssetError> {
+        let digest = if selector.starts_with("sha256:") {
+            crate::reference::validate_digest(selector)?;
+            selector.to_owned()
+        } else {
+            self.resolve_reference(&AssetReference::parse(selector)?)?
+        };
+        self.package(&digest)?;
+        Ok(digest)
+    }
+
+    pub fn tag(&self, selector: &str, target: &AssetReference) -> Result<(), AssetError> {
+        let lease = self.lock()?;
+        target.require_tag()?;
+        let digest = self.resolve(selector)?;
+        lease.publish(&digest, Some(target)).map(|_| ())
+    }
+
+    pub fn remove(&self, selector: &str) -> Result<(), AssetError> {
+        self.lock()?.catalog()?.remove(selector)
+    }
+    pub fn prune(&self, dry_run: bool) -> Result<PruneReport, AssetError> {
+        self.lock()?
+            .catalog()?
+            .prune(&self.blobs, dry_run, |digest| self.package(digest))
+    }
+    pub fn pin(&self, owner: &str, digest: &str) -> Result<(), AssetError> {
+        let lease = self.lock()?;
+        lease.publish(digest, None)?;
+        lease.catalog()?.pin(owner, digest)
+    }
+    pub fn unpin(&self, owner: &str) -> Result<(), AssetError> {
+        self.lock()?.catalog()?.unpin(owner)
+    }
+
+    fn import_layout_unlocked(&self, layout: &Path) -> Result<PackageDescriptor, AssetError> {
         let package = crate::inspect_layout(layout)?;
         let manifest_descriptor = OciDescriptor {
             media_type: MANIFEST_MEDIA_TYPE.to_owned(),
@@ -146,7 +228,7 @@ impl AssetCache {
                 .join("blobs/sha256")
                 .join(validate_digest(&descriptor.digest)?);
             let bytes = fs::read(&source).map_err(|error| AssetError::read(&source, error))?;
-            self.store_bytes(descriptor, &bytes)?;
+            self.store_bytes_unlocked(descriptor, &bytes)?;
         }
         Ok(package)
     }
@@ -210,47 +292,14 @@ impl AssetCache {
     pub fn record_reference(
         &self,
         reference: &AssetReference,
-        manifest_digest: &str,
+        digest: &str,
     ) -> Result<(), AssetError> {
-        validate_digest(manifest_digest)?;
-        let path = self.reference_path(reference);
-        let record = RefRecord {
-            reference: reference.to_string(),
-            manifest_digest: manifest_digest.to_owned(),
-        };
-        let bytes = serde_json::to_vec(&record)
-            .map_err(|error| AssetError::invalid(format!("serialize ref hint: {error}")))?;
-        let mut temporary = tempfile::Builder::new()
-            .prefix("ref-")
-            .tempfile_in(&self.staging)
-            .map_err(|source| AssetError::read(&self.staging, source))?;
-        temporary
-            .write_all(&bytes)
-            .map_err(|source| AssetError::read(temporary.path(), source))?;
-        temporary
-            .persist(&path)
-            .map_err(|error| AssetError::read(&path, error.error))?;
-        Ok(())
+        let lease = self.lock()?;
+        lease.publish(digest, Some(reference)).map(|_| ())
     }
 
     pub fn resolve_reference(&self, reference: &AssetReference) -> Result<String, AssetError> {
-        if let Some(digest) = reference.digest() {
-            return Ok(digest.to_owned());
-        }
-        let path = self.reference_path(reference);
-        let bytes = fs::read(&path).map_err(|source| AssetError::read(&path, source))?;
-        let record: RefRecord = serde_json::from_slice(&bytes)
-            .map_err(|error| AssetError::invalid(format!("parse ref hint: {error}")))?;
-        if record.reference != reference.to_string() {
-            return Err(AssetError::invalid("cached ref hint identity mismatch"));
-        }
-        validate_digest(&record.manifest_digest)?;
-        Ok(record.manifest_digest)
-    }
-
-    fn reference_path(&self, reference: &AssetReference) -> PathBuf {
-        let key = Sha256::digest(reference.to_string().as_bytes());
-        self.refs.join(format!("{key:x}.json"))
+        Catalog::open(&self.catalog_path())?.resolve(reference)
     }
 
     fn quarantine(&self, path: &Path, digest: &str) -> Result<(), AssetError> {
@@ -262,6 +311,67 @@ impl AssetCache {
         let destination = self.quarantine.join(format!("{hash}.{timestamp}.bad"));
         fs::rename(path, &destination).map_err(|source| AssetError::read(path, source))
     }
+}
+
+impl CacheLease {
+    pub fn import_layout(
+        &self,
+        layout: &Path,
+        reference: Option<&AssetReference>,
+    ) -> Result<PackageDescriptor, AssetError> {
+        if let Some(reference) = reference {
+            reference.require_tag()?;
+        }
+        let package = self.cache.import_layout_unlocked(layout)?;
+        self.publish(&package.manifest_digest, reference)
+    }
+
+    fn catalog(&self) -> Result<Catalog, AssetError> {
+        Catalog::open(&self.cache.catalog_path())
+    }
+    pub(crate) fn publish(
+        &self,
+        digest: &str,
+        reference: Option<&AssetReference>,
+    ) -> Result<PackageDescriptor, AssetError> {
+        let package = self.cache.package(digest)?;
+        self.catalog()?.admit(&package, reference)?;
+        Ok(package)
+    }
+    pub fn store_bytes(&self, descriptor: &OciDescriptor, bytes: &[u8]) -> Result<(), AssetError> {
+        self.cache.store_bytes_unlocked(descriptor, bytes)
+    }
+    pub(crate) fn persist(
+        &self,
+        descriptor: &OciDescriptor,
+        temporary: tempfile::NamedTempFile,
+    ) -> Result<(), AssetError> {
+        self.cache.persist(descriptor, temporary)
+    }
+}
+
+fn ensure_owned_directory(path: &Path) -> Result<(), AssetError> {
+    match path.symlink_metadata() {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => return Ok(()),
+        Ok(_) => {
+            return Err(AssetError::invalid(format!(
+                "store directory must not be a link or non-directory: {}",
+                path.display()
+            )))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(AssetError::read(path, error)),
+    }
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(path)
+        .map_err(|error| AssetError::read(path, error))
 }
 
 fn verify_path(path: &Path, digest: &str, size: Option<u64>) -> Result<(), AssetError> {

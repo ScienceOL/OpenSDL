@@ -1,8 +1,7 @@
 //! `lab` — the OpenSDL command-line tool.
 //!
-//! Subcommands split into two families:
-//!   * `serve` boots the engine + gRPC server in this process.
-//!   * everything else is a gRPC client that talks to a running server.
+//! Asset commands operate on the local resource store or OCI registries.
+//! `serve` hosts the engine, while device commands use its gRPC API.
 
 mod client;
 mod commands;
@@ -28,13 +27,22 @@ struct Cli {
     #[arg(long, env = "OSDL_AUTH_TOKEN", global = true, hide_env_values = true)]
     auth_token: Option<String>,
 
+    /// Local resource store (packages, catalog and managed instances).
+    #[arg(long, env = "LAB_ASSET_CACHE", global = true)]
+    cache_dir: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Authenticate to SciLaxy and inspect online lab devices.
+    /// Manage locally cached asset packages and references.
+    Asset {
+        #[command(subcommand)]
+        cmd: commands::asset::AssetCmd,
+    },
+    /// Authenticate to LiyanLabs and inspect online lab devices.
     Api {
         #[command(subcommand)]
         cmd: commands::api::ApiCmd,
@@ -74,7 +82,9 @@ fn main() {
     // hands the child a broken reactor. So we route Serve through a
     // dedicated entrypoint that owns the daemonize → runtime sequence,
     // and keep `#[tokio::main]`-equivalent behavior for everything else.
+    let cache_dir = cli.cache_dir;
     let result: anyhow::Result<()> = match cli.command {
+        Command::Asset { cmd } => commands::asset::run(cmd, cache_dir),
         Command::Serve(args) => commands::serve::main_entrypoint(args),
         Command::Validate(args) => commands::validate::run(args),
         Command::Pack(args) => commands::pack::run(args),
@@ -107,9 +117,12 @@ fn main() {
                     Command::Events(args) => commands::events::run(args, opts).await,
                     Command::Stop => commands::stop::run(opts).await,
                     Command::Push(args) => commands::push::run(args).await,
-                    Command::Pull(args) => commands::pull::run(args).await,
+                    Command::Pull(args) => commands::pull::run(args, cache_dir).await,
                     Command::Api { cmd } => commands::api::run(cmd).await,
-                    Command::Validate(_) | Command::Pack(_) | Command::Inspect(_) => unreachable!(),
+                    Command::Asset { .. }
+                    | Command::Validate(_)
+                    | Command::Pack(_)
+                    | Command::Inspect(_) => unreachable!(),
                 }
             })
         }

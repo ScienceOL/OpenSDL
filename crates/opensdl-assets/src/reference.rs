@@ -31,6 +31,15 @@ impl AssetReference {
         Ok(Self { inner })
     }
 
+    pub fn require_tag(&self) -> Result<(), AssetError> {
+        if self.tag().is_none() || self.digest().is_some() {
+            return Err(AssetError::invalid(
+                "target requires a tag reference, not a digest reference",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn registry(&self) -> &str {
         self.inner.registry()
     }
