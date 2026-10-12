@@ -2101,18 +2101,22 @@ dependencies = [
 name = "osdl-server"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
  "async-stream",
  "async-trait",
  "directories",
  "hyper-util",
  "libc",
  "log",
+ "opensdl-assets",
  "osdl-core",
  "osdl-proto",
  "prost",
  "prost-types",
+ "rusqlite",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -2120,6 +2124,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tower",
+ "uuid",
  "windows-sys 0.59.0",
 ]
 

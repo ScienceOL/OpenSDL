@@ -14,6 +14,7 @@
 pub mod auth;
 pub mod convert;
 pub mod lockfile;
+pub mod managed;
 pub mod paths;
 pub mod service;
 
@@ -281,7 +282,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
             }
             let _ = stop.changed().await;
         } => log::info!("engine stop requested, shutting down listeners"),
-        _ = tokio::signal::ctrl_c() => log::info!("Ctrl-C received, shutting down"),
+        _ = wait_for_console_signal(tokio::signal::ctrl_c()) => log::info!("Ctrl-C received, shutting down"),
     }
 
     // Notify both listeners. `notify_waiters` would only wake currently-
@@ -314,4 +315,36 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
 
     // _lock drops here, removing the lockfile.
     Ok(())
+}
+
+async fn wait_for_console_signal(signal: impl std::future::Future<Output = std::io::Result<()>>) {
+    if let Err(error) = signal.await {
+        log::warn!(
+            "console signal handler unavailable; waiting for authenticated shutdown: {error}"
+        );
+        std::future::pending::<()>().await;
+    }
+}
+
+#[cfg(test)]
+mod shutdown_signal_tests {
+    #[tokio::test]
+    async fn unavailable_console_signals_do_not_shut_down_a_server() {
+        let unavailable = async { Err(std::io::Error::other("no attached console")) };
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            super::wait_for_console_signal(unavailable)
+        )
+        .await
+        .is_err());
+    }
+    #[tokio::test]
+    async fn an_actual_console_signal_completes_shutdown() {
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            super::wait_for_console_signal(async { Ok(()) })
+        )
+        .await
+        .is_ok());
+    }
 }

@@ -148,3 +148,20 @@ fn store_owned_directories_cannot_redirect_to_unrelated_files() {
     assert!(AssetCache::open(&store).is_err());
     assert_eq!(std::fs::read_dir(&unrelated).unwrap().count(), 0);
 }
+
+#[cfg(unix)]
+#[test]
+fn the_catalog_is_private_even_inside_an_existing_public_directory() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let cache = AssetCache::open(temp.path()).unwrap();
+    assert_eq!(
+        std::fs::metadata(cache.catalog_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+}

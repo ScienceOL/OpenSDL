@@ -92,6 +92,21 @@ pub struct AssetSpec {
     pub compatibility: AssetCompatibility,
     #[serde(default)]
     pub bindings: AssetBindings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<AssetRuntime>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssetRuntime {
+    pub engine: RuntimeEngine,
+    pub config: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RuntimeEngine {
+    Kinematic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -197,7 +212,19 @@ impl VirtualAssetManifest {
     /// constraints as a directory passed to `lab validate` or `lab pack`.
     pub fn validate_declaration(&self) -> Result<(), AssetError> {
         self.validate_metadata()?;
-        self.validate_capabilities()
+        self.validate_capabilities()?;
+        if let Some(runtime) = &self.spec.runtime {
+            if !self.spec.capabilities.contains(&Capability::Simulation) {
+                return Err(AssetError::invalid(
+                    "runtime requires simulation capability",
+                ));
+            }
+            crate::paths::safe_relative_path(&runtime.config, "runtime config")?;
+            if !runtime.config.ends_with(".yaml") && !runtime.config.ends_with(".yml") {
+                return Err(AssetError::invalid("runtime config must be a YAML file"));
+            }
+        }
+        Ok(())
     }
 
     fn validate_metadata(&self) -> Result<(), AssetError> {

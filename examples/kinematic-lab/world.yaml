@@ -1,0 +1,5 @@
+# Uses the built-in four-device world. This is SimulationConfig, not OsdlConfig.
+world_id: example-lab
+engine: kinematic
+tick_hz: 10
+seed: 0

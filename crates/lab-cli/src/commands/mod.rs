@@ -3,6 +3,7 @@ pub mod asset;
 pub mod device;
 pub mod events;
 pub mod inspect;
+pub mod instance;
 pub mod pack;
 pub mod pull;
 pub mod push;

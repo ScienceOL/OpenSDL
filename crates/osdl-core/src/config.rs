@@ -67,6 +67,7 @@ pub struct OsdlConfig {
 /// deterministic and available in every OpenSDL build; unsupported engines
 /// fail with an actionable error instead of silently falling back to it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SimulationConfig {
     /// Stable world identifier used in simulated transport/device ids.
     #[serde(default = "default_simulation_world_id")]
@@ -86,6 +87,7 @@ pub struct SimulationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SimulationDeviceConfig {
     /// Local id inside the simulation world, e.g. `heater-1`.
     pub id: String,
@@ -110,6 +112,7 @@ pub struct SimulationDeviceConfig {
 /// simulation telemetry carries this reference so clients can resolve a
 /// verified preview without copying model data through OpenSDL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SimulationAssetRef {
     pub namespace: String,
     pub name: String,
@@ -439,6 +442,24 @@ impl Default for MqttConfig {
             port: default_mqtt_port(),
             client_id: default_client_id(),
             keepalive_secs: default_keepalive(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod managed_config_tests {
+    use super::SimulationConfig;
+    #[test]
+    fn simulation_world_rejects_unknown_operational_fields() {
+        for yaml in [
+            "engine: kinematic\nmqtt: {}\n",
+            "engine: kinematic\nentrypoint: program\n",
+            "devices:\n- id: one\n  device_type: simulation.heater\n  transport: tcp\n",
+        ] {
+            assert!(
+                serde_yaml::from_str::<SimulationConfig>(yaml).is_err(),
+                "accepted {yaml}"
+            );
         }
     }
 }

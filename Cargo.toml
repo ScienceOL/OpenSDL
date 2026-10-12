@@ -48,6 +48,8 @@ spdx = "0.13"
 tar = "0.4"
 zstd = "0.14"
 walkdir = "2"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
 
 # The profile that 'dist' will build with
 [profile.dist]

@@ -37,6 +37,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Manage local digest-pinned runtime instances.
+    Instance {
+        #[command(subcommand)]
+        cmd: commands::instance::InstanceCmd,
+    },
+    #[command(hide = true)]
+    InstanceWorker {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        generation: i64,
+    },
     /// Manage locally cached asset packages and references.
     Asset {
         #[command(subcommand)]
@@ -119,6 +131,17 @@ fn main() {
                     Command::Push(args) => commands::push::run(args).await,
                     Command::Pull(args) => commands::pull::run(args, cache_dir).await,
                     Command::Api { cmd } => commands::api::run(cmd).await,
+                    Command::Instance { cmd } => commands::instance::run(cmd, cache_dir).await,
+                    Command::InstanceWorker { name, generation } => {
+                        osdl_server::managed::worker::run(
+                            cache_dir.ok_or_else(|| {
+                                anyhow::anyhow!("worker requires an explicit resource store")
+                            })?,
+                            name,
+                            generation,
+                        )
+                        .await
+                    }
                     Command::Asset { .. }
                     | Command::Validate(_)
                     | Command::Pack(_)
