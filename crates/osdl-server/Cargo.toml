@@ -37,7 +37,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 # Native Win32 process check for `lockfile::pid_alive` — without this
 # Windows treats every stale lockfile as live and refuses to start.
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Console", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

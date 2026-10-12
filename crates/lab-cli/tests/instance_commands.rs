@@ -7,12 +7,27 @@ use std::{
 };
 
 fn lab(store: &Path, arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_lab"))
-        .arg("--cache-dir")
-        .arg(store)
-        .args(arguments)
-        .output()
+    eprintln!("lab {arguments:?}");
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
         .unwrap()
+        .block_on(async {
+            let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_lab"))
+                .arg("--cache-dir")
+                .arg(store)
+                .args(arguments)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(20), child.wait_with_output())
+                .await
+                .unwrap_or_else(|_| panic!("lab timed out: {arguments:?}"))
+                .unwrap()
+        })
 }
 fn success(output: Output) -> Value {
     assert!(

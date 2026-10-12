@@ -7,8 +7,9 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
-# Exercise the release builds before merging, including both installers.
-pr-run-mode = "upload"
+# PRs validate the release plan; native checks own tests. Package only releases.
+pr-run-mode = "plan"
+cache-builds = true
 local-artifacts-jobs = ["./checks"]
 # The installers to generate for each app
 installers = ["shell", "powershell"]

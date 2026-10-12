@@ -2,6 +2,8 @@
 mod control;
 mod startup;
 mod store;
+#[cfg(windows)]
+mod windows;
 pub mod worker;
 
 use anyhow::{bail, Context};
@@ -93,6 +95,8 @@ impl ManagedHost {
         if matches!(record.info.state, InstanceState::Removing) {
             bail!("instance removal is incomplete; repeat remove before reusing its name");
         }
+        #[cfg(windows)]
+        windows::prevent_inherited_stdio()?;
         let directory = self.store.directory(name);
         store::regular_file(&directory.join("instance.log"))?;
         let log = fs::OpenOptions::new()
