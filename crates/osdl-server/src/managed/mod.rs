@@ -1,5 +1,6 @@
 //! Local lifecycle for digest-pinned, simulation-only instances.
 mod control;
+mod startup;
 mod store;
 pub mod worker;
 
@@ -40,8 +41,12 @@ impl ManagedHost {
             bail!("runtime is unavailable");
         }
         let directory = self.store.directory(name);
-        if directory.exists() {
-            bail!("instance directory already exists; inspect/remove the retained instance first");
+        match directory.symlink_metadata() {
+            Ok(_) => bail!(
+                "instance directory already exists; inspect/remove the retained instance first"
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         self.store.reserve(name, &digest)?;
         let prepared = (|| {
@@ -85,15 +90,19 @@ impl ManagedHost {
         if record.config.is_empty() {
             bail!("instance has no prepared runtime configuration; remove and recreate it");
         }
-        let generation = self
-            .store
-            .generation(name, &uuid::Uuid::new_v4().simple().to_string())?;
+        if matches!(record.info.state, InstanceState::Removing) {
+            bail!("instance removal is incomplete; repeat remove before reusing its name");
+        }
         let directory = self.store.directory(name);
         store::regular_file(&directory.join("instance.log"))?;
         let log = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(directory.join("instance.log"))?;
+        let stdout = log.try_clone()?;
+        let generation = self
+            .store
+            .generation(name, &uuid::Uuid::new_v4().simple().to_string())?;
         let mut command = Command::new(executable);
         command
             .args(["--cache-dir"])
@@ -118,10 +127,7 @@ impl ManagedHost {
             command.env_remove(variable);
         }
         command.env("RUST_LOG", "info");
-        command
-            .stdin(Stdio::null())
-            .stdout(log.try_clone()?)
-            .stderr(log);
+        command.stdin(Stdio::null()).stdout(stdout).stderr(log);
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -133,7 +139,7 @@ impl ManagedHost {
             // CREATE_NO_WINDOW: a managed worker has no interactive console.
             command.creation_flags(0x08000000);
         }
-        let mut child = match command.spawn() {
+        let child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
                 self.store.settle(
@@ -145,16 +151,15 @@ impl ManagedHost {
                 return Err(error.into());
             }
         };
-        let result = self.await_ready(name, generation, &mut child).await;
-        if result.is_err() {
-            let _ = child.kill();
-            child.wait().context("reap failed managed startup")?;
-            self.store.settle(
-                name,
-                generation,
-                "failed",
-                Some("startup failed; inspect retained instance logs"),
-            )?;
+        let mut startup = startup::Startup {
+            child: Some(child),
+            store: self.store.clone(),
+            name: name.to_owned(),
+            generation,
+        };
+        let result = self.await_ready(name, generation, startup.child()).await;
+        if result.is_ok() {
+            startup.ready();
         }
         result
     }
@@ -179,19 +184,10 @@ impl ManagedHost {
                         let mut record = self.store.read(name)?;
                         record.info.pid = Some(child.id());
                         record.info.endpoint = Some(format!("http://{addr}"));
-                        if let Ok(mut client) = control::connect(&record).await {
-                            let status = client
-                                .status(control::request(pb::StatusRequest {}, &record.token)?)
-                                .await?
-                                .into_inner();
-                            if status.engine.is_some_and(|engine| engine.device_count > 0) {
-                                self.store.running(
-                                    name,
-                                    generation,
-                                    child.id(),
-                                    record.info.endpoint.as_deref().unwrap(),
-                                )?;
-                                return Ok(self.store.read(name)?.info);
+                        if control::ready(&record).await.unwrap_or(false) {
+                            let info = self.store.read(name)?.info;
+                            if matches!(info.state, InstanceState::Running) {
+                                return Ok(info);
                             }
                         }
                     }
@@ -208,7 +204,10 @@ impl ManagedHost {
         let record = self.store.read(name)?;
         if matches!(
             record.info.state,
-            InstanceState::Running | InstanceState::Starting | InstanceState::Stopping
+            InstanceState::Creating
+                | InstanceState::Running
+                | InstanceState::Starting
+                | InstanceState::Stopping
         ) && idle(&self.store.process_lock(name)?)?
         {
             self.store.settle(
@@ -263,6 +262,18 @@ impl ManagedHost {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
+        let settled = self.store.read(name)?;
+        if !matches!(
+            settled.info.state,
+            InstanceState::Exited | InstanceState::Failed
+        ) {
+            self.store.settle(
+                name,
+                record.info.generation,
+                "failed",
+                Some("worker exited without recording shutdown completion"),
+            )?;
+        }
         Ok(self.store.read(name)?.info)
     }
     pub fn remove(&self, name: &str) -> anyhow::Result<()> {
@@ -270,25 +281,22 @@ impl ManagedHost {
         let _lease = self.store.cache.lock()?;
         self.store.read(name)?;
         let process = self.store.process_lock(name)?;
-        if !idle(&process)? {
+        if !store::acquire_idle(&process)? {
             bail!("cannot remove a live instance; stop it first");
         }
-        // Rename before unlink so the stored name never points into partially removed data.
+        // Keep the row and pin until deletion is complete. An interrupted
+        // removal remains explicit and can safely repeat after a partial unlink.
+        let record = self.store.read(name)?;
+        self.store
+            .settle(name, record.info.generation, "removing", None)?;
         let directory = self.store.directory(name);
-        let trash = self
-            .store
-            .cache
-            .root()
-            .join("instances")
-            .join(format!(".removed-{}", uuid::Uuid::new_v4()));
-        fs::rename(&directory, &trash)?;
+        fs::remove_dir_all(&directory)?;
         self.store.delete(name)?;
         drop(process);
-        drop(_command);
-        fs::remove_dir_all(&trash)?;
         Ok(())
     }
     pub fn logs(&self, name: &str, tail: usize) -> anyhow::Result<String> {
+        let _command = self.store.command_lock(name)?;
         if tail > 10000 {
             bail!("log tail must be at most 10000 lines");
         }
@@ -309,6 +317,7 @@ impl ManagedHost {
         Ok(lines.into_iter().collect::<Vec<_>>().join("\n"))
     }
     pub async fn devices(&self, name: &str) -> anyhow::Result<serde_json::Value> {
+        let _command = self.store.command_lock(name)?;
         let record = self.store.read(name)?;
         let mut client = control::connect(&record).await?;
         let response = client
@@ -334,12 +343,13 @@ impl ManagedHost {
         if !params.is_object() {
             bail!("action params must be a JSON object");
         }
+        let _command = self.store.command_lock(name)?;
         let record = self.store.read(name)?;
         let mut client = control::connect(&record).await?;
         let result = client
             .send_command(control::request(
                 pb::SendCommandRequest {
-                    command_id: String::new(),
+                    command_id: uuid::Uuid::new_v4().to_string(),
                     device_id: device.to_owned(),
                     action: action.to_owned(),
                     params: Some(crate::convert::json_to_struct(&params)),

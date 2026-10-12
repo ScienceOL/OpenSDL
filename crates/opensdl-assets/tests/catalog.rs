@@ -114,8 +114,53 @@ fn gc_uses_the_immutable_manifest_when_catalog_layer_metadata_is_damaged() {
             rusqlite::params![corrupted.to_string(), package.manifest_digest],
         )
         .unwrap();
+    let stray = cache
+        .blob_path(&format!("sha256:{}", "b".repeat(64)))
+        .unwrap();
+    std::fs::write(&stray, b"unreferenced").unwrap();
     cache.prune(false).unwrap();
+    assert!(!stray.exists());
     assert!(cache.package(&package.manifest_digest).is_ok());
+}
+
+#[test]
+fn removed_inventory_entries_cannot_be_resolved_or_pinned_from_orphaned_bytes() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = AssetFixture::visual();
+    let layout = temp.path().join("layout");
+    let package = pack_directory(&fixture.root, &layout).unwrap();
+    let cache = AssetCache::open(temp.path().join("store")).unwrap();
+    cache.import_layout(&layout).unwrap();
+    cache.remove(&package.manifest_digest).unwrap();
+    assert!(cache.package(&package.manifest_digest).is_ok());
+    assert!(matches!(
+        cache.resolve(&package.manifest_digest),
+        Err(opensdl_assets::AssetError::NotFound(_))
+    ));
+    assert!(cache.pin("instance:new", &package.manifest_digest).is_err());
+    assert!(cache.list().unwrap().is_empty());
+    cache.prune(false).unwrap();
+}
+
+#[test]
+fn dry_run_preserves_corrupt_retained_blobs() {
+    let temp = tempfile::tempdir().unwrap();
+    let fixture = AssetFixture::visual();
+    let layout = temp.path().join("layout");
+    let package = pack_directory(&fixture.root, &layout).unwrap();
+    let cache = AssetCache::open(temp.path().join("store")).unwrap();
+    cache.import_layout(&layout).unwrap();
+    cache
+        .pin("instance:retained", &package.manifest_digest)
+        .unwrap();
+    let blob = cache.blob_path(&package.config.digest).unwrap();
+    std::fs::write(&blob, b"damaged").unwrap();
+    assert!(cache.prune(true).is_err());
+    assert_eq!(std::fs::read(blob).unwrap(), b"damaged");
+    assert_eq!(
+        std::fs::read_dir(cache.quarantine_dir()).unwrap().count(),
+        0
+    );
 }
 
 #[test]

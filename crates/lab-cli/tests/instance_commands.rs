@@ -206,6 +206,7 @@ fn lifecycle_rejects_invalid_names_before_opening_any_lock_file() {
             .success());
     }
     assert_eq!(std::fs::read_dir(outside).unwrap().count(), 0);
+    assert!(!store.join("escape.lock").exists());
 }
 
 #[test]
@@ -364,4 +365,29 @@ fn startup_refuses_a_log_symlink_without_touching_the_target() {
         .status
         .success());
     assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_instance_directory_does_not_reserve_a_name_or_package() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = temp.path().join("store");
+    let digest = import(&store, &temp.path().join("asset"), true);
+    success(lab(&store, &["instance", "list", "--all", "--json"]));
+    std::os::unix::fs::symlink(temp.path().join("absent"), store.join("instances/dangling"))
+        .unwrap();
+    assert!(!lab(
+        &store,
+        &["instance", "create", &digest, "--name", "dangling"]
+    )
+    .status
+    .success());
+    assert_eq!(
+        success(lab(&store, &["instance", "list", "--all", "--json"])),
+        serde_json::json!([])
+    );
+    assert!(lab(&store, &["asset", "remove", "localhost/lab/test:dev"])
+        .status
+        .success());
+    assert!(lab(&store, &["asset", "remove", &digest]).status.success());
 }

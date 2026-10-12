@@ -1,7 +1,7 @@
 use super::registry_auth::RegistryAuthArgs;
 use anyhow::Context;
 use clap::Subcommand;
-use opensdl_assets::{AssetCache, AssetReference, RegistryClient};
+use opensdl_assets::{AssetCache, AssetError, AssetReference, RegistryClient};
 use osdl_server::managed::ManagedHost;
 use std::path::PathBuf;
 
@@ -109,11 +109,15 @@ pub async fn run(command: InstanceCmd, root: Option<PathBuf>) -> anyhow::Result<
             offline,
             auth,
         } => {
-            if cache.resolve(&reference).is_err() {
-                let reference = AssetReference::parse(&reference)?;
-                RegistryClient::for_reference(&reference)
-                    .pull(&reference, &cache, &auth.credentials(), offline)
-                    .await?;
+            match cache.resolve(&reference) {
+                Ok(_) => {}
+                Err(AssetError::NotFound(_)) => {
+                    let reference = AssetReference::parse(&reference)?;
+                    RegistryClient::for_reference(&reference)
+                        .pull(&reference, &cache, &auth.credentials(), offline)
+                        .await?;
+                }
+                Err(error) => return Err(error.into()),
             }
             let created = host.create(&reference, &name)?;
             output(

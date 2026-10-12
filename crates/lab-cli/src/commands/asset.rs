@@ -64,8 +64,7 @@ pub fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()> {
         }
         AssetCmd::Tag { source, target } => cache.tag(&source, &AssetReference::parse(&target)?)?,
         AssetCmd::Inspect { reference, json } => {
-            let digest = cache.resolve(&reference)?;
-            let package = cache.package(&digest)?;
+            let package = cache.inspect(&reference)?;
             if json {
                 println!("{}", serde_json::to_string(&package)?);
             } else {

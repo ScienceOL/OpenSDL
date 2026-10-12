@@ -18,6 +18,7 @@ pub enum InstanceState {
     Stopping,
     Exited,
     Failed,
+    Removing,
 }
 impl InstanceState {
     pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
@@ -29,6 +30,7 @@ impl InstanceState {
             "stopping" => Self::Stopping,
             "exited" => Self::Exited,
             "failed" => Self::Failed,
+            "removing" => Self::Removing,
             _ => bail!("invalid managed instance state"),
         })
     }
@@ -126,12 +128,10 @@ impl Store {
     pub fn generation(&self, name: &str, token: &str) -> anyhow::Result<i64> {
         let mut connection = self.connect()?;
         let tx = connection.transaction()?;
-        tx.execute("UPDATE managed_instance SET state='starting',generation=generation+1,token=?2,pid=NULL,endpoint=NULL,error=NULL WHERE name=?1",params![name,token])?;
-        let generation = tx.query_row(
-            "SELECT generation FROM managed_instance WHERE name=?1",
-            [name],
-            |row| row.get(0),
-        )?;
+        tx.execute("UPDATE instance_sequence SET value=value+1", [])?;
+        let generation: i64 =
+            tx.query_row("SELECT value FROM instance_sequence", [], |row| row.get(0))?;
+        if tx.execute("UPDATE managed_instance SET state='starting',generation=?3,token=?2,pid=NULL,endpoint=NULL,error=NULL WHERE name=?1",params![name,token,generation])? != 1 { bail!("instance no longer exists"); }
         tx.commit()?;
         Ok(generation)
     }
@@ -186,6 +186,17 @@ impl Store {
         validate_name(name)?;
         owned_directory(&self.directory(name))?;
         regular_lock(&self.directory(name).join("process.lock"))
+    }
+    pub fn worker_lock(&self, name: &str) -> anyhow::Result<File> {
+        validate_name(name)?;
+        let directory = self.directory(name);
+        let metadata = directory.symlink_metadata()?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            bail!("worker directory is unavailable");
+        }
+        let path = directory.join("process.lock");
+        regular_file(&path)?;
+        Ok(fs::OpenOptions::new().read(true).write(true).open(path)?)
     }
 }
 
@@ -249,11 +260,16 @@ pub(crate) fn now() -> anyhow::Result<i64> {
         .try_into()?)
 }
 pub(crate) fn idle(file: &File) -> anyhow::Result<bool> {
+    if acquire_idle(file)? {
+        file.unlock()?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+pub(crate) fn acquire_idle(file: &File) -> anyhow::Result<bool> {
     match file.try_lock() {
-        Ok(()) => {
-            file.unlock()?;
-            Ok(true)
-        }
+        Ok(()) => Ok(true),
         Err(std::fs::TryLockError::WouldBlock) => Ok(false),
         Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
     }
@@ -280,5 +296,60 @@ mod tests {
         assert_eq!(record.token, "second-secret");
         let public = serde_json::to_string(&record.info).unwrap();
         assert!(!public.contains("secret"));
+    }
+    #[test]
+    fn deleting_and_recreating_a_name_cannot_reuse_a_worker_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(AssetCache::open(temp.path()).unwrap()).unwrap();
+        let digest = format!("sha256:{}", "a".repeat(64));
+        store.reserve("same", &digest).unwrap();
+        let old = store.generation("same", "old").unwrap();
+        store.delete("same").unwrap();
+        store.reserve("same", &digest).unwrap();
+        let current = store.generation("same", "new").unwrap();
+        assert!(current > old);
+        store.settle("same", old, "failed", None).unwrap();
+        assert_eq!(store.read("same").unwrap().token, "new");
+    }
+    #[test]
+    fn a_delayed_worker_cannot_recreate_a_removed_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(AssetCache::open(temp.path()).unwrap()).unwrap();
+        assert!(store.worker_lock("gone").is_err());
+        assert!(!store.directory("gone").exists());
+    }
+    #[test]
+    fn removal_retries_after_files_are_deleted_but_the_catalog_commit_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = AssetCache::open(temp.path()).unwrap();
+        let store = Store::new(cache.clone()).unwrap();
+        store
+            .reserve("retry", &format!("sha256:{}", "a".repeat(64)))
+            .unwrap();
+        store.prepared("retry", "engine: kinematic\n").unwrap();
+        owned_directory(&store.directory("retry").join("data")).unwrap();
+        std::fs::write(store.directory("retry").join("data/retained"), b"owned").unwrap();
+        store.connect().unwrap().execute_batch("CREATE TRIGGER fail_delete BEFORE DELETE ON managed_instance BEGIN SELECT RAISE(ABORT, 'injected deletion failure'); END;").unwrap();
+        let host = super::super::ManagedHost::open(cache).unwrap();
+        assert!(host.remove("retry").is_err());
+        assert!(matches!(
+            store.read("retry").unwrap().info.state,
+            InstanceState::Removing
+        ));
+        assert!(!store.directory("retry").exists());
+        store
+            .connect()
+            .unwrap()
+            .execute_batch("DROP TRIGGER fail_delete;")
+            .unwrap();
+        host.remove("retry").unwrap();
+        assert!(store.read("retry").is_err());
+        let roots: i64 = store
+            .connect()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM pin", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(roots, 0);
+        assert!(!store.directory("retry").exists());
     }
 }

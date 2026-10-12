@@ -77,11 +77,7 @@ impl AssetCache {
         if !path.exists() {
             return Ok(false);
         }
-        if verify_path(&path, &descriptor.digest, Some(descriptor.size)).is_ok() {
-            return Ok(true);
-        }
-        self.quarantine(&path, &descriptor.digest)?;
-        Ok(false)
+        Ok(verify_path(&path, &descriptor.digest, Some(descriptor.size)).is_ok())
     }
 
     pub fn store_bytes(&self, descriptor: &OciDescriptor, bytes: &[u8]) -> Result<(), AssetError> {
@@ -118,6 +114,12 @@ impl AssetCache {
     ) -> Result<(), AssetError> {
         verify_path(temporary.path(), &descriptor.digest, Some(descriptor.size))?;
         let destination = self.blob_path(&descriptor.digest)?;
+        if destination.symlink_metadata().is_ok() {
+            if self.contains(descriptor)? {
+                return Ok(());
+            }
+            self.quarantine(&destination, &descriptor.digest)?;
+        }
         match temporary.persist_noclobber(&destination) {
             Ok(file) => file
                 .sync_all()
@@ -179,12 +181,18 @@ impl AssetCache {
     pub fn resolve(&self, selector: &str) -> Result<String, AssetError> {
         let digest = if selector.starts_with("sha256:") {
             crate::reference::validate_digest(selector)?;
+            Catalog::open(&self.catalog_path())?.require_package(selector)?;
             selector.to_owned()
         } else {
             self.resolve_reference(&AssetReference::parse(selector)?)?
         };
         self.package(&digest)?;
         Ok(digest)
+    }
+
+    pub fn inspect(&self, selector: &str) -> Result<PackageDescriptor, AssetError> {
+        let _lease = self.lock()?;
+        self.package(&self.resolve(selector)?)
     }
 
     pub fn tag(&self, selector: &str, target: &AssetReference) -> Result<(), AssetError> {
@@ -204,7 +212,7 @@ impl AssetCache {
     }
     pub fn pin(&self, owner: &str, digest: &str) -> Result<(), AssetError> {
         let lease = self.lock()?;
-        lease.publish(digest, None)?;
+        self.resolve(digest)?;
         lease.catalog()?.pin(owner, digest)
     }
     pub fn unpin(&self, owner: &str) -> Result<(), AssetError> {

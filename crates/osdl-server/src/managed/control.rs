@@ -15,6 +15,16 @@ pub(crate) fn request<T>(body: T, token: &str) -> anyhow::Result<Request<T>> {
     Ok(request)
 }
 pub(crate) async fn connect(record: &Record) -> anyhow::Result<Client> {
+    Ok(verified_status(record).await?.0)
+}
+pub(crate) async fn ready(record: &Record) -> anyhow::Result<bool> {
+    Ok(verified_status(record)
+        .await?
+        .1
+        .engine
+        .is_some_and(|engine| engine.device_count > 0))
+}
+async fn verified_status(record: &Record) -> anyhow::Result<(Client, pb::StatusResponse)> {
     let endpoint = record
         .info
         .endpoint
@@ -33,5 +43,5 @@ pub(crate) async fn connect(record: &Record) -> anyhow::Result<Client> {
     if response.instance != record.info.name || Some(response.pid) != record.info.pid {
         bail!("managed process identity does not match");
     }
-    Ok(client)
+    Ok((client, response))
 }

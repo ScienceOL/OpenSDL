@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.89" # Native cross-process resource and instance file locks.
 license = "MIT"
 repository = "https://github.com/ScienceOL/OpenSDL"
 

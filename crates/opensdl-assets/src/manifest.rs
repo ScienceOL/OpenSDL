@@ -12,6 +12,8 @@ pub const KIND: &str = "VirtualAsset";
 
 #[derive(Debug, Error)]
 pub enum AssetError {
+    #[error("resource is not in the local inventory: {0}")]
+    NotFound(String),
     #[error("I/O at {path}: {source}")]
     Read {
         path: PathBuf,

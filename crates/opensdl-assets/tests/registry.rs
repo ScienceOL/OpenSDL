@@ -1,5 +1,46 @@
 mod support;
 
+#[tokio::test]
+async fn a_stalled_registry_request_does_not_hold_the_artifact_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache = opensdl_assets::AssetCache::open(temp.path()).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let reference = opensdl_assets::AssetReference::parse(&format!(
+        "{}/lab/slow:dev",
+        listener.local_addr().unwrap()
+    ))
+    .unwrap();
+    let (accepted, received) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (_connection, _) = listener.accept().await.unwrap();
+        let _ = accepted.send(());
+        std::future::pending::<()>().await;
+    });
+    let other = cache.clone();
+    let pull = tokio::spawn(async move {
+        opensdl_assets::RegistryClient::for_reference(&reference)
+            .pull(
+                &reference,
+                &other,
+                &opensdl_assets::RegistryCredentials::Anonymous,
+                false,
+            )
+            .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), received)
+        .await
+        .unwrap()
+        .unwrap();
+    let lease = tokio::time::timeout(std::time::Duration::from_secs(2), cache.lock_async()).await;
+    pull.abort();
+    let _ = pull.await;
+    server.abort();
+    let _ = server.await;
+    assert!(lease.is_ok(), "network request held the artifact lock");
+    drop(lease.unwrap().unwrap());
+    assert!(cache.list().unwrap().is_empty());
+}
+
 use std::fs;
 use std::io::Write;
 
@@ -73,7 +114,7 @@ async fn stock_oci_registry_push_pull_round_trip() {
 }
 
 #[test]
-fn corrupt_cache_blob_is_quarantined_and_reported_as_missing() {
+fn corruption_verification_is_read_only_and_repair_quarantines_old_bytes() {
     let temp = tempfile::tempdir().expect("create cache root");
     let cache = AssetCache::open(temp.path()).expect("open cache");
     let bytes = b"verified bytes";
@@ -88,6 +129,13 @@ fn corrupt_cache_blob_is_quarantined_and_reported_as_missing() {
     .expect("corrupt cache");
 
     assert!(!cache.contains(&descriptor).expect("corrupt cache miss"));
+    assert_eq!(
+        fs::read(cache.blob_path(&descriptor.digest).unwrap()).unwrap(),
+        b"corrupt"
+    );
+    assert_eq!(fs::read_dir(cache.quarantine_dir()).unwrap().count(), 0);
+    cache.store_bytes(&descriptor, bytes).expect("repair blob");
+    assert!(cache.contains(&descriptor).unwrap());
     assert_eq!(
         fs::read_dir(cache.quarantine_dir())
             .expect("read quarantine")
