@@ -1,6 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+mod support;
+
 use std::process::Command;
+use support::create_asset;
 
 #[test]
 fn validate_pack_and_inspect_form_a_local_asset_workflow() {
@@ -54,36 +55,148 @@ fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-fn create_asset(root: &Path) {
-    fs::create_dir(root).expect("create asset root");
-    let fixture =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../opensdl-assets/tests/fixtures/visual");
-    fs::copy(fixture.join("asset.yaml"), root.join("asset.yaml")).expect("copy asset.yaml");
-    fs::copy(fixture.join("LICENSE"), root.join("LICENSE")).expect("copy license");
-    fs::write(root.join("scene.usda"), b"#usda 1.0\n").expect("write source");
-    write_minimal_glb(&root.join("preview.glb"));
-    fs::write(root.join("thumbnail.png"), minimal_png()).expect("write thumbnail");
+#[test]
+fn local_inventory_tags_and_prune_manage_complete_packages() {
+    let temp = tempfile::tempdir().expect("create inventory test root");
+    let asset = temp.path().join("asset");
+    create_asset(&asset);
+    let layout = temp.path().join("layout");
+    let packed = lab()
+        .args(["pack"])
+        .arg(&asset)
+        .arg("--output")
+        .arg(&layout)
+        .output()
+        .unwrap();
+    assert!(packed.status.success(), "{}", stderr(&packed));
+    let digest = String::from_utf8(packed.stdout).unwrap().trim().to_owned();
+    let store = temp.path().join("store");
+    let invoke = |args: &[&str]| {
+        lab()
+            .arg("--cache-dir")
+            .arg(&store)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let empty = invoke(&["asset", "list", "--json"]);
+    assert!(empty.status.success(), "{}", stderr(&empty));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&empty.stdout).unwrap(),
+        serde_json::json!([])
+    );
+    let imported = invoke(&[
+        "asset",
+        "import",
+        layout.to_str().unwrap(),
+        "--tag",
+        "localhost/library/ur5e:1.0.0",
+    ]);
+    assert!(imported.status.success(), "{}", stderr(&imported));
+    let listing = invoke(&["asset", "list", "--json"]);
+    assert!(listing.status.success(), "{}", stderr(&listing));
+    let rows: serde_json::Value = serde_json::from_slice(&listing.stdout).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    assert_eq!(rows[0]["name"], "ur5e");
+    assert_eq!(rows[0]["manifest_digest"], digest);
+    assert_eq!(
+        rows[0]["references"],
+        serde_json::json!(["oci://localhost/library/ur5e:1.0.0"])
+    );
+    let tagged = invoke(&[
+        "asset",
+        "tag",
+        "localhost/library/ur5e:1.0.0",
+        "localhost/library/ur5e:dev",
+    ]);
+    assert!(tagged.status.success(), "{}", stderr(&tagged));
+    for reference in ["localhost/library/ur5e:1.0.0", "localhost/library/ur5e:dev"] {
+        let removed = invoke(&["asset", "remove", reference]);
+        assert!(removed.status.success(), "{}", stderr(&removed));
+    }
+    let dry_run = invoke(&["asset", "prune", "--dry-run", "--json"]);
+    assert!(dry_run.status.success(), "{}", stderr(&dry_run));
+    let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).unwrap();
+    assert_eq!(report["packages"], serde_json::json!([digest]));
+    let inspect = invoke(&["asset", "inspect", &digest, "--json"]);
+    assert!(inspect.status.success(), "{}", stderr(&inspect));
+    let prune = invoke(&["asset", "prune", "--json"]);
+    assert!(prune.status.success(), "{}", stderr(&prune));
+    assert!(!invoke(&["asset", "inspect", &digest, "--json"])
+        .status
+        .success());
+    let final_list = invoke(&["asset", "list", "--json"]);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&final_list.stdout).unwrap(),
+        serde_json::json!([])
+    );
 }
 
-fn write_minimal_glb(path: &Path) {
-    let json = b"{}\0\0";
-    let total_length = 12 + 8 + json.len();
-    let mut bytes = Vec::with_capacity(total_length);
-    bytes.extend_from_slice(b"glTF");
-    bytes.extend_from_slice(&2_u32.to_le_bytes());
-    bytes.extend_from_slice(&(total_length as u32).to_le_bytes());
-    bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&0x4E4F534A_u32.to_le_bytes());
-    bytes.extend_from_slice(json);
-    fs::write(path, bytes).expect("write preview");
+#[test]
+fn inventory_refuses_corrupt_package_bytes() {
+    let temp = tempfile::tempdir().unwrap();
+    let asset = temp.path().join("asset");
+    create_asset(&asset);
+    let layout = temp.path().join("layout");
+    let pack = lab()
+        .arg("pack")
+        .arg(&asset)
+        .arg("--output")
+        .arg(&layout)
+        .output()
+        .unwrap();
+    assert!(pack.status.success(), "{}", stderr(&pack));
+    let digest = String::from_utf8(pack.stdout).unwrap().trim().to_owned();
+    let store = temp.path().join("store");
+    let import = lab()
+        .arg("--cache-dir")
+        .arg(&store)
+        .args(["asset", "import"])
+        .arg(&layout)
+        .output()
+        .unwrap();
+    assert!(import.status.success(), "{}", stderr(&import));
+    std::fs::write(
+        store
+            .join("blobs/sha256")
+            .join(digest.strip_prefix("sha256:").unwrap()),
+        b"corrupt",
+    )
+    .unwrap();
+    let inspect = lab()
+        .arg("--cache-dir")
+        .arg(&store)
+        .args(["asset", "inspect", &digest, "--json"])
+        .output()
+        .unwrap();
+    assert!(!inspect.status.success());
 }
 
-fn minimal_png() -> &'static [u8] {
-    &[
-        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, b'I', b'H', b'D',
-        b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
-        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, b'I', b'D', b'A', b'T', 0x08, 0xd7, 0x63, 0xf8,
-        0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00,
-        0x00, 0x00, b'I', b'E', b'N', b'D', 0xae, 0x42, 0x60, 0x82,
-    ]
+#[test]
+fn an_invalid_import_tag_leaves_the_inventory_unchanged() {
+    let temp = tempfile::tempdir().unwrap();
+    let asset = temp.path().join("asset");
+    create_asset(&asset);
+    let layout = temp.path().join("layout");
+    let pack = lab()
+        .arg("pack")
+        .arg(&asset)
+        .arg("--output")
+        .arg(&layout)
+        .output()
+        .unwrap();
+    assert!(pack.status.success());
+    let store = temp.path().join("store");
+    let failed = lab().arg("--cache-dir").arg(&store).args(["asset", "import"]).arg(&layout).args(["--tag", "localhost/lab/ur5e@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]).output().unwrap();
+    assert!(!failed.status.success());
+    let listing = lab()
+        .arg("--cache-dir")
+        .arg(&store)
+        .args(["asset", "list", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&listing.stdout).unwrap(),
+        serde_json::json!([])
+    );
 }

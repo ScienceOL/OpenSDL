@@ -18,6 +18,7 @@ pub fn materialize(
     manifest_digest: &str,
     destination: &Path,
 ) -> Result<ValidatedAsset, AssetError> {
+    let _lease = cache.lock()?;
     if destination.exists() {
         return Err(AssetError::invalid(format!(
             "destination already exists: {}",

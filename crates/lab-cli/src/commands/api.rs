@@ -23,7 +23,7 @@ pub enum ApiCmd {
 
 #[derive(Debug, Args)]
 pub struct LoginArgs {
-    /// Server origin, e.g. https://scilaxy.ai (without an API path).
+    /// Server origin, e.g. https://liyanlabs.ai (without an API path).
     #[arg(long)]
     server: String,
     /// Read the token from stdin instead of a hidden terminal prompt.
@@ -108,7 +108,7 @@ async fn verify_and_save(server: String, token: String, path: &Path) -> anyhow::
         bail!("API login failed: HTTP {}", response.status());
     }
     save_credentials(path, &Credentials { server, token })?;
-    println!("Authenticated to SciLaxy. Run `lab api devices` to view online devices.");
+    println!("Authenticated to LiyanLabs. Run `lab api devices` to view online devices.");
     Ok(())
 }
 
@@ -163,10 +163,7 @@ fn http_client() -> anyhow::Result<reqwest::Client> {
 
 fn parse_server(raw: &str) -> anyhow::Result<String> {
     let url = reqwest::Url::parse(raw).context("invalid server URL")?;
-    let local = matches!(
-        url.host_str(),
-        Some("localhost" | "127.0.0.1" | "::1" | "scilaxy.local")
-    );
+    let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
     if url.scheme() != "https" && !(url.scheme() == "http" && local) {
         bail!("server must use HTTPS (HTTP is allowed only for local development)");
     }
@@ -232,6 +229,7 @@ mod tests {
         );
         for raw in [
             "http://example.org",
+            "http://liyanlabs.local",
             "https://example.org/api",
             "https://user:pass@example.org",
             "https://example.org?token=secret",

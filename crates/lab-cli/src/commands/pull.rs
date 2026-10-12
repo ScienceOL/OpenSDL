@@ -15,16 +15,13 @@ pub struct PullArgs {
     /// Resolve only from the local content-addressed cache.
     #[arg(long)]
     pub offline: bool,
-    /// Override the platform cache directory.
-    #[arg(long, env = "LAB_ASSET_CACHE")]
-    pub cache_dir: Option<PathBuf>,
     #[command(flatten)]
     pub auth: RegistryAuthArgs,
 }
 
-pub async fn run(args: PullArgs) -> anyhow::Result<()> {
+pub async fn run(args: PullArgs, cache_dir: Option<PathBuf>) -> anyhow::Result<()> {
     let reference = AssetReference::parse(&args.reference)?;
-    let cache = match args.cache_dir {
+    let cache = match cache_dir {
         Some(path) => AssetCache::open(path)?,
         None => AssetCache::discover()?,
     };
