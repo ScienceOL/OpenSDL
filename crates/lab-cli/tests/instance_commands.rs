@@ -188,6 +188,32 @@ fn instances_have_independent_lifecycles_and_keep_their_original_package() {
 }
 
 #[test]
+fn docker_style_aliases_cover_the_managed_instance_lifecycle() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = temp.path().join("store");
+    let digest = import(&store, &temp.path().join("asset"), true);
+
+    let running = success(lab(&store, &["run", &digest, "--name", "short", "--json"]));
+    assert_eq!(running["state"], "running");
+    assert_eq!(running["manifest_digest"], digest);
+
+    let listed = success(lab(&store, &["ps", "--json"]));
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["name"], "short");
+
+    assert!(lab(&store, &["logs", "short", "--tail", "10"])
+        .status
+        .success());
+    let stopped = success(lab(&store, &["stop", "short", "--json"]));
+    assert_eq!(stopped["state"], "exited");
+    assert!(lab(&store, &["rm", "short"]).status.success());
+    assert_eq!(
+        success(lab(&store, &["ps", "--all", "--json"])),
+        serde_json::json!([])
+    );
+}
+
+#[test]
 fn visual_assets_and_invalid_names_cannot_create_instances() {
     let temp = tempfile::tempdir().unwrap();
     let store = temp.path().join("store");

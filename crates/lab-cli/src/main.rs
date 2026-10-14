@@ -72,8 +72,53 @@ enum Command {
     Send(commands::send::SendArgs),
     /// Stream engine events.
     Events(commands::events::EventsArgs),
-    /// Ask the running server to shut down.
-    Stop,
+    /// Run a digest-pinned kinematic asset as a managed local instance.
+    ///
+    /// This is the short form of `lab instance run`. The explicit name keeps
+    /// scripts reproducible and lets several instances use one cache.
+    Run {
+        reference: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        offline: bool,
+        #[command(flatten)]
+        auth: commands::registry_auth::RegistryAuthArgs,
+    },
+    /// List managed local instances (the short form of `lab instance list`).
+    Ps {
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start a retained managed instance.
+    Start {
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop an instance, or shut down the standalone server when no name is given.
+    Stop {
+        name: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print retained logs for a managed instance.
+    Logs {
+        name: String,
+        #[arg(long, default_value_t = 100)]
+        tail: usize,
+    },
+    /// Remove a stopped managed instance.
+    Rm { name: String },
+    /// List cached asset packages (the short form of `lab asset list`).
+    Images {
+        #[arg(long)]
+        json: bool,
+    },
     /// Validate a portable OpenSDL virtual asset directory.
     Validate(commands::validate::ValidateArgs),
     /// Pack a portable asset into a deterministic OCI image layout.
@@ -127,7 +172,72 @@ fn main() {
                     Command::Device { cmd } => commands::device::run(cmd, opts).await,
                     Command::Send(args) => commands::send::run(args, opts).await,
                     Command::Events(args) => commands::events::run(args, opts).await,
-                    Command::Stop => commands::stop::run(opts).await,
+                    Command::Run {
+                        reference,
+                        name,
+                        json,
+                        offline,
+                        auth,
+                    } => {
+                        commands::instance::run(
+                            commands::instance::InstanceCmd::Run {
+                                reference,
+                                name,
+                                json,
+                                offline,
+                                auth,
+                            },
+                            cache_dir,
+                        )
+                        .await
+                    }
+                    Command::Ps { all, json } => {
+                        commands::instance::run(
+                            commands::instance::InstanceCmd::List { all, json },
+                            cache_dir,
+                        )
+                        .await
+                    }
+                    Command::Start { name, json } => {
+                        commands::instance::run(
+                            commands::instance::InstanceCmd::Start { name, json },
+                            cache_dir,
+                        )
+                        .await
+                    }
+                    Command::Stop { name, json } => match name {
+                        Some(name) => {
+                            commands::instance::run(
+                                commands::instance::InstanceCmd::Stop { name, json },
+                                cache_dir,
+                            )
+                            .await
+                        }
+                        None if json => Err(anyhow::anyhow!(
+                            "--json requires an instance name; use `lab stop` for the standalone server"
+                        )),
+                        None => commands::stop::run(opts).await,
+                    },
+                    Command::Logs { name, tail } => {
+                        commands::instance::run(
+                            commands::instance::InstanceCmd::Logs { name, tail },
+                            cache_dir,
+                        )
+                        .await
+                    }
+                    Command::Rm { name } => {
+                        commands::instance::run(
+                            commands::instance::InstanceCmd::Remove { name },
+                            cache_dir,
+                        )
+                        .await
+                    }
+                    Command::Images { json } => {
+                        commands::asset::run(
+                            commands::asset::AssetCmd::List { json },
+                            cache_dir,
+                        )
+                    }
                     Command::Push(args) => commands::push::run(args).await,
                     Command::Pull(args) => commands::pull::run(args, cache_dir).await,
                     Command::Api { cmd } => commands::api::run(cmd).await,
