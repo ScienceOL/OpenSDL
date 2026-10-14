@@ -54,6 +54,11 @@ enum Command {
         #[command(subcommand)]
         cmd: commands::asset::AssetCmd,
     },
+    /// Own the local content-addressed asset store.
+    Daemon {
+        #[command(subcommand)]
+        cmd: commands::daemon::DaemonCmd,
+    },
     /// Authenticate to LiyanLabs and inspect online lab devices.
     Api {
         #[command(subcommand)]
@@ -123,6 +128,10 @@ enum Command {
     Validate(commands::validate::ValidateArgs),
     /// Pack a portable asset into a deterministic OCI image layout.
     Pack(commands::pack::PackArgs),
+    /// Build a portable asset into the local image store and optionally tag it.
+    Build(commands::build::BuildArgs),
+    /// Split selected OpenUSD prims into independently buildable child assets.
+    Split(commands::split::SplitArgs),
     /// Inspect a portable asset directory or OCI image layout.
     Inspect(commands::inspect::InspectArgs),
     /// Push a packed virtual asset to an OCI registry.
@@ -141,11 +150,10 @@ fn main() {
     // and keep `#[tokio::main]`-equivalent behavior for everything else.
     let cache_dir = cli.cache_dir;
     let result: anyhow::Result<()> = match cli.command {
-        Command::Asset { cmd } => commands::asset::run(cmd, cache_dir),
         Command::Serve(args) => commands::serve::main_entrypoint(args),
         Command::Validate(args) => commands::validate::run(args),
         Command::Pack(args) => commands::pack::run(args),
-        Command::Inspect(args) => commands::inspect::run(args),
+        Command::Split(args) => commands::split::run(args, cache_dir),
         other => {
             // Client subcommands run a vanilla tokio runtime in the foreground.
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -168,6 +176,9 @@ fn main() {
             rt.block_on(async move {
                 match other {
                     Command::Serve(_) => unreachable!(),
+                    Command::Asset { cmd } => commands::asset::run(cmd, cache_dir).await,
+                    Command::Daemon { cmd } => commands::daemon::run(cmd, cache_dir).await,
+                    Command::Inspect(args) => commands::inspect::run(args, cache_dir).await,
                     Command::Status => commands::status::run(opts).await,
                     Command::Device { cmd } => commands::device::run(cmd, opts).await,
                     Command::Send(args) => commands::send::run(args, opts).await,
@@ -237,9 +248,11 @@ fn main() {
                             commands::asset::AssetCmd::List { json },
                             cache_dir,
                         )
+                        .await
                     }
-                    Command::Push(args) => commands::push::run(args).await,
+                    Command::Push(args) => commands::push::run(args, cache_dir).await,
                     Command::Pull(args) => commands::pull::run(args, cache_dir).await,
+                    Command::Build(args) => commands::build::run(args, cache_dir).await,
                     Command::Api { cmd } => commands::api::run(cmd).await,
                     Command::Instance { cmd } => commands::instance::run(cmd, cache_dir).await,
                     Command::InstanceWorker { name, generation } => {
@@ -252,10 +265,9 @@ fn main() {
                         )
                         .await
                     }
-                    Command::Asset { .. }
-                    | Command::Validate(_)
+                    Command::Validate(_)
                     | Command::Pack(_)
-                    | Command::Inspect(_) => unreachable!(),
+                    | Command::Split(_) => unreachable!(),
                 }
             })
         }

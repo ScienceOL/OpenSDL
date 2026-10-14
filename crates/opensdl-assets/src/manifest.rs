@@ -73,6 +73,18 @@ pub struct AssetMetadata {
     #[serde(default)]
     pub tags: Vec<String>,
     pub license: AssetLicense,
+    /// Provenance written by `lab split` when this package is derived from a
+    /// component of another OpenSDL asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<AssetLineage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetLineage {
+    pub parent: String,
+    pub component: String,
+    pub source_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

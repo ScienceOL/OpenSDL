@@ -1,5 +1,6 @@
 mod cache;
 mod catalog;
+pub mod daemon;
 mod layout;
 mod manifest;
 mod materialize;
@@ -13,8 +14,8 @@ pub use cache::{AssetCache, CacheLease};
 pub use catalog::{AssetSummary, PruneReport};
 pub use layout::inspect_layout;
 pub use manifest::{
-    AssetBindings, AssetCompatibility, AssetError, AssetLicense, AssetMetadata, AssetPreview,
-    AssetRuntime, AssetSource, AssetSpec, AssetType, Capability, CompatibilityStatus,
+    AssetBindings, AssetCompatibility, AssetError, AssetLicense, AssetLineage, AssetMetadata,
+    AssetPreview, AssetRuntime, AssetSource, AssetSpec, AssetType, Capability, CompatibilityStatus,
     RuntimeCompatibility, RuntimeEngine, SourceFormat, ValidatedAsset, VirtualAssetManifest,
     API_VERSION, KIND,
 };

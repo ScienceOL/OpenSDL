@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use opensdl_assets::{materialize, AssetCache, AssetReference, RegistryClient};
+use opensdl_assets::{
+    daemon::DaemonClient, materialize, AssetCache, AssetReference, RegistryClient,
+};
 
 use super::registry_auth::RegistryAuthArgs;
 
@@ -25,6 +27,28 @@ pub async fn run(args: PullArgs, cache_dir: Option<PathBuf>) -> anyhow::Result<(
         Some(path) => AssetCache::open(path)?,
         None => AssetCache::discover()?,
     };
+    if let Some(client) = DaemonClient::discover(&cache).await? {
+        let result: serde_json::Value = client
+            .call_json(
+                "pull",
+                serde_json::json!({
+                    "reference": reference.to_string(),
+                    "output": args.output,
+                    "offline": args.offline,
+                    "credentials": args.auth.credentials(),
+                }),
+            )
+            .await?;
+        if let Some(digest) = result
+            .get("resolvedDigest")
+            .and_then(serde_json::Value::as_str)
+        {
+            println!("{digest}");
+        } else {
+            println!("{result}");
+        }
+        return Ok(());
+    }
     let result = RegistryClient::for_reference(&reference)
         .pull(&reference, &cache, &args.auth.credentials(), args.offline)
         .await?;

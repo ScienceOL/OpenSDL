@@ -1,5 +1,7 @@
 pub mod api;
 pub mod asset;
+pub mod build;
+pub mod daemon;
 pub mod device;
 pub mod events;
 pub mod inspect;
@@ -10,6 +12,7 @@ pub mod push;
 pub mod registry_auth;
 pub mod send;
 pub mod serve;
+pub mod split;
 pub mod status;
 pub mod stop;
 pub mod validate;

@@ -5,10 +5,24 @@ asset, cache an immutable package, and run the supported local simulation.
 Public Hub browsing and pulls do not require Docker, a Hub account, lab
 hardware, or a running `lab serve` process.
 
-## Install
+## Install a runnable release
 
-Use the release installer when it contains the resource commands. Check the
-surface before starting a workflow:
+Install the pre-built release. It contains the `lab` binary, the local asset
+daemon, the OpenUSD asset commands, and the kinematic runtime in one
+executable; Docker, Rust, and a source checkout are not required:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-cli-installer.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/ScienceOL/OpenSDL/releases/latest/download/lab-cli-installer.ps1 | iex"
+```
+
+Check the installed command before starting a workflow:
 
 ```bash
 lab --version
@@ -17,7 +31,8 @@ lab run --help
 lab ps --help
 ```
 
-If `run`, `ps`, `logs`, or `rm` are missing, install the current source:
+If `daemon`, `build`, or `split` are missing, run the installer again. A source
+build is only needed for development:
 
 ```bash
 git clone https://github.com/ScienceOL/OpenSDL.git
@@ -26,24 +41,30 @@ cargo install --locked --path crates/lab-cli
 ```
 
 Rust 1.89 or newer and the platform's C/C++ build tools are required for a
-source build. The installer installs the executable only; it does not install
-device schemas, firmware, or a simulation runtime outside the CLI.
+source build. The installer installs the executable only; device schemas and
+firmware remain separate hardware assets.
 
-## Choose one cache
+## Start the local asset daemon
 
 The resource cache contains content-addressed package blobs, local references,
-and managed instance records. Use the same cache for every command in one
-workflow:
+and managed instance records. The asset daemon owns this cache and serializes
+build, import, pull, push, tag, inspect, and garbage-collection operations. Use
+the same cache for every command in one workflow:
 
 ```bash
 mkdir -p opensdl-demo
 cd opensdl-demo
 export LAB_ASSET_CACHE="$PWD/lab-cache"
+
+lab daemon start
+lab daemon status --json
 ```
 
-An explicit `--cache-dir` overrides `LAB_ASSET_CACHE` for one command. Do not
-manually delete the cache's `instances` directory or `catalog.sqlite`; the
-catalog owns digest leases and garbage-collection state.
+An explicit `--cache-dir` overrides `LAB_ASSET_CACHE` for one command. `lab
+daemon start` detaches a loopback daemon and `lab daemon stop` stops it.
+Commands fall back to direct cache access when the daemon is not running, so an
+offline script remains usable. Do not manually delete the cache's `instances`
+directory, `catalog.sqlite`, or `daemon.json`.
 
 ## Discover and pull from Hub
 
@@ -83,7 +104,7 @@ lab pull "$asset_ref" --offline --output ./assets/elevrail-offline
 An offline failure identifies the missing blob; repeat one online pull with
 the same cache and retry.
 
-## Build a runnable kinematic package
+## Build an asset image
 
 The public Hub catalog currently contains visual assets. The repository's
 `examples/kinematic-lab` is the supported runnable package for validating the
@@ -92,10 +113,16 @@ instance lifecycle:
 ```bash
 cd /path/to/OpenSDL
 lab validate examples/kinematic-lab
-lab pack examples/kinematic-lab --output "$OLDPWD/kinematic-layout"
-lab asset import "$OLDPWD/kinematic-layout" \
-  --tag localhost/lab/kinematic:1.0.0
+lab build examples/kinematic-lab \
+  --tag localhost/lab/kinematic:1.0.0 \
+  --output "$OLDPWD/kinematic-layout"
+lab images --json
 ```
+
+`lab build` is the Docker-like boundary: it validates the directory, creates a
+deterministic OCI image layout, imports all blobs into the daemon's local
+content-addressed store, and assigns the optional tag. `lab pack` remains
+available when an explicit OCI layout directory is required.
 
 The package must declare `simulation` and the `kinematic` runtime in
 `asset.yaml`:
@@ -112,6 +139,33 @@ Visual-only packages are valid assets but are rejected as managed instances.
 The first runtime is deterministic state evolution; it does not provide OS
 container isolation, arbitrary process execution, rigid-body physics, or
 automatic cloud/device fallback.
+
+## Split an OpenUSD scene into child assets
+
+`lab split` uses `usdcat` from the OpenUSD tools. It follows the LabReady
+component workflow: each selected USD prim is extracted from the composed stage,
+given its own `asset.yaml`, license, preview, thumbnail, and lineage pointing to
+the parent package digest. The generated children are ordinary asset
+directories, so every child goes through the same validate/build/push path:
+
+```bash
+lab split ./robot \
+  --part arm=/Robot/Geometry/Arm \
+  --part base=/Robot/Geometry/Base \
+  --output ./robot-components
+
+lab validate ./robot-components/arm
+lab build ./robot-components/arm \
+  --tag hub.sciol.ac.cn/acme/robot-arm:1.0.0
+lab push hub.sciol.ac.cn/acme/robot-arm:1.0.0 \
+  hub.sciol.ac.cn/acme/robot-arm:1.0.0
+```
+
+The first argument to `lab push` can be a local tag or digest, or an OCI layout
+directory. The second argument is always the remote tag. `lab split` currently
+requires an OpenUSD source and an explicit component-to-prim mapping. It does
+not guess semantic parts or generate a new GLB preview; provide a reviewed
+preview asset when a child needs a component-specific online preview.
 
 ## Run and operate an instance
 

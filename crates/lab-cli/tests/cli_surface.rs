@@ -16,4 +16,7 @@ fn help_identifies_lab_as_the_user_facing_cli() {
     assert!(stdout.contains("inspect"));
     assert!(stdout.contains("push"));
     assert!(stdout.contains("pull"));
+    assert!(stdout.contains("daemon"));
+    assert!(stdout.contains("build"));
+    assert!(stdout.contains("split"));
 }
