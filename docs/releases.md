@@ -3,7 +3,10 @@
 OpenSDL uses cargo-dist 0.32.0, configured in `dist-workspace.toml`.
 The Rust package is `lab-cli`; its executable is `lab`. Consequently the
 installers are `lab-cli-installer.sh` and `lab-cli-installer.ps1`, and the
-installed updater is `lab-cli-update`.
+installed updater is `lab-cli-update`. The single executable contains the
+device service, local asset daemon, OCI store, OpenUSD split workflow, and
+kinematic runtime; no second asset-store package is needed on a user's
+machine.
 
 ## Prepare and verify
 
@@ -19,14 +22,20 @@ installed updater is `lab-cli-update`.
    operating systems and builds all release targets, archives, and installers.
    Merge only after these checks pass.
 
+The release artifact is the installation boundary for asset management. A
+third-party user installs `lab`, runs `lab daemon start`, and can build, tag,
+push, pull, split, inspect, and run assets without Rust, Docker, or a source
+checkout. The daemon is a child process of the same installed executable and
+stores its state under `LAB_ASSET_CACHE` (or the platform state directory).
+
 ## Publish
 
 From the merged, clean main branch, create and push the tag matching the
-workspace version. For example, for v0.2.0:
+workspace version. For the local asset daemon release this is v0.3.0:
 
 ```bash
-git tag -a v0.2.0 -m "OpenSDL v0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.0 -m "OpenSDL v0.3.0"
+git push origin v0.3.0
 ```
 
 The tag workflow reruns the checks, builds the release artifacts, and creates

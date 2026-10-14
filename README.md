@@ -88,12 +88,23 @@ run `lab serve --help`.
 Portable asset commands run independently of the hardware server:
 
 ```bash
+lab daemon start
 lab validate path/to/asset
-lab pack path/to/asset --output path/to/oci-layout
-lab inspect path/to/oci-layout
-lab push --help
-lab pull --help
+lab build path/to/asset --tag localhost/lab/demo:1.0.0
+lab images
+lab inspect localhost/lab/demo:1.0.0
+lab push localhost/lab/demo:1.0.0 registry.example/lab/demo:1.0.0
+lab pull registry.example/lab/demo:1.0.0 --output ./downloaded-asset
+lab daemon stop
 ```
+
+`lab build` validates a portable asset, creates its deterministic OCI artifact,
+and admits it to the local content-addressed store. The daemon keeps the store
+available across commands and processes; `lab pack` remains available when an
+explicit OCI image-layout directory is needed. `lab split` can extract selected
+OpenUSD prims into child asset directories, which then follow the same build,
+push, pull, and run lifecycle. See [`docs/lab-cli.md`](docs/lab-cli.md) for
+the complete Hub workflow.
 
 ## What is OpenSDL?
 
@@ -254,7 +265,7 @@ cargo install --locked --path crates/lab-cli --features osdl-core/serial
 
 ## Status
 
-OpenSDL is in early development. The current CLI is `lab` (since v0.2.0).
+OpenSDL is in early development. The current CLI is `lab` (v0.3.0).
 Implemented components include the gRPC server, embedded MQTT broker, mDNS
 discovery, SQLite event store, MQTT serial, ESP-NOW, TCP, optional direct
 serial, ONVIF camera control, and portable assets distributed through OCI
@@ -279,10 +290,9 @@ MIT
 
 ## Local resource management
 
-Resource management is merged into `main`. Until a release containing the
-commands below is published, install the CLI from this checkout with
-`cargo install --locked --path crates/lab-cli`. Use one explicit store for an
-isolated lab:
+Resource management is part of the v0.3.0 release line. Install the release
+binary from the top of this README, then use one explicit store for an isolated
+lab:
 
 ```bash
 lab asset import ./layout --tag localhost/lab/demo:1.0.0 --cache-dir ./lab-store
@@ -291,6 +301,17 @@ lab asset tag localhost/lab/demo:1.0.0 localhost/lab/demo:review --cache-dir ./l
 lab asset inspect localhost/lab/demo:review --json --cache-dir ./lab-store
 lab asset remove localhost/lab/demo:review --cache-dir ./lab-store
 lab asset prune --dry-run --json --cache-dir ./lab-store
+```
+
+Start the local daemon before a multi-command workflow. It is the same
+installed `lab` executable running as a background process, so no second
+package or Docker daemon is required:
+
+```bash
+lab daemon start --cache-dir ./lab-store
+lab build ./asset --tag localhost/lab/demo:1.0.0 --cache-dir ./lab-store
+lab images --json --cache-dir ./lab-store
+lab daemon stop --cache-dir ./lab-store
 ```
 
 The Docker-style shortcuts operate on the same catalog and instance state:

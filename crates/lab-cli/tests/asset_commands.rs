@@ -200,3 +200,51 @@ fn an_invalid_import_tag_leaves_the_inventory_unchanged() {
         serde_json::json!([])
     );
 }
+
+#[test]
+fn daemon_owns_build_and_local_image_inventory() {
+    let temp = tempfile::tempdir().expect("create daemon test root");
+    let asset = temp.path().join("asset");
+    create_asset(&asset);
+    let store = temp.path().join("store");
+    let invoke = |args: &[&str]| {
+        lab()
+            .arg("--cache-dir")
+            .arg(&store)
+            .args(args)
+            .output()
+            .expect("invoke lab")
+    };
+
+    let start = invoke(&["daemon", "start", "--json"]);
+    assert!(start.status.success(), "{}", stderr(&start));
+    let build = lab()
+        .arg("--cache-dir")
+        .arg(&store)
+        .args(["build"])
+        .arg(&asset)
+        .args(["--tag", "localhost/library/demo:1.0.0", "--json"])
+        .output()
+        .expect("build asset through daemon");
+    assert!(build.status.success(), "{}", stderr(&build));
+    let built: serde_json::Value = serde_json::from_slice(&build.stdout).expect("build JSON");
+    let digest = built["manifestDigest"].as_str().expect("manifest digest");
+    assert!(digest.starts_with("sha256:"));
+
+    let images = invoke(&["images", "--json"]);
+    assert!(images.status.success(), "{}", stderr(&images));
+    let rows: serde_json::Value = serde_json::from_slice(&images.stdout).expect("images JSON");
+    assert_eq!(
+        rows[0]["references"],
+        serde_json::json!(["oci://localhost/library/demo:1.0.0"])
+    );
+
+    let inspect = invoke(&["inspect", "localhost/library/demo:1.0.0", "--json"]);
+    assert!(inspect.status.success(), "{}", stderr(&inspect));
+    let inspected: serde_json::Value =
+        serde_json::from_slice(&inspect.stdout).expect("inspect tag JSON");
+    assert_eq!(inspected["manifestDigest"], digest);
+
+    let stop = invoke(&["daemon", "stop", "--json"]);
+    assert!(stop.status.success(), "{}", stderr(&stop));
+}

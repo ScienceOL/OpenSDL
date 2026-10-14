@@ -4,6 +4,7 @@ use http::HeaderValue;
 use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::secrets::RegistryAuth;
 use oci_client::Client;
+use serde::{Deserialize, Serialize};
 
 use crate::cache::AssetCache;
 use crate::layout::{validate_manifest_shape, verify_blob};
@@ -12,7 +13,7 @@ use crate::media_types::{ARTIFACT_TYPE, MANIFEST_MEDIA_TYPE};
 use crate::package::{digest_bytes, ImageManifest, OciDescriptor, PackageDescriptor};
 use crate::reference::AssetReference;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegistryCredentials {
     Anonymous,
     Basic { username: String, password: String },
@@ -31,14 +32,14 @@ impl RegistryCredentials {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PushResult {
     pub reference: String,
     pub manifest_digest: String,
     pub uploaded_blobs: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullResult {
     pub reference: String,
     pub resolved_digest: String,
@@ -99,6 +100,65 @@ impl RegistryClient {
             annotations: Default::default(),
         };
         let manifest_bytes = verify_blob(layout, &manifest_descriptor)?;
+        client
+            .push_manifest_raw(
+                reference.as_oci(),
+                manifest_bytes,
+                HeaderValue::from_static(MANIFEST_MEDIA_TYPE),
+            )
+            .await
+            .map_err(|error| AssetError::registry("push manifest", error))?;
+
+        Ok(PushResult {
+            reference: reference.to_string(),
+            manifest_digest: package.manifest_digest,
+            uploaded_blobs,
+        })
+    }
+
+    /// Push an already-admitted package from the local content-addressed
+    /// store. This is the daemon path used by `lab push NAME:TAG`.
+    pub async fn push_cached(
+        &self,
+        cache: &AssetCache,
+        source: &str,
+        reference: &AssetReference,
+        credentials: &RegistryCredentials,
+    ) -> Result<PushResult, AssetError> {
+        reference.require_tag()?;
+        let source = source.to_owned();
+        let cache = cache.clone();
+        let (package, blobs, manifest_bytes) = tokio::task::spawn_blocking(move || {
+            let digest = cache.resolve(&source)?;
+            let package = cache.package(&digest)?;
+            let blobs = std::iter::once(&package.config)
+                .chain(package.layers.iter())
+                .map(|descriptor| {
+                    cache
+                        .read_descriptor(descriptor)
+                        .map(|bytes| (descriptor.digest.clone(), bytes))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let manifest_bytes = cache.read_digest(&package.manifest_digest)?;
+            Ok::<_, AssetError>((package, blobs, manifest_bytes))
+        })
+        .await
+        .map_err(|error| AssetError::invalid(format!("prepare cached push: {error}")))??;
+        let auth = credentials.as_oci();
+        let client = self.client();
+        client
+            .store_auth_if_needed(reference.registry(), &auth)
+            .await;
+
+        let mut uploaded_blobs = 0_usize;
+        for (digest, bytes) in blobs {
+            client
+                .push_blob(reference.as_oci(), bytes, &digest)
+                .await
+                .map_err(|error| AssetError::registry("push blob", error))?;
+            uploaded_blobs += 1;
+        }
+
         client
             .push_manifest_raw(
                 reference.as_oci(),

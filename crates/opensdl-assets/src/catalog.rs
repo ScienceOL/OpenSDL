@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::{AssetError, AssetReference, PackageDescriptor};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 pub struct AssetSummary {
     pub manifest_digest: String,
     pub name: String,
@@ -19,7 +19,7 @@ pub struct AssetSummary {
     pub size_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 pub struct PruneReport {
     pub packages: Vec<String>,
     pub blobs: Vec<String>,
