@@ -277,10 +277,12 @@ Tagged versions run the same checks before publication. See
 
 MIT
 
-## Local resource management (source builds)
+## Local resource management
 
-The resource-management commands require building the current source; they are
-not yet in the public CLI release. Use one explicit store for an isolated lab:
+Resource management is merged into `main`. Until a release containing the
+commands below is published, install the CLI from this checkout with
+`cargo install --locked --path crates/lab-cli`. Use one explicit store for an
+isolated lab:
 
 ```bash
 lab asset import ./layout --tag localhost/lab/demo:1.0.0 --cache-dir ./lab-store
@@ -290,6 +292,25 @@ lab asset inspect localhost/lab/demo:review --json --cache-dir ./lab-store
 lab asset remove localhost/lab/demo:review --cache-dir ./lab-store
 lab asset prune --dry-run --json --cache-dir ./lab-store
 ```
+
+The Docker-style shortcuts operate on the same catalog and instance state:
+
+```bash
+lab images --json --cache-dir ./lab-store
+lab run localhost/lab/kinematic:1.0.0 --name demo --json
+lab ps --json --cache-dir ./lab-store
+lab logs demo --tail 20 --cache-dir ./lab-store
+lab stop demo --json --cache-dir ./lab-store
+lab start demo --json --cache-dir ./lab-store
+lab rm demo --cache-dir ./lab-store
+```
+
+`lab stop` without a name still shuts down a standalone `lab serve` process.
+The managed runtime currently supports packages that declare the local
+`kinematic` simulation engine. It is a Docker-like resource and lifecycle
+surface, not OS container isolation or arbitrary process execution. See
+[`docs/lab-cli.md`](docs/lab-cli.md) for the complete Hub-to-instance workflow,
+offline cache rules, diagnostics, and cleanup order.
 
 `layout` is an OCI layout created with `lab pack`. Inventory and references are
 transactional local metadata; tags do not push packages to a registry. Pruning
