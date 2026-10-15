@@ -81,24 +81,24 @@ managed instances before replacing the binary on Windows.
 
 ## Discover and pull from Hub
 
-The Test catalog is at <https://hub.test.sciol.ac.cn/>. Its catalog API is
+The Test catalog is at <https://hub.test.liyanlabs.com/>. Its catalog API is
 separate from the OCI Registry used by `lab pull`:
 
 ```bash
 curl --fail --silent --show-error \
-  'https://hub.test.sciol.ac.cn/api/v1/assets?q=robot&limit=20'
+  'https://hub.test.liyanlabs.com/api/v1/assets?q=robot&limit=20'
 curl --fail --silent --show-error \
-  'https://hub.test.sciol.ac.cn/api/v1/assets/scienceol/elevrail-1-5m-v1-5167d813ec'
+  'https://hub.test.liyanlabs.com/api/v1/assets/scienceol/elevrail-1-5m-v1-5167d813ec'
 curl --fail --silent --show-error \
-  'https://hub.test.sciol.ac.cn/api/v1/assets/scienceol/elevrail-1-5m-v1-5167d813ec/versions/1.0.0'
+  'https://hub.test.liyanlabs.com/api/v1/assets/scienceol/elevrail-1-5m-v1-5167d813ec/versions/1.0.0'
 ```
 
 Copy the version detail's `pull_reference` in full. The web catalog host is
-`hub.test.sciol.ac.cn`; the public OCI reference normally uses
-`hub.sciol.ac.cn`. Save a digest reference for reproducible automation:
+`hub.test.liyanlabs.com`; the public OCI reference normally uses
+`hub.liyanlabs.com`. New publications use this primary registry host; existing stored references retain their recorded authority. Save a digest reference for reproducible automation:
 
 ```bash
-asset_ref='hub.sciol.ac.cn/scienceol/elevrail-1-5m-v1-5167d813ec@sha256:2f5734742ca8694602faead5517ef6cf68f0db399ea9bb0e9c160d58f2efc1f2'
+asset_ref='hub.liyanlabs.com/scienceol/elevrail-1-5m-v1-5167d813ec@sha256:2f5734742ca8694602faead5517ef6cf68f0db399ea9bb0e9c160d58f2efc1f2'
 lab pull "$asset_ref" --output ./assets/elevrail
 lab images --json
 lab inspect ./assets/elevrail --json
@@ -199,9 +199,9 @@ lab split ./robot \
 
 lab validate ./robot-components/arm
 lab build ./robot-components/arm \
-  --tag hub.sciol.ac.cn/acme/robot-arm:1.0.0
-lab push hub.sciol.ac.cn/acme/robot-arm:1.0.0 \
-  hub.sciol.ac.cn/acme/robot-arm:1.0.0
+  --tag hub.liyanlabs.com/acme/robot-arm:1.0.0
+lab push hub.liyanlabs.com/acme/robot-arm:1.0.0 \
+  hub.liyanlabs.com/acme/robot-arm:1.0.0
 ```
 
 The first argument to `lab push` can be a local tag or digest, or an OCI layout
