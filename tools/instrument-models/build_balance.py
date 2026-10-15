@@ -55,17 +55,17 @@ def create_model(p):
         for z in (0.083, 0.331):
             box(frame, "Door rail", (x, 0.042, z), (0.008, 0.230, 0.007), steel, 0.001)
     for y in (-0.068, 0.151):
-        box(frame, "Upper crossmember", (0, y, 0.333), (0.222, 0.006, 0.006), shell)
+        box(frame, "Upper crossmember", (0, y, 0.326), (0.222, 0.006, 0.006), shell)
     box(frame, "Front fixed glass", (0, -0.068, 0.205), (0.209, 0.0028, 0.238), glass, 0.0005)
     box(frame, "Rear fixed glass", (0, 0.151, 0.205), (0.209, 0.0028, 0.238), glass, 0.0005)
-    for side, x in (("left", -0.112), ("right", 0.112)):
+    for side, x in (("left", -0.1135), ("right", 0.1135)):
         parent = parts[f"door_{side}"]
         box(parent, "Sliding glass", (x, 0.041, 0.205), (0.0028, 0.212, 0.238), glass, 0.0005)
-        box(parent, "Door leading edge", (x, -0.066, 0.205), (0.0035, 0.0035, 0.239), steel, 0.0005)
-        box(parent, "Door handle", (x * 1.025, -0.048, 0.194), (0.004, 0.018, 0.038), trim, 0.0015)
+        box(parent, "Door leading edge", (x + math.copysign(0.0005, x), -0.066, 0.205), (0.0035, 0.0035, 0.239), steel, 0.0005)
+        box(parent, "Door handle", (math.copysign(0.1155, x), -0.048, 0.194), (0.004, 0.018, 0.038), trim, 0.0015)
     top = parts["door_top"]
     box(top, "Top sliding glass", (0, 0.041, 0.331), (0.205, 0.209, 0.0028), glass, 0.0005)
-    box(top, "Top handle", (0, -0.052, 0.332), (0.037, 0.012, 0.007), trim, 0.001)
+    box(top, "Top handle", (0, -0.052, 0.3342), (0.037, 0.012, 0.0036), trim, 0.001)
     # Tilted display plane with its own UV surface for live, instance-owned text.
     bezel = box(body, "Display bezel", (0, -0.121, 0.059), (0.182, 0.064, 0.010), trim, 0.004)
     bezel.rotation_euler.x = math.radians(24)

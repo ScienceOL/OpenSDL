@@ -186,3 +186,24 @@ test("readout surfaces are instance-owned and redraw only a changed value",async
     readout.dispose();assert.equal(disposed,1);assert.equal(mesh.material,original);assert.equal(other.material,original);
   } finally {globalThis.document=previous;}
 });
+
+test("every draft-shield door has a clear swept path through its complete travel", async()=>{
+  const root=await load(),binding=bindInstrument(root);
+  root.updateMatrixWorld(true);
+  const fixed=[];
+  binding.parts.get("draft_shield").traverse(node=>{if(node.isMesh)fixed.push(node);});
+  for(const joint of binding.definition.joints) {
+    const travel=new Vector3(...joint.axis).multiplyScalar(joint.max);
+    binding.parts.get(joint.component).traverse(node=>{
+      if(!node.isMesh)return;
+      const swept=new Box3().setFromObject(node);
+      swept.union(swept.clone().translate(travel));
+      for(const obstacle of fixed) {
+        const intersection=swept.clone().intersect(new Box3().setFromObject(obstacle));
+        if(intersection.isEmpty())continue;
+        const size=intersection.getSize(new Vector3());
+        assert.ok(Math.min(size.x,size.y,size.z)<=1e-6,`${joint.id}: ${node.name} intersects ${obstacle.name}`);
+      }
+    });
+  }
+});
