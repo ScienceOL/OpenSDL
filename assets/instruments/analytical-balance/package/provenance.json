@@ -5,9 +5,9 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/analytical-balance/model.yaml": "b72215a101ebd3bec14fe13e7eab4ee062e0cb45f4cb99bc5d2753627e6817b2",
-    "assets/instruments/analytical-balance/SOURCE.md": "c421d1b6a2a73a2b1fcc11235d2302055bd737c79670c20b032168678afd5f61",
-    "tools/instrument-models/build_balance.py": "67cc20f85d331780c290854d7760008156d06bbade6b15e87359d6696163a4e8",
+    "assets/instruments/analytical-balance/model.yaml": "849a825bfc3bae4be2d0c8057c3572a96ed3f9fdd5d7e995850dbe214dd3a0dd",
+    "assets/instruments/analytical-balance/SOURCE.md": "60ad70fb94e5bf2dd72bfeeb6c1c8e84383d02bfa6258aae5d048989d975d6b3",
+    "tools/instrument-models/build_balance.py": "e2d490a6e9c4f640cb4e790d6d6305cbbd69814ef8574ce120d9a204d810b34a",
     "tools/instrument-models/geometry.py": "69112fd3f1effc759596d9ed8c1964c08be858b825c78922a613567e8425a6dd",
     "tools/instrument-models/package.py": "025e7865ab03a836c451f33f9905d5a09b975546bd7acd0609850c2d32a53543"
   }

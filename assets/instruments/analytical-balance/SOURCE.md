@@ -25,7 +25,7 @@ Build with official Blender 4.5.3 LTS:
 
 ```sh
 blender --background --factory-startup --python-exit-code 1 \
-  --python tools/instrument-models/build_balance.py -- --output <new-directory>
+  --python tools/instrument-models/build_balance.py -- --output <new-directory> --proofs <proof-directory>
 ```
 
 The builder emits the OpenSDL asset directory, engine configuration, engineering
