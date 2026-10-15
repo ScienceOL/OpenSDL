@@ -153,7 +153,7 @@ fn main() {
         Command::Serve(args) => commands::serve::main_entrypoint(args),
         Command::Validate(args) => commands::validate::run(args),
         Command::Pack(args) => commands::pack::run(args),
-        Command::Split(args) => commands::split::run(args, cache_dir),
+        Command::Split(args) => commands::split::run(args),
         other => {
             // Client subcommands run a vanilla tokio runtime in the foreground.
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))

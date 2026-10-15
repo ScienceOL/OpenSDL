@@ -12,6 +12,7 @@
 //! `expose-it-via-gRPC` keeps that mode simple.
 
 pub mod auth;
+pub mod background;
 pub mod convert;
 pub mod lockfile;
 pub mod managed;

@@ -1,4 +1,6 @@
 use std::path::Path;
+use tokio_stream::StreamExt;
+use tokio_util::io::ReaderStream;
 
 use http::HeaderValue;
 use oci_client::client::{ClientConfig, ClientProtocol};
@@ -129,14 +131,18 @@ impl RegistryClient {
         let source = source.to_owned();
         let cache = cache.clone();
         let (package, blobs, manifest_bytes) = tokio::task::spawn_blocking(move || {
-            let digest = cache.resolve(&source)?;
+            let _lease = cache.lock()?;
+            let digest = cache.catalog_digest(&source)?;
             let package = cache.package(&digest)?;
             let blobs = std::iter::once(&package.config)
                 .chain(package.layers.iter())
                 .map(|descriptor| {
-                    cache
-                        .read_descriptor(descriptor)
-                        .map(|bytes| (descriptor.digest.clone(), bytes))
+                    let path = cache.blob_path(&descriptor.digest)?;
+                    // Open under the store lease: prune may unlink the name after
+                    // this snapshot, but the upload owns the verified file handle.
+                    std::fs::File::open(&path)
+                        .map(|file| (descriptor.digest.clone(), file))
+                        .map_err(|error| AssetError::read(&path, error))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let manifest_bytes = cache.read_digest(&package.manifest_digest)?;
@@ -151,9 +157,11 @@ impl RegistryClient {
             .await;
 
         let mut uploaded_blobs = 0_usize;
-        for (digest, bytes) in blobs {
+        for (digest, file) in blobs {
+            let stream = ReaderStream::with_capacity(tokio::fs::File::from_std(file), 1024 * 1024)
+                .map(|result| result.map_err(Into::into));
             client
-                .push_blob(reference.as_oci(), bytes, &digest)
+                .push_blob_stream(reference.as_oci(), stream, &digest)
                 .await
                 .map_err(|error| AssetError::registry("push blob", error))?;
             uploaded_blobs += 1;

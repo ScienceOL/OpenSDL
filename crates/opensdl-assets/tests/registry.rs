@@ -102,6 +102,25 @@ async fn stock_oci_registry_push_pull_round_trip() {
         .await
         .expect("pull asset");
     assert_eq!(pulled.resolved_digest, packed.manifest_digest);
+
+    let cached_reference =
+        AssetReference::parse(&format!("{registry}/opensdl/test-assets/ur5e:cached")).unwrap();
+    let cached_push = client
+        .push_cached(
+            &cache,
+            &packed.manifest_digest,
+            &cached_reference,
+            &credentials,
+        )
+        .await
+        .expect("stream cached package");
+    assert_eq!(cached_push.manifest_digest, packed.manifest_digest);
+    let fresh = AssetCache::open(temp.path().join("fresh-cache")).unwrap();
+    let repulled = client
+        .pull(&cached_reference, &fresh, &credentials, false)
+        .await
+        .unwrap();
+    assert_eq!(repulled.resolved_digest, packed.manifest_digest);
     assert!(pulled.downloaded_blobs >= 1);
     assert_eq!(
         materialize(&cache, &pulled.resolved_digest, &temp.path().join("pulled"))

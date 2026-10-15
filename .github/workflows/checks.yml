@@ -34,6 +34,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: crates/lab-cli/src/commands/split/requirements.txt
+      - run: python -m pip install -r crates/lab-cli/src/commands/split/requirements.txt
       - uses: Swatinem/rust-cache@v2
       - name: Check README installer URLs against the release plan
         if: runner.os == 'Linux' && inputs.plan != ''
@@ -66,10 +72,14 @@ jobs:
         if: runner.os == 'Linux'
         env:
           OPENSDL_TEST_REGISTRY: localhost:5000
+          LAB_USD_PYTHON: python
         run: cargo test --workspace --locked -- --include-ignored
+        # OpenUSD integration tests use the installed interpreter on every OS.
       - name: Test workspace on macOS and Windows
         timeout-minutes: 12
         if: runner.os != 'Linux'
+        env:
+          LAB_USD_PYTHON: python
         run: cargo test --workspace --locked
       - name: Registry diagnostics and cleanup
         if: always() && runner.os == 'Linux'

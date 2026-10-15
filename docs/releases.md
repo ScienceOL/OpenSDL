@@ -5,7 +5,8 @@ The Rust package is `lab-cli`; its executable is `lab`. Consequently the
 installers are `lab-cli-installer.sh` and `lab-cli-installer.ps1`, and the
 installed updater is `lab-cli-update`. The single executable contains the
 device service, local asset daemon, OCI store, OpenUSD split workflow, and
-kinematic runtime; no second asset-store package is needed on a user's
+kinematic runtime (USD extraction additionally requires the documented OpenUSD
+Python environment); no second asset-store package is needed on a user's
 machine.
 
 ## Prepare and verify
@@ -13,29 +14,32 @@ machine.
 1. Change `workspace.package.version` in `Cargo.toml` to the new version and
    run `cargo check --workspace` to update the workspace entries in `Cargo.lock`.
 2. Update the README when commands, supported targets, or prerequisites change.
-3. Run `cargo fmt --all --check` and `cargo test --workspace --locked`.
+3. Install Python 3.12 and `usd-core==25.11`, set `LAB_USD_PYTHON` to that
+   interpreter, then run `cargo fmt --all --check` and
+   `cargo test --workspace --locked`. Linux CI also runs the disposable registry
+   test using `--include-ignored`; the split tests run on all three platforms.
 4. If dist configuration changed, run `dist generate`; do not hand-edit the
    generated `.github/workflows/release.yml`.
 5. Run `dist plan --output-format=json`. Check that its release version,
    installers, executable, and six platform archives match the README.
-6. Open a pull request. The release workflow runs workspace tests on three
-   operating systems and builds all release targets, archives, and installers.
-   Merge only after these checks pass.
+6. Open a pull request. Checks test the complete workspace on three operating
+   systems; Release validates its cargo-dist plan. The six archives and generated
+   installers are built only for version tags. Merge after the native checks pass.
 
 The release artifact is the installation boundary for asset management. A
 third-party user installs `lab`, runs `lab daemon start`, and can build, tag,
-push, pull, split, inspect, and run assets without Rust, Docker, or a source
+push, pull, inspect, and run assets without Rust, Docker, or a source
 checkout. The daemon is a child process of the same installed executable and
 stores its state under `LAB_ASSET_CACHE` (or the platform state directory).
 
 ## Publish
 
 From the merged, clean main branch, create and push the tag matching the
-workspace version. For the local asset daemon release this is v0.3.0:
+workspace version. For the local asset daemon release this is v0.3.1:
 
 ```bash
-git tag -a v0.3.0 -m "OpenSDL v0.3.0"
-git push origin v0.3.0
+git tag -a v0.3.1 -m "OpenSDL v0.3.1"
+git push origin v0.3.1
 ```
 
 The tag workflow reruns the checks, builds the release artifacts, and creates
