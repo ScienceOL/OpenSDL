@@ -243,9 +243,13 @@ impl EngineHandle {
         let transports = self.transports.read().await;
         let transport = transports
             .get(&transport_id)
+            .cloned()
             .ok_or_else(|| format!("no transport for: {}", transport_id))?;
-
-        transport.send(&bytes).await?;
+        drop(transports);
+        if let Some(result) = transport.execute(&bytes).await? {
+            self.emit(OsdlEvent::CommandResult(result.clone()));
+            return Ok(result);
+        }
 
         Ok(CommandResult {
             command_id: cmd.command_id.clone(),
@@ -705,21 +709,18 @@ impl OsdlEngine {
         };
         config.validate()?;
 
+        let world = crate::simulation::world::WorldRuntime::new(
+            &config,
+            self.handle.transport_rx_tx.clone(),
+            self.handle.simulation_backend_factory.as_ref(),
+        )?;
         for device_config in &config.devices {
             let transport_id = simulation_transport_id(&config.world_id, &device_config.id);
-            let backend = self.handle.simulation_backend_factory.create(
-                &config.engine,
-                &config.world_id,
-                device_config,
-            )?;
-            let backend_engine = backend.engine_id().to_string();
-            let transport = Arc::new(SimulationTransport::with_backend(
-                config.world_id.clone(),
-                device_config,
-                config.tick_hz,
-                self.handle.transport_rx_tx.clone(),
-                backend,
-            )?);
+            let backend_engine = config.engine.clone();
+            let transport = Arc::new(SimulationTransport::for_device(
+                world.clone(),
+                device_config.id.clone(),
+            ));
             transport.start().await?;
             self.handle
                 .register_transport(transport_id.clone(), transport)

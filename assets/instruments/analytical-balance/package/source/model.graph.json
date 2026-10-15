@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.ax240",
+  "dimensions_m": [
+    0.236,
+    0.336,
+    0.354
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Enclosure",
+      "parent": "instrument"
+    },
+    {
+      "id": "draft_shield",
+      "label": "Draft shield",
+      "parent": "instrument"
+    },
+    {
+      "id": "door_left",
+      "label": "Left sliding door",
+      "parent": "instrument",
+      "control": {
+        "kind": "toggle",
+        "action": "set_door",
+        "params": {
+          "door": "left"
+        },
+        "parameter": "opening_m",
+        "state": "door_left_m",
+        "closed": 0,
+        "open": 0.12
+      }
+    },
+    {
+      "id": "door_right",
+      "label": "Right sliding door",
+      "parent": "instrument",
+      "control": {
+        "kind": "toggle",
+        "action": "set_door",
+        "params": {
+          "door": "right"
+        },
+        "parameter": "opening_m",
+        "state": "door_right_m",
+        "closed": 0,
+        "open": 0.12
+      }
+    },
+    {
+      "id": "door_top",
+      "label": "Top sliding door",
+      "parent": "instrument",
+      "control": {
+        "kind": "toggle",
+        "action": "set_door",
+        "params": {
+          "door": "top"
+        },
+        "parameter": "opening_m",
+        "state": "door_top_m",
+        "closed": 0,
+        "open": 0.12
+      }
+    },
+    {
+      "id": "pan",
+      "label": "Weighing pan",
+      "parent": "instrument"
+    },
+    {
+      "id": "screen",
+      "label": "Mass display",
+      "parent": "instrument"
+    },
+    {
+      "id": "power_key",
+      "label": "Power",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "power",
+        "params": {}
+      }
+    },
+    {
+      "id": "tare_key",
+      "label": "Tare",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "tare",
+        "params": {}
+      }
+    },
+    {
+      "id": "zero_key",
+      "label": "Zero",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "zero",
+        "params": {}
+      }
+    },
+    {
+      "id": "vessel",
+      "label": "Sample vessel",
+      "parent": "instrument"
+    },
+    {
+      "id": "mass_5g",
+      "label": "5 g fixture",
+      "parent": "instrument"
+    },
+    {
+      "id": "mass_20g",
+      "label": "20 g fixture",
+      "parent": "instrument"
+    },
+    {
+      "id": "overload",
+      "label": "Overload fixture",
+      "parent": "instrument"
+    }
+  ],
+  "joints": [
+    {
+      "id": "left_slide",
+      "component": "door_left",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.12,
+      "state": "door_left_m"
+    },
+    {
+      "id": "right_slide",
+      "component": "door_right",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.12,
+      "state": "door_right_m"
+    },
+    {
+      "id": "top_slide",
+      "component": "door_top",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.12,
+      "state": "door_top_m"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "mass_g",
+      "digits": 4,
+      "unit": "g"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "vessel",
+      "state": "vessel_visible"
+    },
+    {
+      "component": "mass_5g",
+      "state": "mass_5g_visible"
+    },
+    {
+      "component": "mass_20g",
+      "state": "mass_20g_visible"
+    },
+    {
+      "component": "overload",
+      "state": "overload_visible"
+    }
+  ],
+  "placements": [
+    {
+      "id": "pan",
+      "component": "pan",
+      "position": [
+        0,
+        0.096,
+        -0.041
+      ],
+      "radius_m": 0.043
+    }
+  ]
+}

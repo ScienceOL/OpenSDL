@@ -40,6 +40,15 @@ pub trait Transport: Send + Sync {
     /// Send bytes to the device.
     async fn send(&self, bytes: &[u8]) -> Result<(), String>;
 
+    /// A local simulator can return a terminal result without waiting for serial RX.
+    async fn execute(
+        &self,
+        bytes: &[u8],
+    ) -> Result<Option<crate::protocol::CommandResult>, String> {
+        self.send(bytes).await?;
+        Ok(None)
+    }
+
     /// Whether this transport is currently connected/available.
     fn is_connected(&self) -> bool;
 

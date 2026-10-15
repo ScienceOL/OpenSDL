@@ -10,6 +10,7 @@ pub mod mqtt;
 pub mod orchestrator;
 pub mod path_expand;
 pub mod protocol;
+pub mod simulation;
 pub mod store;
 pub mod transport;
 

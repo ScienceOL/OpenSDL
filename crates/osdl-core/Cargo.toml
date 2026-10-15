@@ -13,6 +13,7 @@ espnow = ["dep:tokio-serial", "dep:osdl-firmware-protocol"]
 
 [dependencies]
 osdl-firmware-protocol = { path = "../osdl-firmware-protocol", optional = true }
+uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

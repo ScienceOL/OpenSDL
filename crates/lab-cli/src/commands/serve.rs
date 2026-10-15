@@ -90,6 +90,9 @@ pub struct ServeArgs {
     /// devices, so local development does not require hardware.
     #[arg(long, env = "OSDL_SIMULATION")]
     pub simulation: bool,
+    /// Run a digest-pinned OpenSDL asset in this supervised foreground process.
+    #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
+    pub asset: Option<String>,
 }
 
 /// Synchronous entrypoint called from `main`. Handles `--detach` *before*
@@ -345,6 +348,29 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     }
 
     let mut config = build_config(&args)?;
+    let _asset_directory;
+    if let Some(reference) = &args.asset {
+        use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
+        let parsed = AssetReference::parse(reference)?;
+        let digest = parsed
+            .digest()
+            .context("--asset requires a sha256 digest-pinned reference")?;
+        let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
+        std::fs::create_dir_all(data)?;
+        let cache = AssetCache::open(data.join("assets"))?;
+        // A cached immutable digest needs no registry round trip; integrity is checked on materialization.
+        if cache.package(digest).is_err() {
+            RegistryClient::for_reference(&parsed)
+                .pull(&parsed, &cache, &RegistryCredentials::Anonymous, false)
+                .await?;
+        }
+        _asset_directory = tempfile::tempdir_in(data)?;
+        config.simulation = Some(osdl_server::simulation_asset::prepare(
+            &cache,
+            digest,
+            &_asset_directory.path().join("package"),
+        )?);
+    }
     // Propagate the resolved data_dir into the engine config so the
     // ONVIF transport can write snapshots under it. The CLI's
     // --data-dir wins; otherwise we use the platform default.
@@ -577,6 +603,7 @@ mod tests {
             log_file: None,
             auth_token: None,
             simulation,
+            asset: None,
         }
     }
 
