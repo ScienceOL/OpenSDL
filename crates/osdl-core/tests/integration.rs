@@ -153,7 +153,7 @@ async fn test_simulation_world_uses_the_device_contract() {
         })
         .await
         .expect("simulation command");
-    assert_eq!(result.status, osdl_core::protocol::CommandStatus::Pending);
+    assert_eq!(result.status, osdl_core::protocol::CommandStatus::Succeeded);
 
     let status = tokio::time::timeout(std::time::Duration::from_secs(1), async {
         loop {

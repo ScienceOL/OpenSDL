@@ -147,7 +147,7 @@ fn instances_have_independent_lifecycles_and_keep_their_original_package() {
             "--json",
         ],
     ));
-    assert_eq!(action["status"], "PENDING");
+    assert_eq!(action["status"], "SUCCEEDED");
     assert!(!lab(&store, &["instance", "remove", "one"]).status.success());
     let stopped = success(lab(&store, &["instance", "stop", "one", "--json"]));
     assert_eq!(stopped["state"], "exited");

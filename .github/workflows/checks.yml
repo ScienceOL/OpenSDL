@@ -60,6 +60,12 @@ jobs:
           for name in urls:
               assert plan["artifacts"][name]["kind"] == "installer", f"Not a planned installer: {name}"
           PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
       - run: cargo fmt --all --check
         timeout-minutes: 2
       - name: Start disposable OCI registry

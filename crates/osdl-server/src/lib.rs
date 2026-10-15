@@ -18,6 +18,7 @@ pub mod lockfile;
 pub mod managed;
 pub mod paths;
 pub mod service;
+pub mod simulation_asset;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;

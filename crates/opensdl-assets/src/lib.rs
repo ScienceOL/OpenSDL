@@ -5,6 +5,7 @@ mod layout;
 mod manifest;
 mod materialize;
 mod media_types;
+pub mod model;
 mod package;
 mod paths;
 mod reference;

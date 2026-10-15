@@ -6,3 +6,7 @@
 .claude/
 firmware/esp32/src/config.h
 firmware/esp32/.pio/
+
+/node_modules
+
+__pycache__/

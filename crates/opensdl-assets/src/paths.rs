@@ -44,6 +44,7 @@ impl ValidatedPaths {
         validate_non_empty_license(&paths.license)?;
         validate_source(manifest.spec.source.format, &paths.source_root)?;
         validate_glb(&paths.preview_model, "preview model")?;
+        crate::model::read_preview_model(&paths.preview_model)?;
         validate_thumbnail(&paths.thumbnail)?;
         if manifest.spec.source.format == SourceFormat::Gltf
             && extension(&paths.source_root) == Some("glb")

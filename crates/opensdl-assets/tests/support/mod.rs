@@ -16,7 +16,7 @@ impl AssetFixture {
         fs::copy(fixture_dir().join("asset.yaml"), root.join("asset.yaml")).expect("copy manifest");
         fs::copy(fixture_dir().join("LICENSE"), root.join("LICENSE")).expect("copy license");
         fs::write(root.join("scene.usda"), b"#usda 1.0\n").expect("write OpenUSD source");
-        write_minimal_glb(&root.join("preview.glb"), b"{}\0\0");
+        write_minimal_glb(&root.join("preview.glb"), b"{}  ");
         fs::write(root.join("thumbnail.png"), minimal_png()).expect("write thumbnail");
         Self { _temp: temp, root }
     }

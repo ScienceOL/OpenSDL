@@ -6,7 +6,6 @@ pub mod worker;
 
 use anyhow::{bail, Context};
 use opensdl_assets::{AssetCache, RuntimeEngine};
-use osdl_core::config::SimulationConfig;
 use osdl_proto::v1 as pb;
 use std::{
     fs::{self, File},
@@ -51,20 +50,12 @@ impl ManagedHost {
         self.store.reserve(name, &digest)?;
         let prepared = (|| {
             owned_directory(&directory)?;
-            let asset = lease.materialize(&digest, &directory.join("package"))?;
-            let config_path = asset
-                .paths
-                .runtime_config
-                .context("runtime config is missing")?;
-            if fs::metadata(&config_path)?.len() > 1024 * 1024 {
-                bail!("runtime config exceeds 1 MiB");
-            }
-            let simulation: SimulationConfig =
-                serde_yaml::from_str(&fs::read_to_string(config_path)?)?;
-            simulation.validate().map_err(anyhow::Error::msg)?;
-            if simulation.engine != "kinematic" {
-                bail!("runtime config requires unsupported engine");
-            }
+            drop(lease);
+            let simulation = crate::simulation_asset::prepare(
+                &self.store.cache,
+                &digest,
+                &directory.join("package"),
+            )?;
             self.store
                 .prepared(name, &serde_yaml::to_string(&simulation)?)?;
             Ok(())

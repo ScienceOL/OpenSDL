@@ -69,6 +69,8 @@ pub struct OsdlConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SimulationConfig {
+    #[serde(default)]
+    pub samples: Vec<crate::simulation::SimulationSampleConfig>,
     /// Stable world identifier used in simulated transport/device ids.
     #[serde(default = "default_simulation_world_id")]
     pub world_id: String,
@@ -89,6 +91,8 @@ pub struct SimulationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SimulationDeviceConfig {
+    #[serde(default)]
+    pub model: Option<crate::simulation::InstrumentConfig>,
     /// Local id inside the simulation world, e.g. `heater-1`.
     pub id: String,
     pub device_type: String,
@@ -135,6 +139,7 @@ fn default_simulation_tick_hz() -> u32 {
 fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
     vec![
         SimulationDeviceConfig {
+            model: None,
             id: "heater-1".into(),
             device_type: "simulation.heater".into(),
             role: Some("heater".into()),
@@ -167,6 +172,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
             position: [-1.6, 0.0, 0.0],
         },
         SimulationDeviceConfig {
+            model: None,
             id: "stirrer-1".into(),
             device_type: "simulation.stirrer".into(),
             role: Some("stirrer".into()),
@@ -198,6 +204,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
             position: [0.0, 0.0, 0.0],
         },
         SimulationDeviceConfig {
+            model: None,
             id: "valve-1".into(),
             device_type: "simulation.valve".into(),
             role: Some("valve".into()),
@@ -221,6 +228,7 @@ fn default_simulation_devices() -> Vec<SimulationDeviceConfig> {
             position: [1.6, 0.0, 0.0],
         },
         SimulationDeviceConfig {
+            model: None,
             id: "probe-1".into(),
             device_type: "simulation.sensor".into(),
             role: Some("temperature_sensor".into()),
@@ -279,6 +287,7 @@ fn simulation_clear_asset_action() -> ActionSchema {
 impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
+            samples: Vec::new(),
             world_id: default_simulation_world_id(),
             engine: default_simulation_engine(),
             tick_hz: default_simulation_tick_hz(),
@@ -290,6 +299,15 @@ impl Default for SimulationConfig {
 
 impl SimulationConfig {
     pub fn validate(&self) -> Result<(), String> {
+        if self.devices.len() > 64 || self.samples.len() > 240 {
+            return Err("simulation exceeds 64 devices or 240 fixtures".into());
+        }
+        crate::simulation::SampleInventory::new(&self.samples)?;
+        for device in &self.devices {
+            if let Some(model) = &device.model {
+                model.validate()?;
+            }
+        }
         if self.world_id.trim().is_empty() {
             return Err("simulation world_id must not be empty".into());
         }
