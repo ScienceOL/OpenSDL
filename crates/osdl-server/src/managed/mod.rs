@@ -2,8 +2,6 @@
 mod control;
 mod startup;
 mod store;
-#[cfg(windows)]
-mod windows;
 pub mod worker;
 
 use anyhow::{bail, Context};
@@ -95,8 +93,6 @@ impl ManagedHost {
         if matches!(record.info.state, InstanceState::Removing) {
             bail!("instance removal is incomplete; repeat remove before reusing its name");
         }
-        #[cfg(windows)]
-        windows::prevent_inherited_stdio()?;
         let directory = self.store.directory(name);
         store::regular_file(&directory.join("instance.log"))?;
         let log = fs::OpenOptions::new()
@@ -132,18 +128,7 @@ impl ManagedHost {
         }
         command.env("RUST_LOG", "info");
         command.stdin(Stdio::null()).stdout(stdout).stderr(log);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: a managed worker has no interactive console.
-            command.creation_flags(0x08000000);
-        }
-        let child = match command.spawn() {
+        let child = match crate::background::spawn(&mut command) {
             Ok(child) => child,
             Err(error) => {
                 self.store.settle(

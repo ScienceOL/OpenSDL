@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use clap::Args;
 use opensdl_assets::{
-    daemon::DaemonClient, pack_directory, AssetCache, AssetReference, PackageDescriptor,
+    daemon::{execute, Operation},
+    AssetCache, PackageDescriptor,
 };
 
 #[derive(Debug, Args)]
@@ -24,31 +25,16 @@ pub async fn run(args: BuildArgs, root: Option<PathBuf>) -> anyhow::Result<()> {
         Some(root) => AssetCache::open(root)?,
         None => AssetCache::discover()?,
     };
-    let tag = args.tag.as_deref().map(AssetReference::parse).transpose()?;
-    let result: PackageDescriptor = if let Some(client) = DaemonClient::discover(&cache).await? {
-        client
-            .call_json(
-                "build",
-                serde_json::json!({
-                    "directory": args.directory,
-                    "tag": tag.as_ref().map(ToString::to_string),
-                    "output": args.output,
-                }),
-            )
-            .await?
-    } else {
-        let temporary;
-        let layout = if let Some(output) = args.output {
-            pack_directory(&args.directory, &output)?;
-            output
-        } else {
-            temporary = tempfile::tempdir_in(cache.root().join("staging"))?;
-            let layout = temporary.path().join("layout");
-            pack_directory(&args.directory, &layout)?;
-            layout
-        };
-        cache.lock()?.import_layout(&layout, tag.as_ref())?
-    };
+    let tag = args.tag;
+    let result: PackageDescriptor = execute(
+        &cache,
+        Operation::Build {
+            directory: std::path::absolute(args.directory)?,
+            output: args.output.map(std::path::absolute).transpose()?,
+            tag: tag.clone(),
+        },
+    )
+    .await?;
     if args.json {
         println!("{}", serde_json::to_string(&result)?);
     } else {

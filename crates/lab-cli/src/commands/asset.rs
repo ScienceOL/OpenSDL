@@ -1,6 +1,7 @@
 use clap::Subcommand;
 use opensdl_assets::{
-    daemon::DaemonClient, AssetCache, AssetReference, AssetSummary, PackageDescriptor, PruneReport,
+    daemon::{execute, Operation},
+    AssetCache, AssetSummary, PackageDescriptor, PruneReport,
 };
 use std::path::PathBuf;
 
@@ -41,88 +42,9 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
         Some(root) => AssetCache::open(root)?,
         None => AssetCache::discover()?,
     };
-    if let Some(client) = DaemonClient::discover(&cache).await? {
-        match &command {
-            AssetCmd::List { json } => {
-                let assets: Vec<AssetSummary> =
-                    client.call_json("list", serde_json::json!({})).await?;
-                if *json {
-                    println!("{}", serde_json::to_string(&assets)?);
-                } else {
-                    for asset in assets {
-                        println!(
-                            "{} {} {} {} bytes {}",
-                            asset.manifest_digest,
-                            asset.name,
-                            asset.version,
-                            asset.size_bytes,
-                            asset.references.join(", ")
-                        );
-                    }
-                }
-            }
-            AssetCmd::Import { layout, tag } => {
-                let package: PackageDescriptor = client
-                    .call_json(
-                        "import",
-                        serde_json::json!({
-                            "layout": layout,
-                            "tag": tag,
-                        }),
-                    )
-                    .await?;
-                println!("{}", package.manifest_digest);
-            }
-            AssetCmd::Tag { source, target } => {
-                client
-                    .call(
-                        "tag",
-                        serde_json::json!({"source": source, "target": target}),
-                    )
-                    .await?;
-            }
-            AssetCmd::Inspect { reference, json } => {
-                let package: PackageDescriptor = client
-                    .call_json("inspect", serde_json::json!({"reference": reference}))
-                    .await?;
-                if *json {
-                    println!("{}", serde_json::to_string(&package)?);
-                } else {
-                    println!(
-                        "{} {} {}",
-                        package.manifest_digest,
-                        package.asset.metadata.name,
-                        package.asset.metadata.version
-                    );
-                }
-            }
-            AssetCmd::Remove { reference } => {
-                client
-                    .call("remove", serde_json::json!({"reference": reference}))
-                    .await?;
-            }
-            AssetCmd::Prune { dry_run, json } => {
-                let report: PruneReport = client
-                    .call_json("prune", serde_json::json!({"dryRun": dry_run}))
-                    .await?;
-                if *json {
-                    println!("{}", serde_json::to_string(&report)?);
-                } else {
-                    println!(
-                        "{} packages, {} blobs, {} bytes{}",
-                        report.packages.len(),
-                        report.blobs.len(),
-                        report.reclaimed_bytes,
-                        if *dry_run { " (dry run)" } else { " reclaimed" }
-                    );
-                }
-            }
-        }
-        return Ok(());
-    }
     match command {
         AssetCmd::List { json } => {
-            let assets = cache.list()?;
+            let assets: Vec<AssetSummary> = execute(&cache, Operation::List).await?;
             if json {
                 println!("{}", serde_json::to_string(&assets)?);
             } else {
@@ -139,13 +61,22 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
             }
         }
         AssetCmd::Import { layout, tag } => {
-            let reference = tag.as_deref().map(AssetReference::parse).transpose()?;
-            let package = cache.lock()?.import_layout(&layout, reference.as_ref())?;
+            let package: PackageDescriptor = execute(
+                &cache,
+                Operation::Import {
+                    layout: std::path::absolute(layout)?,
+                    tag,
+                },
+            )
+            .await?;
             println!("{}", package.manifest_digest);
         }
-        AssetCmd::Tag { source, target } => cache.tag(&source, &AssetReference::parse(&target)?)?,
+        AssetCmd::Tag { source, target } => {
+            execute::<()>(&cache, Operation::Tag { source, target }).await?
+        }
         AssetCmd::Inspect { reference, json } => {
-            let package = cache.inspect(&reference)?;
+            let package: PackageDescriptor =
+                execute(&cache, Operation::Inspect { reference }).await?;
             if json {
                 println!("{}", serde_json::to_string(&package)?);
             } else {
@@ -157,9 +88,11 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
                 );
             }
         }
-        AssetCmd::Remove { reference } => cache.remove(&reference)?,
+        AssetCmd::Remove { reference } => {
+            execute::<()>(&cache, Operation::Remove { reference }).await?
+        }
         AssetCmd::Prune { dry_run, json } => {
-            let report = cache.prune(dry_run)?;
+            let report: PruneReport = execute(&cache, Operation::Prune { dry_run }).await?;
             if json {
                 println!("{}", serde_json::to_string(&report)?);
             } else {

@@ -22,8 +22,11 @@ tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
 walkdir.workspace = true
 zstd.workspace = true
+uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"

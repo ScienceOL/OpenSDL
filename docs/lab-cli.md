@@ -9,7 +9,8 @@ hardware, or a running `lab serve` process.
 
 Install the pre-built release. It contains the `lab` binary, the local asset
 daemon, the OpenUSD asset commands, and the kinematic runtime in one
-executable; Docker, Rust, and a source checkout are not required:
+executable; Docker, Rust, and a source checkout are not required. USD splitting
+additionally uses the OpenUSD Python runtime installed below:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
@@ -27,6 +28,9 @@ Check the installed command before starting a workflow:
 ```bash
 lab --version
 lab --help
+lab daemon --help
+lab build --help
+lab split --help
 lab run --help
 lab ps --help
 ```
@@ -47,8 +51,9 @@ firmware remain separate hardware assets.
 ## Start the local asset daemon
 
 The resource cache contains content-addressed package blobs, local references,
-and managed instance records. The asset daemon owns this cache and serializes
-build, import, pull, push, tag, inspect, and garbage-collection operations. Use
+and managed instance records. The asset daemon accepts build, import, pull, push, tag, inspect, and
+garbage-collection operations. Only store transactions hold the cross-process
+cache lease; uploads run outside it. Use
 the same cache for every command in one workflow:
 
 ```bash
@@ -64,7 +69,15 @@ An explicit `--cache-dir` overrides `LAB_ASSET_CACHE` for one command. `lab
 daemon start` detaches a loopback daemon and `lab daemon stop` stops it.
 Commands fall back to direct cache access when the daemon is not running, so an
 offline script remains usable. Do not manually delete the cache's `instances`
-directory, `catalog.sqlite`, or `daemon.json`.
+directory, `catalog.sqlite`, or `daemon.json`. The daemon authenticates local
+RPC using a private per-start token, keeps diagnostics in `daemon.log`, and
+drains accepted operations before acknowledging stop. An unresponsive daemon
+returns an error instead of silently switching execution paths. It is a
+per-user background process, not an automatically installed boot service.
+
+Before upgrading, run `lab daemon stop` with the old executable, update with
+the installer, then run `lab daemon start` with the new executable. Stop any
+managed instances before replacing the binary on Windows.
 
 ## Discover and pull from Hub
 
@@ -142,11 +155,41 @@ automatic cloud/device fallback.
 
 ## Split an OpenUSD scene into child assets
 
-`lab split` uses `usdcat` from the OpenUSD tools. It follows the LabReady
-component workflow: each selected USD prim is extracted from the composed stage,
-given its own `asset.yaml`, license, preview, thumbnail, and lineage pointing to
-the parent package digest. The generated children are ordinary asset
-directories, so every child goes through the same validate/build/push path:
+`lab split` uses the OpenUSD Python API to resolve complete prim paths, flatten
+selected subtrees and their relationship targets, and copy/rebase referenced
+textures inside each child. It writes all children atomically; a missing prim
+or non-portable dependency leaves the output absent, so a corrected command
+can reuse the same destination. Names use lowercase letters, digits and
+interior hyphens. The source asset must contain all of its dependencies.
+
+Install Python 3.12, then prepare this optional runtime once (the path can be
+anywhere on the local device). macOS/Linux:
+
+```bash
+python3.12 -m venv "$HOME/.local/share/opensdl-usd"
+"$HOME/.local/share/opensdl-usd/bin/python" -m pip install usd-core==25.11
+export LAB_USD_PYTHON="$HOME/.local/share/opensdl-usd/bin/python"
+```
+
+Windows PowerShell:
+
+```powershell
+py -3.12 -m venv "$env:LOCALAPPDATA/opensdl-usd"
+& "$env:LOCALAPPDATA/opensdl-usd/Scripts/python.exe" -m pip install usd-core==25.11
+$env:LAB_USD_PYTHON = "$env:LOCALAPPDATA/opensdl-usd/Scripts/python.exe"
+```
+
+Alternatively pass `--python /absolute/path/to/python` on each split command.
+Build, push, pull, daemon and kinematic instances do not need Python. The
+adapter is embedded in the release binary; no OpenSDL checkout is needed.
+
+The component mapping follows the explicit semantic extraction pattern in
+[ScienceOL/LabReady at 3080711](https://github.com/ScienceOL/LabReady/blob/30807110528fcc959dca20d54c860242bf01e31b/experiments/centrifuge_03/build_labready.py),
+whose `build_layers` and `_copy` resolve and validate exact prim paths. This is
+an OpenUSD implementation, not a call to an assumed LabReady split API.
+Children carry their own `asset.yaml`, license, inherited preview/thumbnail
+and parent-digest lineage. Replace the example paths below with prim paths
+that exist in your own source stage:
 
 ```bash
 lab split ./robot \

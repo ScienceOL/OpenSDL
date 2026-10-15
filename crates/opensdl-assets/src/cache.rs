@@ -179,6 +179,13 @@ impl AssetCache {
     }
 
     pub fn resolve(&self, selector: &str) -> Result<String, AssetError> {
+        let digest = self.catalog_digest(selector)?;
+        self.package(&digest)?;
+        Ok(digest)
+    }
+
+    /// Caller must hold the cache lease and verify the package before using its blobs.
+    pub(crate) fn catalog_digest(&self, selector: &str) -> Result<String, AssetError> {
         let digest = if selector.starts_with("sha256:") {
             crate::reference::validate_digest(selector)?;
             Catalog::open(&self.catalog_path())?.require_package(selector)?;
@@ -186,13 +193,12 @@ impl AssetCache {
         } else {
             self.resolve_reference(&AssetReference::parse(selector)?)?
         };
-        self.package(&digest)?;
         Ok(digest)
     }
 
     pub fn inspect(&self, selector: &str) -> Result<PackageDescriptor, AssetError> {
         let _lease = self.lock()?;
-        self.package(&self.resolve(selector)?)
+        self.package(&self.catalog_digest(selector)?)
     }
 
     pub fn tag(&self, selector: &str, target: &AssetReference) -> Result<(), AssetError> {

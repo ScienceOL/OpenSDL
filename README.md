@@ -279,9 +279,9 @@ completed. See [known issues](docs/known-issues.md) and the
 
 ## Development and releases
 
-Pull requests run the workspace tests on Linux, macOS, and Windows, and build
-all six release targets and generate the shell and PowerShell installers.
-Tagged versions run the same checks before publication. See
+Pull requests run the workspace tests on Linux, macOS, and Windows and validate
+the cargo-dist release plan. Version tags run the tests, build all six release
+targets, and generate the shell and PowerShell installers before publication. See
 [the release procedure](docs/releases.md) for versioning and installation checks.
 
 ## License
@@ -290,7 +290,7 @@ MIT
 
 ## Local resource management
 
-Resource management is part of the v0.3.0 release line. Install the release
+Resource management is part of the v0.3.1 release line. Install the release
 binary from the top of this README, then use one explicit store for an isolated
 lab:
 
@@ -305,7 +305,9 @@ lab asset prune --dry-run --json --cache-dir ./lab-store
 
 Start the local daemon before a multi-command workflow. It is the same
 installed `lab` executable running as a background process, so no second
-package or Docker daemon is required:
+package or Docker daemon is required. USD splitting additionally needs the
+[OpenUSD Python runtime](docs/lab-cli.md#split-an-openusd-scene-into-child-assets);
+build/push/pull and kinematic instances are self-contained:
 
 ```bash
 lab daemon start --cache-dir ./lab-store
@@ -318,7 +320,7 @@ The Docker-style shortcuts operate on the same catalog and instance state:
 
 ```bash
 lab images --json --cache-dir ./lab-store
-lab run localhost/lab/kinematic:1.0.0 --name demo --json
+lab run localhost/lab/kinematic:1.0.0 --name demo --json --cache-dir ./lab-store
 lab ps --json --cache-dir ./lab-store
 lab logs demo --tail 20 --cache-dir ./lab-store
 lab stop demo --json --cache-dir ./lab-store

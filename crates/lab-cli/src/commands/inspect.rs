@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use clap::Args;
 use opensdl_assets::{
-    daemon::DaemonClient, inspect_layout, AssetCache, PackageDescriptor, VirtualAssetManifest,
+    daemon::{execute, Operation},
+    inspect_layout, AssetCache, PackageDescriptor, VirtualAssetManifest,
 };
 
 #[derive(Debug, Args)]
@@ -44,13 +45,17 @@ pub async fn run(args: InspectArgs, cache_dir: Option<PathBuf>) -> anyhow::Resul
         Some(path) => AssetCache::open(path)?,
         None => AssetCache::discover()?,
     };
-    let package: PackageDescriptor = if let Some(client) = DaemonClient::discover(&cache).await? {
-        client
-            .call_json("inspect", serde_json::json!({"reference": args.path}))
-            .await?
-    } else {
-        cache.inspect(&args.path.to_string_lossy())?
-    };
+    let package: PackageDescriptor = execute(
+        &cache,
+        Operation::Inspect {
+            reference: args
+                .path
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("asset reference must be UTF-8"))?
+                .to_owned(),
+        },
+    )
+    .await?;
     if args.json {
         println!("{}", serde_json::to_string(&package)?);
     } else {
