@@ -305,3 +305,58 @@ async fn active_thermal_motor_tick_cost() {
         bytes / 1000
     );
 }
+
+#[tokio::test]
+async fn whole_turn_motor_ticks_still_confirm_motion_to_the_client() {
+    for slug in ["heated-stirrer", "centrifuge", "vortex-mixer"] {
+        let (world, mut rx, id) = setup(slug);
+        match slug {
+            "heated-stirrer" => {
+                send(&world, &id, "load_vessel", json!({})).await;
+                send(&world, &id, "power", json!({})).await;
+            }
+            "centrifuge" => {
+                send(&world, &id, "lid", json!({})).await;
+                for slot in [0, 2] {
+                    send(&world, &id, "load_tube", json!({"slot":slot})).await;
+                }
+                send(&world, &id, "lid", json!({})).await;
+            }
+            _ => {
+                send(&world, &id, "load_tube", json!({})).await;
+            }
+        }
+        send(&world, &id, "set_speed", json!({"rpm":600})).await;
+        send(
+            &world,
+            &id,
+            if slug == "heated-stirrer" {
+                "stir"
+            } else {
+                "start"
+            },
+            json!({}),
+        )
+        .await;
+        for _ in 0..40 {
+            world.advance(0.1).await;
+        }
+        let mut previous = last(&mut rx);
+        for _ in 0..10 {
+            world.advance(0.1).await;
+            let message=rx.try_recv().expect("moving device must renew the 250ms client observation even when sampled angles repeat");
+            let next: Value = serde_json::from_slice(&message.data).unwrap();
+            assert_eq!(v(&next)["rpm"], 600.0);
+            assert!(
+                next["properties"]["model_state"]["time_s"]
+                    .as_f64()
+                    .unwrap()
+                    > previous["properties"]["model_state"]["time_s"]
+                        .as_f64()
+                        .unwrap()
+            );
+            previous = next;
+            assert!(rx.try_recv().is_err());
+        }
+    }
+}

@@ -244,15 +244,17 @@ impl StirrerState {
         );
         self.angle = (self.angle + self.rpm * std::f64::consts::TAU / 60.0 * dt)
             .rem_euclid(std::f64::consts::TAU);
-        previous
-            != (
-                self.thermal.plate_c,
-                self.thermal.liquid_c,
-                self.rpm,
-                self.angle,
-                self.fault,
-                self.heating,
-            )
+        // Repeated sampled angles still represent motion (e.g. one turn per tick).
+        self.rpm > 0.0
+            || previous
+                != (
+                    self.thermal.plate_c,
+                    self.thermal.liquid_c,
+                    self.rpm,
+                    self.angle,
+                    self.fault,
+                    self.heating,
+                )
     }
     pub fn values(&self) -> Value {
         json!({
