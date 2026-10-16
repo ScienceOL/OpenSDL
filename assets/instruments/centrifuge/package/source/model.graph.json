@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.cf4",
+  "dimensions_m": [
+    0.28,
+    0.192,
+    0.351
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "lid",
+      "label": "Lid",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "lid",
+        "params": {}
+      }
+    },
+    {
+      "id": "rotor",
+      "label": "Rotor",
+      "parent": "instrument"
+    },
+    {
+      "id": "tube_0",
+      "label": "Tube 0",
+      "parent": "rotor"
+    },
+    {
+      "id": "tube_1",
+      "label": "Tube 1",
+      "parent": "rotor"
+    },
+    {
+      "id": "tube_2",
+      "label": "Tube 2",
+      "parent": "rotor"
+    },
+    {
+      "id": "tube_3",
+      "label": "Tube 3",
+      "parent": "rotor"
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "speed_dial",
+      "label": "Speed Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_speed",
+        "params": {},
+        "parameter": "rpm",
+        "state": "target_rpm",
+        "min": 0,
+        "max": 4000.0,
+        "step": 250
+      }
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "lid_joint",
+      "component": "lid",
+      "kind": "revolute",
+      "axis": [
+        -1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 1.65,
+      "state": "lid_rad"
+    },
+    {
+      "id": "rotor_joint",
+      "component": "rotor",
+      "kind": "continuous",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "rotor_rad",
+      "velocity_state": "rotor_rad_s"
+    },
+    {
+      "id": "speed_dial_joint",
+      "component": "speed_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "speed_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "rpm",
+      "digits": 0,
+      "unit": "rpm"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "tube_0",
+      "state": "tube_0_visible"
+    },
+    {
+      "component": "tube_1",
+      "state": "tube_1_visible"
+    },
+    {
+      "component": "tube_2",
+      "state": "tube_2_visible"
+    },
+    {
+      "component": "tube_3",
+      "state": "tube_3_visible"
+    }
+  ],
+  "placements": []
+}

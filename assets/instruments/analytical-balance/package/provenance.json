@@ -1,14 +1,16 @@
 {
   "model": "opensdl.ax240",
-  "license": "MIT",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
   "evidence": "Original OpenSDL generic design. Dimensions and process parameters are authored engineering fixtures, not manufacturer specifications or measurements.",
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/analytical-balance/model.yaml": "849a825bfc3bae4be2d0c8057c3572a96ed3f9fdd5d7e995850dbe214dd3a0dd",
-    "assets/instruments/analytical-balance/SOURCE.md": "60ad70fb94e5bf2dd72bfeeb6c1c8e84383d02bfa6258aae5d048989d975d6b3",
-    "tools/instrument-models/build_balance.py": "e2d490a6e9c4f640cb4e790d6d6305cbbd69814ef8574ce120d9a204d810b34a",
-    "tools/instrument-models/geometry.py": "69112fd3f1effc759596d9ed8c1964c08be858b825c78922a613567e8425a6dd",
-    "tools/instrument-models/package.py": "025e7865ab03a836c451f33f9905d5a09b975546bd7acd0609850c2d32a53543"
+    "assets/instruments/analytical-balance/model.yaml": "eee1d050edf40ea93597b8d7c484613c042796c3fd9987946286dfc7ac84433f",
+    "assets/instruments/analytical-balance/SOURCE.md": "2e4e7646a33d30ebfeabef14d2ca1c88917e1e282d5cc5c10ae9b06c4be7b9b3",
+    "tools/instrument-models/build_balance.py": "aad95db48d846a021293cee374480311e4e4d53a7d9e399ebb62bff038dbf724",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/package.py": "46a5fb185b63ec852875482dd768454dcf2299e95196ad8b68dcb874ba91d3f7",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76"
   }
 }

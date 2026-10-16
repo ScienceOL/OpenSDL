@@ -1,0 +1,112 @@
+{
+  "world_id": "vortex-mixer",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "vortex_tube",
+      "mass_kg": 0.01,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.007
+    }
+  ],
+  "devices": [
+    {
+      "id": "vortex-mixer-1",
+      "device_type": "simulation.vortex_mixer",
+      "role": "stirrer",
+      "description": "VX 30 Vortex Mixer",
+      "actions": [
+        {
+          "name": "load_tube",
+          "description": "Load tube",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_tube",
+          "description": "Unload tube",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_speed",
+          "description": "Set target speed",
+          "params": {
+            "type": "object",
+            "properties": {
+              "rpm": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 3000.0
+              }
+            },
+            "required": [
+              "rpm"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "vortex-mixer",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "vortex_mixer",
+        "model_id": "opensdl.vx30",
+        "max_rpm": 3000.0,
+        "slew_rpm_s": 800.0,
+        "orbit_m": 0.002
+      }
+    }
+  ]
+}

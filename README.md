@@ -286,7 +286,7 @@ targets, and generate the shell and PowerShell installers before publication. Se
 
 ## License
 
-MIT
+General software and reusable tooling: MIT. Original instrument models, model-specific authoring source, parameters and derived assets: CC BY-NC 4.0, attribution OpenSDL / LiyanLabs. See each instrument's SOURCE.md, packaged LICENSE and tools/instrument-models/LICENSING.md. AX240 1.0.1 was previously published under MIT; that existing grant remains available.
 
 ## Local resource management
 

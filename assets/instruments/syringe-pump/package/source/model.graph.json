@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.sp10",
+  "dimensions_m": [
+    0.261,
+    0.135,
+    0.162
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "plunger",
+      "label": "Plunger",
+      "parent": "instrument"
+    },
+    {
+      "id": "liquid",
+      "label": "Liquid",
+      "parent": "instrument",
+      "scale": {
+        "axis": "x",
+        "state": "fill_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "flow_dial",
+      "label": "Flow Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_flow",
+        "params": {},
+        "parameter": "flow_ml_min",
+        "state": "flow_ml_min",
+        "min": 0,
+        "max": 10.0,
+        "step": 0.5
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "volume_screen",
+      "label": "Volume Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "plunger_joint",
+      "component": "plunger",
+      "kind": "prismatic",
+      "axis": [
+        -1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 0.065,
+      "state": "plunger_m"
+    },
+    {
+      "id": "flow_dial_joint",
+      "component": "flow_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "flow_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "flow_ml_min",
+      "digits": 2,
+      "unit": "mL/min"
+    },
+    {
+      "component": "volume_screen",
+      "state": "remaining_ml",
+      "digits": 3,
+      "unit": "mL"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "liquid",
+      "state": "liquid_visible"
+    }
+  ],
+  "placements": []
+}

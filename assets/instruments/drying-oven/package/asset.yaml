@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "drying-oven",
+    "displayName": "DO 20 Drying Oven",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic design; Original insulated chamber, 700 W heating and two declared thermal nodes. Inert sample temperature changes; moisture removal and drying time are not predicted.",
+    "tags": [
+      "original",
+      "heater"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.drying_oven"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

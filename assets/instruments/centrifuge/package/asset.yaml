@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "centrifuge",
+    "displayName": "CF 4 Benchtop Centrifuge",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic design; Four orthogonal 55 mm rotor slots, 4000 rpm maximum and 500 rpm/s slew are authored teaching parameters. Static imbalance limit 0.5 g; RCF is calculated at the tube centre. No separation prediction or hardware safety certification.",
+    "tags": [
+      "original",
+      "centrifuge"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.centrifuge"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

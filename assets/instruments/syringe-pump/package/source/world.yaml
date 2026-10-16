@@ -1,0 +1,93 @@
+{
+  "world_id": "syringe-pump",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [],
+  "devices": [
+    {
+      "id": "syringe-pump-1",
+      "device_type": "simulation.syringe_pump",
+      "role": "valve",
+      "description": "SP 10 Syringe Pump",
+      "actions": [
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "refill",
+          "description": "Refill",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_flow",
+          "description": "Set syringe flow",
+          "params": {
+            "type": "object",
+            "properties": {
+              "flow_ml_min": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10.0
+              }
+            },
+            "required": [
+              "flow_ml_min"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "syringe-pump",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "syringe_pump",
+        "model_id": "opensdl.sp10",
+        "capacity_ml": 10.0,
+        "max_flow_ml_min": 10.0,
+        "bore_radius_m": 0.007,
+        "stroke_m": 0.065
+      }
+    }
+  ]
+}

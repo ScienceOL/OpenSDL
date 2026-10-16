@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.p200",
+  "dimensions_m": [
+    0.15,
+    0.266,
+    0.1
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "move_to",
+        "params": {
+          "position": "park"
+        }
+      }
+    },
+    {
+      "id": "carrier_x",
+      "label": "Carrier X",
+      "parent": "instrument"
+    },
+    {
+      "id": "carrier_z",
+      "label": "Carrier Z",
+      "parent": "carrier_x"
+    },
+    {
+      "id": "pipette_body",
+      "label": "Pipette Body",
+      "parent": "carrier_z"
+    },
+    {
+      "id": "source_vial",
+      "label": "Source Vial",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "move_to",
+        "params": {
+          "position": "source"
+        }
+      }
+    },
+    {
+      "id": "receiver_vial",
+      "label": "Receiver Vial",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "move_to",
+        "params": {
+          "position": "receiver"
+        }
+      }
+    },
+    {
+      "id": "source_liquid",
+      "label": "Source Liquid",
+      "parent": "instrument",
+      "scale": {
+        "axis": "y",
+        "state": "source_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "receiver_liquid",
+      "label": "Receiver Liquid",
+      "parent": "instrument",
+      "scale": {
+        "axis": "y",
+        "state": "receiver_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "plunger",
+      "label": "Plunger",
+      "parent": "carrier_z",
+      "control": {
+        "kind": "command",
+        "action": "stroke",
+        "params": {}
+      }
+    },
+    {
+      "id": "volume_dial",
+      "label": "Volume Dial",
+      "parent": "carrier_z",
+      "control": {
+        "kind": "dial",
+        "action": "set_volume",
+        "params": {},
+        "parameter": "volume_ul",
+        "state": "volume_ul",
+        "min": 20,
+        "max": 200,
+        "step": 10
+      }
+    },
+    {
+      "id": "tip",
+      "label": "Tip",
+      "parent": "carrier_z"
+    },
+    {
+      "id": "liquid",
+      "label": "Liquid",
+      "parent": "carrier_z",
+      "scale": {
+        "axis": "y",
+        "state": "fill_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "carrier_z"
+    },
+    {
+      "id": "tip_key",
+      "label": "Tip Key",
+      "parent": "carrier_z",
+      "control": {
+        "kind": "command",
+        "action": "tip",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "carrier_x_joint",
+      "component": "carrier_x",
+      "kind": "prismatic",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": -0.05,
+      "max": 0.05,
+      "state": "pipette_x_m"
+    },
+    {
+      "id": "carrier_z_joint",
+      "component": "carrier_z",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": -0.0115,
+      "max": 0,
+      "state": "pipette_vertical_m"
+    },
+    {
+      "id": "plunger_joint",
+      "component": "plunger",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "min": 0,
+      "max": 0.012,
+      "state": "plunger_m"
+    },
+    {
+      "id": "volume_dial_joint",
+      "component": "volume_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "volume_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "volume_ul",
+      "digits": 0,
+      "unit": "uL"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "tip",
+      "state": "tip_visible"
+    },
+    {
+      "component": "liquid",
+      "state": "liquid_visible"
+    },
+    {
+      "component": "source_liquid",
+      "state": "source_liquid_visible"
+    },
+    {
+      "component": "receiver_liquid",
+      "state": "receiver_liquid_visible"
+    }
+  ],
+  "placements": []
+}

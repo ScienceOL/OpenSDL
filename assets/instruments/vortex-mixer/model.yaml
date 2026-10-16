@@ -1,0 +1,106 @@
+{
+  "id": "opensdl.vx30",
+  "name": "VX 30 Vortex Mixer",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.131,
+    0.175,
+    0.206
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.04
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Original 4 mm orbit diameter, 3000 rpm maximum and 800 rpm/s slew. The sample follows a prescribed orbit; no fluid mixing efficiency, sloshing or retention/contact validation.",
+  "runtime": {
+    "kind": "vortex_mixer",
+    "model_id": "opensdl.vx30",
+    "max_rpm": 3000.0,
+    "slew_rpm_s": 800.0,
+    "orbit_m": 0.002
+  },
+  "samples": [
+    {
+      "id": "vortex_tube",
+      "mass_kg": 0.01,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.007
+    }
+  ],
+  "role": "stirrer",
+  "actions": [
+    {
+      "name": "load_tube",
+      "description": "Load tube",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_tube",
+      "description": "Unload tube",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_speed",
+      "description": "Set target speed",
+      "params": {
+        "type": "object",
+        "properties": {
+          "rpm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3000.0
+          }
+        },
+        "required": [
+          "rpm"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

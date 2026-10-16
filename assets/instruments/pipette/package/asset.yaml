@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "pipette",
+    "displayName": "P 200 Single Channel Pipette",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic design; Original 20-200 uL hand pipette. Finite source, tip and receiver volumes conserve liquid under ideal displacement. No calibration accuracy, compressibility, viscosity or droplet simulation.",
+    "tags": [
+      "original",
+      "generic"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.pipette"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

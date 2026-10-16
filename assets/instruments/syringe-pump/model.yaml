@@ -1,0 +1,86 @@
+{
+  "id": "opensdl.sp10",
+  "name": "SP 10 Syringe Pump",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.261,
+    0.162,
+    0.135
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Original 10 mL syringe fixture with 14 mm bore and 65 mm travel. Area-based displacement conserves source, syringe and receiver volume. No backpressure, compliance or delivery accuracy claim.",
+  "runtime": {
+    "kind": "syringe_pump",
+    "model_id": "opensdl.sp10",
+    "capacity_ml": 10.0,
+    "max_flow_ml_min": 10.0,
+    "bore_radius_m": 0.007,
+    "stroke_m": 0.065
+  },
+  "role": "valve",
+  "actions": [
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refill",
+      "description": "Refill",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_flow",
+      "description": "Set syringe flow",
+      "params": {
+        "type": "object",
+        "properties": {
+          "flow_ml_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10.0
+          }
+        },
+        "required": [
+          "flow_ml_min"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

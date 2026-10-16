@@ -4,7 +4,10 @@ use opensdl_assets::{
     model::{Control, ModelDefinition},
     AssetCache, RuntimeEngine,
 };
-use osdl_core::{config::SimulationConfig, simulation::InstrumentConfig};
+use osdl_core::{
+    config::SimulationConfig,
+    simulation::{InstrumentConfig, InstrumentState, SampleInventory},
+};
 use std::{fs, path::Path};
 
 pub fn prepare(
@@ -37,16 +40,69 @@ pub fn prepare(
     }
     let definition = opensdl_assets::model::read_preview_model(&asset.paths.preview_model)?;
     for device in &mut simulation.devices {
-        if let Some(InstrumentConfig::AnalyticalBalance(balance)) = &device.model {
+        if let Some(instrument) = &device.model {
             let definition = definition
                 .as_ref()
                 .context("runnable instrument requires model metadata")?;
-            validate_balance(definition, balance)?;
-            for component in &definition.components {
-                let action = match &component.control {
-                    Some(Control::Command { action, .. } | Control::Toggle { action, .. }) => {
-                        action
+            if definition.model_id != instrument.model_id() {
+                bail!("runtime and preview model identities differ");
+            }
+            if let InstrumentConfig::AnalyticalBalance(balance) = instrument {
+                validate_balance(definition, balance)?;
+            }
+            let samples = SampleInventory::new(&simulation.samples).map_err(anyhow::Error::msg)?;
+            let properties = InstrumentState::new(instrument).properties(
+                &device.id,
+                "admission",
+                &samples,
+                0,
+                0.0,
+            );
+            let values = &properties["model_state"]["values"];
+            for joint in &definition.joints {
+                let value = values[&joint.state]
+                    .as_f64()
+                    .context("joint observation is missing")?;
+                if !matches!(joint.kind, opensdl_assets::model::JointKind::Continuous)
+                    && !(joint.min..=joint.max).contains(&value)
+                {
+                    bail!("initial joint pose exceeds limits");
+                }
+                if let Some(state) = &joint.velocity_state {
+                    if values[state].as_f64().is_none() {
+                        bail!("joint velocity is missing");
                     }
+                }
+            }
+            for binding in &definition.visibility {
+                if !values[&binding.state].is_boolean() {
+                    bail!("visibility observation is missing");
+                }
+            }
+            for readout in &definition.readouts {
+                if values
+                    .get(&readout.state)
+                    .is_none_or(|v| !v.is_null() && !v.is_number())
+                {
+                    bail!("readout observation is missing");
+                }
+            }
+
+            for component in &definition.components {
+                if let Some(scale) = &component.scale {
+                    let value = values[&scale.state]
+                        .as_f64()
+                        .context("scale observation is missing")?;
+                    if !(scale.min..=scale.max).contains(&value) {
+                        bail!("initial scale exceeds limits");
+                    }
+                }
+                let action = match &component.control {
+                    Some(
+                        Control::Command { action, .. }
+                        | Control::Toggle { action, .. }
+                        | Control::Dial { action, .. },
+                    ) => action,
                     None => continue,
                 };
                 if !device

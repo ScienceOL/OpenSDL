@@ -157,53 +157,115 @@ test("authored sources and generated package have matching provenance", async ()
   assert.match(usd, /upAxis = "Z"/);
 });
 
-test("fixture geometry rests on the pan at the authored footprint and height", async()=>{
-  const root=await load(),binding=bindInstrument(root);
-  const design=JSON.parse(await readFile(new URL("../../assets/instruments/analytical-balance/model.yaml",import.meta.url)));
+test("fixture geometry rests on the pan at the authored footprint and height", async () => {
+  const root = await load(),
+    binding = bindInstrument(root);
+  const design = JSON.parse(
+    await readFile(
+      new URL(
+        "../../assets/instruments/analytical-balance/model.yaml",
+        import.meta.url,
+      ),
+    ),
+  );
   root.updateMatrixWorld(true);
-  for(const [id,fixture] of Object.entries(design.fixtures)) {
-    const box=new Box3().setFromObject(binding.parts.get(id)),size=box.getSize(new Vector3());
-    assert.ok(Math.abs(box.min.y-design.pan_height_m)<1e-6,`${id} is unsupported`);
-    assert.ok(Math.abs(size.x-2*fixture.radius_m)<1e-6,`${id} footprint`);
-    const height=fixture.height_m??fixture.mass_kg/(fixture.density_kg_m3*Math.PI*fixture.radius_m**2);
-    assert.ok(Math.abs(size.y-height)<1e-6,`${id} height`);
+  for (const [id, fixture] of Object.entries(design.fixtures)) {
+    const box = new Box3().setFromObject(binding.parts.get(id)),
+      size = box.getSize(new Vector3());
+    assert.ok(
+      Math.abs(box.min.y - design.pan_height_m) < 1e-6,
+      `${id} is unsupported`,
+    );
+    assert.ok(
+      Math.abs(size.x - 2 * fixture.radius_m) < 1e-6,
+      `${id} footprint`,
+    );
+    const height =
+      fixture.height_m ??
+      fixture.mass_kg /
+        (fixture.density_kg_m3 * Math.PI * fixture.radius_m ** 2);
+    assert.ok(Math.abs(size.y - height) < 1e-6, `${id} height`);
   }
 });
 
-test("readout surfaces are instance-owned and redraw only a changed value",async()=>{
-  const {createReadouts}=await import("./index.js");
-  const previous=globalThis.document,draws=[];
-  globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>({fillRect(){},fillText(text){draws.push(text);}})})};
+test("readout surfaces are instance-owned and redraw only a changed value", async () => {
+  const { createReadouts } = await import("./index.js");
+  const previous = globalThis.document,
+    draws = [];
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        fillRect() {},
+        fillText(text) {
+          draws.push(text);
+        },
+      }),
+    }),
+  };
   try {
-    const prototype=await load(),a=bindInstrument(prototype.clone(true)),b=bindInstrument(prototype.clone(true));
-    const mesh=a.parts.get("screen").children.find(node=>node.isMesh);
-    const other=b.parts.get("screen").children.find(node=>node.isMesh);
-    const original=mesh.material,readout=createReadouts(a);
-    assert.notEqual(mesh.material,original);assert.equal(other.material,original);
-    let disposed=0;mesh.material.addEventListener("dispose",()=>disposed++);
-    readout.update({mass_g:18.4});readout.update({mass_g:18.4});
-    assert.deepEqual(draws,["18.4000 g"]);
-    readout.dispose();assert.equal(disposed,1);assert.equal(mesh.material,original);assert.equal(other.material,original);
-  } finally {globalThis.document=previous;}
+    const prototype = await load(),
+      a = bindInstrument(prototype.clone(true)),
+      b = bindInstrument(prototype.clone(true));
+    const mesh = a.parts.get("screen").children.find((node) => node.isMesh);
+    const other = b.parts.get("screen").children.find((node) => node.isMesh);
+    const original = mesh.material,
+      readout = createReadouts(a);
+    assert.notEqual(mesh.material, original);
+    assert.equal(other.material, original);
+    let disposed = 0;
+    mesh.material.addEventListener("dispose", () => disposed++);
+    readout.update({ mass_g: 18.4 });
+    readout.update({ mass_g: 18.4 });
+    assert.deepEqual(draws, ["18.4000 g"]);
+    readout.dispose();
+    assert.equal(disposed, 1);
+    assert.equal(mesh.material, original);
+    assert.equal(other.material, original);
+  } finally {
+    globalThis.document = previous;
+  }
 });
 
-test("every draft-shield door has a clear swept path through its complete travel", async()=>{
-  const root=await load(),binding=bindInstrument(root);
+test("every draft-shield door has a clear swept path through its complete travel", async () => {
+  const root = await load(),
+    binding = bindInstrument(root);
   root.updateMatrixWorld(true);
-  const fixed=[];
-  binding.parts.get("draft_shield").traverse(node=>{if(node.isMesh)fixed.push(node);});
-  for(const joint of binding.definition.joints) {
-    const travel=new Vector3(...joint.axis).multiplyScalar(joint.max);
-    binding.parts.get(joint.component).traverse(node=>{
-      if(!node.isMesh)return;
-      const swept=new Box3().setFromObject(node);
+  const fixed = [];
+  binding.parts.get("draft_shield").traverse((node) => {
+    if (node.isMesh) fixed.push(node);
+  });
+  for (const joint of binding.definition.joints) {
+    const travel = new Vector3(...joint.axis).multiplyScalar(joint.max);
+    binding.parts.get(joint.component).traverse((node) => {
+      if (!node.isMesh) return;
+      const swept = new Box3().setFromObject(node);
       swept.union(swept.clone().translate(travel));
-      for(const obstacle of fixed) {
-        const intersection=swept.clone().intersect(new Box3().setFromObject(obstacle));
-        if(intersection.isEmpty())continue;
-        const size=intersection.getSize(new Vector3());
-        assert.ok(Math.min(size.x,size.y,size.z)<=1e-6,`${joint.id}: ${node.name} intersects ${obstacle.name}`);
+      for (const obstacle of fixed) {
+        const intersection = swept
+          .clone()
+          .intersect(new Box3().setFromObject(obstacle));
+        if (intersection.isEmpty()) continue;
+        const size = intersection.getSize(new Vector3());
+        assert.ok(
+          Math.min(size.x, size.y, size.z) <= 1e-6,
+          `${joint.id}: ${node.name} intersects ${obstacle.name}`,
+        );
       }
     });
   }
+});
+
+test("the hollow vessel has a closed centre floor, rather than a toroidal hole", async () => {
+  const { Raycaster } = await import("three");
+  const root = await load(),
+    binding = bindInstrument(root);
+  binding.apply(state({ vessel_visible: true }));
+  root.updateMatrixWorld(true);
+  const hits = new Raycaster(
+    new Vector3(0, 1, -0.041),
+    new Vector3(0, -1, 0),
+  ).intersectObject(binding.parts.get("vessel"), true);
+  assert.ok(hits.some((hit) => Math.abs(hit.point.y - 0.0975) < 1e-6));
 });

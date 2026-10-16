@@ -1,0 +1,129 @@
+{
+  "id": "opensdl.wb2",
+  "name": "WB 2 Water Bath",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.3,
+    0.283,
+    0.228
+  ],
+  "origin_anchor_m": [
+    0,
+    -0.123,
+    0.1
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Original bath with 2 kg water charge at constant assumed 4180 J/(kg K), lumped 600 W heating, declared conductances and lid-dependent losses. No evaporation or calibrated uniformity claim.",
+  "runtime": {
+    "kind": "water_bath",
+    "model_id": "opensdl.wb2",
+    "ambient_c": 22.0,
+    "max_c": 95.0,
+    "heater_w": 600.0,
+    "chamber_capacity_j_k": 8360.0,
+    "sample_capacity_j_k": 200.0,
+    "exchange_w_k": 8.0,
+    "loss_w_k": 2.0,
+    "opening_rad": 1.65,
+    "sample_id": "bath_vial",
+    "sample_radius_m": 0.04
+  },
+  "housing_m": [
+    0.3,
+    0.27,
+    0.2
+  ],
+  "short_name": "WB 2",
+  "samples": [
+    {
+      "id": "bath_vial",
+      "mass_kg": 0.05,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.014
+    }
+  ],
+  "role": "heater",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Lid",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_sample",
+      "description": "Load sample",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_sample",
+      "description": "Unload sample",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_temperature",
+      "description": "Set chamber temperature",
+      "params": {
+        "type": "object",
+        "properties": {
+          "temperature_c": {
+            "type": "number",
+            "minimum": 22.0,
+            "maximum": 95.0
+          }
+        },
+        "required": [
+          "temperature_c"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

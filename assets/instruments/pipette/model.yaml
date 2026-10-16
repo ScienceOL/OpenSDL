@@ -1,0 +1,125 @@
+{
+  "id": "opensdl.p200",
+  "name": "P 200 Single Channel Pipette",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.15,
+    0.1,
+    0.266
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.004
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Original 20-200 uL hand pipette. Finite source, tip and receiver volumes conserve liquid under ideal displacement. No calibration accuracy, compressibility, viscosity or droplet simulation.",
+  "runtime": {
+    "kind": "pipette",
+    "model_id": "opensdl.p200",
+    "min_ul": 20,
+    "max_ul": 200,
+    "stroke_m": 0.012,
+    "reservoir_ul": 2000,
+    "source_x_m": -0.05,
+    "receiver_x_m": 0.05,
+    "immersion_m": 0.0115
+  },
+  "role": "generic",
+  "actions": [
+    {
+      "name": "tip",
+      "description": "Tip",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "aspirate",
+      "description": "Aspirate",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "dispense",
+      "description": "Dispense",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stroke",
+      "description": "Stroke",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_volume",
+      "description": "Set pipette volume",
+      "params": {
+        "type": "object",
+        "properties": {
+          "volume_ul": {
+            "type": "integer",
+            "minimum": 20.0,
+            "maximum": 200.0
+          }
+        },
+        "required": [
+          "volume_ul"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_to",
+      "description": "Place the pipette at its stand, source vial, or receiver vial; explicit fixture placement, not a robot path",
+      "params": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "string",
+            "enum": [
+              "park",
+              "source",
+              "receiver"
+            ]
+          }
+        },
+        "required": [
+          "position"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "handheld_dimensions_m": [
+    0.035,
+    0.0445,
+    0.244
+  ]
+}

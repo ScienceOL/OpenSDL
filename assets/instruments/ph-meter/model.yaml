@@ -1,0 +1,87 @@
+{
+  "id": "opensdl.ph14",
+  "name": "PH 14 Bench Meter",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.221,
+    0.222,
+    0.385
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Original electrode arm and synthetic pH 4/7/10 fixtures. First-order 2 s response and a neutral-buffer teaching calibration. No electrochemical accuracy, temperature compensation or real electrode ageing model.",
+  "runtime": {
+    "kind": "ph_meter",
+    "model_id": "opensdl.ph14",
+    "response_s": 2.0,
+    "probe_travel_m": 0.06
+  },
+  "role": "probe",
+  "actions": [
+    {
+      "name": "power",
+      "description": "Power",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "probe",
+      "description": "Probe",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "calibrate",
+      "description": "Calibrate",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_buffer",
+      "description": "Choose synthetic buffer",
+      "params": {
+        "type": "object",
+        "properties": {
+          "ph": {
+            "type": "number",
+            "enum": [
+              4,
+              7,
+              10
+            ]
+          }
+        },
+        "required": [
+          "ph"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "water-bath",
+    "displayName": "WB 2 Water Bath",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic design; Original bath with 2 kg water charge at constant assumed 4180 J/(kg K), lumped 600 W heating, declared conductances and lid-dependent losses. No evaporation or calibrated uniformity claim.",
+    "tags": [
+      "original",
+      "heater"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.water_bath"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

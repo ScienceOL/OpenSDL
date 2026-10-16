@@ -13,6 +13,16 @@ export type ModelControl =
       state: string;
       open: number;
       closed: number;
+    }
+  | {
+      kind: "dial";
+      action: string;
+      params: Record<string, string | number | boolean>;
+      parameter: string;
+      state: string;
+      min: number;
+      max: number;
+      step: number;
     };
 export interface ModelDefinition {
   schema_version: 1;
@@ -22,7 +32,13 @@ export interface ModelDefinition {
     id: string;
     label: string;
     parent: string;
-    control?: ModelControl;
+    control?: ModelControl | null;
+    scale?: {
+      axis: "x" | "y" | "z";
+      state: string;
+      min: number;
+      max: number;
+    } | null;
   }[];
   joints: {
     id: string;
@@ -32,6 +48,7 @@ export interface ModelDefinition {
     min: number;
     max: number;
     state: string;
+    velocity_state?: string | null;
   }[];
   readouts: {
     component: string;

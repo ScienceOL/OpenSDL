@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.vp20",
+  "dimensions_m": [
+    0.301,
+    0.216,
+    0.2125
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "vent_dial",
+      "label": "Vent Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "vent",
+        "params": {}
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "vent_dial_joint",
+      "component": "vent_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 1.5707963267948966,
+      "state": "vent_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "pressure_kpa",
+      "digits": 2,
+      "unit": "kPa"
+    }
+  ],
+  "visibility": [],
+  "placements": []
+}

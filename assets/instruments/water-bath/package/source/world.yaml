@@ -1,0 +1,129 @@
+{
+  "world_id": "water-bath",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "bath_vial",
+      "mass_kg": 0.05,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.014
+    }
+  ],
+  "devices": [
+    {
+      "id": "water-bath-1",
+      "device_type": "simulation.water_bath",
+      "role": "heater",
+      "description": "WB 2 Water Bath",
+      "actions": [
+        {
+          "name": "lid",
+          "description": "Lid",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_sample",
+          "description": "Load sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_sample",
+          "description": "Unload sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set chamber temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 22.0,
+                "maximum": 95.0
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "water-bath",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "water_bath",
+        "model_id": "opensdl.wb2",
+        "ambient_c": 22.0,
+        "max_c": 95.0,
+        "heater_w": 600.0,
+        "chamber_capacity_j_k": 8360.0,
+        "sample_capacity_j_k": 200.0,
+        "exchange_w_k": 8.0,
+        "loss_w_k": 2.0,
+        "opening_rad": 1.65,
+        "sample_id": "bath_vial",
+        "sample_radius_m": 0.04
+      }
+    }
+  ]
+}

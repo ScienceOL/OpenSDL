@@ -1,0 +1,161 @@
+{
+  "id": "opensdl.cf4",
+  "name": "CF 4 Benchtop Centrifuge",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.28,
+    0.351,
+    0.192
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.04
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design; Four orthogonal 55 mm rotor slots, 4000 rpm maximum and 500 rpm/s slew are authored teaching parameters. Static imbalance limit 0.5 g; RCF is calculated at the tube centre. No separation prediction or hardware safety certification.",
+  "runtime": {
+    "kind": "centrifuge",
+    "model_id": "opensdl.cf4",
+    "max_rpm": 4000.0,
+    "slew_rpm_s": 500.0,
+    "rotor_radius_m": 0.055,
+    "lid_open_rad": 1.65,
+    "imbalance_kg": 0.0005
+  },
+  "samples": [
+    {
+      "id": "tube_0",
+      "mass_kg": 0.004,
+      "position_m": [
+        0.055,
+        0.0
+      ],
+      "radius_m": 0.007
+    },
+    {
+      "id": "tube_1",
+      "mass_kg": 0.004,
+      "position_m": [
+        0.0,
+        0.055
+      ],
+      "radius_m": 0.007
+    },
+    {
+      "id": "tube_2",
+      "mass_kg": 0.004,
+      "position_m": [
+        -0.055,
+        0.0
+      ],
+      "radius_m": 0.007
+    },
+    {
+      "id": "tube_3",
+      "mass_kg": 0.004,
+      "position_m": [
+        -0.0,
+        -0.055
+      ],
+      "radius_m": 0.007
+    }
+  ],
+  "role": "centrifuge",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Lid",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_speed",
+      "description": "Set target speed",
+      "params": {
+        "type": "object",
+        "properties": {
+          "rpm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 4000.0
+          }
+        },
+        "required": [
+          "rpm"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_tube",
+      "description": "Select one rotor slot",
+      "params": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          }
+        },
+        "required": [
+          "slot"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_tube",
+      "description": "Select one rotor slot",
+      "params": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          }
+        },
+        "required": [
+          "slot"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

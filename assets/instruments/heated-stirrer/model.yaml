@@ -1,0 +1,36 @@
+{
+  "id": "opensdl.hs150",
+  "name": "HS 150 Heated Magnetic Stirrer",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.188,
+    0.303,
+    0.388
+  ],
+  "base_dimensions_m": [
+    0.188,
+    0.292,
+    0.12
+  ],
+  "plate_radius_m": 0.075,
+  "plate_height_m": 0.12,
+  "ambient_c": 22.0,
+  "max_plate_c": 150.0,
+  "max_loaded_plate_c": 95.0,
+  "max_rpm": 1500.0,
+  "heater_w": 500.0,
+  "plate_capacity_j_k": 360.0,
+  "liquid_capacity_j_k": 836.0,
+  "plate_liquid_w_k": 6.0,
+  "plate_air_w_k": 1.4,
+  "liquid_air_w_k": 0.7,
+  "slew_rpm_s": 300.0,
+  "vessel_radius_m": 0.04,
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design, authored dimensions and engineering assumptions. Water fixture 0.2 kg with assumed heat capacity 4180 J/(kg K); no manufacturer calibration or CFD validation.",
+  "origin_anchor_m": [
+    0,
+    0,
+    0.04
+  ]
+}

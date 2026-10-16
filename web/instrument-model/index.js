@@ -44,11 +44,19 @@ export function bindInstrument(root) {
         {
           position: node.position.clone(),
           quaternion: node.quaternion.clone(),
+          rotation: new Quaternion(),
           axis: new Vector3(...j.axis),
         },
       ];
     }),
   );
+  const scaling = definition.components
+    .filter((c) => c.scale)
+    .map((c) => ({
+      node: parts.get(c.id),
+      binding: c.scale,
+      rest: parts.get(c.id).scale.clone(),
+    }));
   function pose(joint, value) {
     requireValue(
       finite(value) &&
@@ -63,8 +71,10 @@ export function bindInstrument(root) {
     else
       node.quaternion
         .copy(initial.quaternion)
-        .multiply(new Quaternion().setFromAxisAngle(initial.axis, value));
+        .multiply(initial.rotation.setFromAxisAngle(initial.axis, value));
   }
+  let elapsed = 0,
+    observation = null;
   return {
     definition,
     parts,
@@ -92,34 +102,77 @@ export function bindInstrument(root) {
           state.values[r.state] === null || finite(state.values[r.state]),
           `readout ${r.state}`,
         );
+      for (const j of definition.joints)
+        if (j.kind === "continuous")
+          requireValue(finite(state.values[j.velocity_state]), "joint speed");
+      for (const s of scaling)
+        requireValue(
+          finite(state.values[s.binding.state]) &&
+            state.values[s.binding.state] >= s.binding.min &&
+            state.values[s.binding.state] <= s.binding.max,
+          "component scale state",
+        );
+      observation = state;
+      elapsed = 0;
+      for (const s of scaling) {
+        s.node.scale.copy(s.rest);
+        s.node.scale[s.binding.axis] =
+          s.rest[s.binding.axis] * state.values[s.binding.state];
+      }
       for (const j of definition.joints) pose(j, state.values[j.state]);
       for (const b of definition.visibility)
         parts.get(b.component).visible = state.values[b.state];
+    },
+    animate(dt) {
+      if (!observation || !finite(dt) || dt <= 0) return;
+      // Predict at most 250 ms from an actual observation. Offline/stalled transport cannot spin forever.
+      const next = Math.min(0.25, elapsed + dt);
+      if (next === elapsed) return;
+      elapsed = next;
+      for (const j of definition.joints)
+        if (j.kind === "continuous")
+          pose(
+            j,
+            observation.values[j.state] +
+              observation.values[j.velocity_state] * elapsed,
+          );
     },
     inspect(jointId, value) {
       const j = definition.joints.find((j) => j.id === jointId);
       requireValue(j, "unknown joint");
       pose(j, value);
     },
-    action(object, values) {
+    control(object) {
       let node = object;
       while (node && node !== root.parent) {
-        const c = definition.components.find(
+        const control = definition.components.find(
           (c) => c.id === node.userData.opensdlComponent,
-        );
-        if (c?.control) {
-          const t = c.control,
-            params = { ...t.params };
-          if (t.kind === "toggle") {
-            requireValue(finite(values[t.state]), "unconfirmed toggle state");
-            params[t.parameter] =
-              values[t.state] > (t.open + t.closed) / 2 ? t.closed : t.open;
-          }
-          return { action: t.action, params };
-        }
+        )?.control;
+        if (control) return control;
         node = node.parent;
       }
       return null;
+    },
+    action(object, values, steps = 1) {
+      const t = this.control(object);
+      if (!t) return null;
+      const params = { ...t.params };
+      if (t.kind === "toggle") {
+        requireValue(finite(values[t.state]), "unconfirmed toggle state");
+        params[t.parameter] =
+          values[t.state] > (t.open + t.closed) / 2 ? t.closed : t.open;
+      }
+      if (t.kind === "dial") {
+        requireValue(
+          finite(values[t.state]) && finite(steps),
+          "unconfirmed dial state",
+        );
+        params[t.parameter] = Math.min(
+          t.max,
+          Math.max(t.min, values[t.state] + steps * t.step),
+        );
+      }
+      return { action: t.action, params };
     },
   };
 }

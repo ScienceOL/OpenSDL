@@ -1,0 +1,129 @@
+{
+  "world_id": "drying-oven",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "drying_tray",
+      "mass_kg": 0.05,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.09
+    }
+  ],
+  "devices": [
+    {
+      "id": "drying-oven-1",
+      "device_type": "simulation.drying_oven",
+      "role": "heater",
+      "description": "DO 20 Drying Oven",
+      "actions": [
+        {
+          "name": "lid",
+          "description": "Lid",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_sample",
+          "description": "Load sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_sample",
+          "description": "Unload sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set chamber temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 22.0,
+                "maximum": 200.0
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "drying-oven",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "drying_oven",
+        "model_id": "opensdl.do20",
+        "ambient_c": 22.0,
+        "max_c": 200.0,
+        "heater_w": 700.0,
+        "chamber_capacity_j_k": 1500.0,
+        "sample_capacity_j_k": 300.0,
+        "exchange_w_k": 3.0,
+        "loss_w_k": 2.4,
+        "opening_rad": 1.65,
+        "sample_id": "drying_tray",
+        "sample_radius_m": 0.1
+      }
+    }
+  ]
+}

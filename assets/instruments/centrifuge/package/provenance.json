@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.cf4",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design; Four orthogonal 55 mm rotor slots, 4000 rpm maximum and 500 rpm/s slew are authored teaching parameters. Static imbalance limit 0.5 g; RCF is calculated at the tube centre. No separation prediction or hardware safety certification.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/centrifuge/model.yaml": "098d76f32190e0dc06642889b63f17f500fc6b1dcec56c9dc9111947ec417616",
+    "assets/instruments/centrifuge/SOURCE.md": "3c76205d4f5d4266d4127926cb85d7211a402cf1e8ce578adfd0f33938c3c5b8",
+    "assets/instruments/centrifuge/geometry.py": "a59c9b1cd346f7c1199d5c9ec4144079a6062eecae55e437b081a5fcbbab2306",
+    "tools/instrument-models/author.py": "18ecb404fe7029e946a3f9530a75d0f2b97d8efd958fc9b426b1e48f671f396b",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "6013d7182a70926831a3d5563eb2f093a68807a7c40e4a78f19c61b63e9eaabb"
+  }
+}
