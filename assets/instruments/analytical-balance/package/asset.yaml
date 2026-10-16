@@ -4,7 +4,7 @@
   "metadata": {
     "name": "analytical-balance",
     "displayName": "AX 240 Analytical Balance",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Original OpenSDL generic design. Dimensions and process parameters are authored engineering fixtures, not manufacturer specifications or measurements.",
     "tags": [
       "original",

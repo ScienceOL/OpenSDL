@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/heated-stirrer/model.yaml": "4401083e25d48a75039064d66503398f2ab03302dc42c1703cad792478dee885",
+    "assets/instruments/heated-stirrer/model.yaml": "570f70f7e813783cce6c7c77089d24700dfa4c362a1338dea6dea97c96e60d41",
     "assets/instruments/heated-stirrer/SOURCE.md": "c85ad7dba3971a7a418ef30cc184dc42acd5c1c01427f56883d39141c276de49",
     "tools/instrument-models/build_stirrer.py": "6911c3aab85b5a3f4644426fb27c54942ab1ff5623b49a5b40bdced3c1d492b9",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

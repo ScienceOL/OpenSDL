@@ -1,7 +1,7 @@
 {
   "id": "opensdl.hs150",
   "name": "HS 150 Heated Magnetic Stirrer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "dimensions_m": [
     0.188,
     0.303,

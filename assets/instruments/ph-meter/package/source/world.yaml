@@ -81,7 +81,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "ph-meter",
-        "version": "1.0.0"
+        "version": "1.0.1"
       },
       "model": {
         "kind": "ph_meter",

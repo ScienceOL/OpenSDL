@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/ph-meter/model.yaml": "283a780250d910b4a048e432b7425add6dd27b355ef309ee3d0176149eb25e44",
+    "assets/instruments/ph-meter/model.yaml": "cb61d77a18c89639dd6b336152833cd16ccd08de13685f55181f1a789a6ed719",
     "assets/instruments/ph-meter/SOURCE.md": "33c128766a2773d3a51ff5a2104469a166b7097482fbc7b9c8809805e52da57c",
     "assets/instruments/ph-meter/geometry.py": "9d1f68ab365500c1a1a441d031076dd28e2b0f8756e71c94a3ec7c5dcb487c16",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

@@ -1,7 +1,7 @@
 {
   "id": "opensdl.do20",
   "name": "DO 20 Drying Oven",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "dimensions_m": [
     0.32,
     0.336,

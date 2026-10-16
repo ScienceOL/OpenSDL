@@ -60,7 +60,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "vacuum-pump",
-        "version": "1.0.0"
+        "version": "1.0.1"
       },
       "model": {
         "kind": "vacuum_pump",
