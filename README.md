@@ -352,3 +352,17 @@ PR release jobs validate the cargo-dist plan. The six release packages and
 installers are built only for version tags. Regenerate the release workflow
 with cargo-dist 0.32.0 after changing `dist-workspace.toml`; do not duplicate
 release packaging in the native test lanes.
+
+### Scoped remote camera publishing
+
+A selected online Runner starts a camera through the authenticated streaming
+`PublishMedia` RPC. Configure an absolute device-local `media_gateway.ffmpeg_binary`;
+`ffmpeg_ca_file` is optional for a private development CA. The publisher uses the
+configured H.264 path when present, copies video through RTMPS with certificate
+and hostname verification, and stops when the RPC ends or the runtime shuts down.
+Concurrent RPCs cannot create duplicate publishers for the same source.
+
+Camera credentials remain on the selected device. FFmpeg receives its scoped
+short-lived ingest URL in its process arguments; operators of multi-user hosts
+must restrict local process inspection to the trusted device account. Diagnostic
+logs emit fixed error categories and never raw FFmpeg stderr or target URLs.

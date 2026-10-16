@@ -37,6 +37,7 @@ pub struct OsdlService {
     /// the daemon forever (the broadcast Sender never closes because
     /// the service still holds it).
     shutdown: Arc<Notify>,
+    media_publishers: crate::media_publish::Publishers,
 }
 
 impl OsdlService {
@@ -53,6 +54,7 @@ impl OsdlService {
             engine,
             identity,
             shutdown,
+            media_publishers: crate::media_publish::Publishers::default(),
         }
     }
 }
@@ -65,7 +67,8 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         request: Request<pb::PublishMediaRequest>,
     ) -> Result<Response<Self::PublishMediaStream>, Status> {
-        crate::media_publish::start(&self.engine, request.into_inner(), self.shutdown.clone())
+        self.media_publishers
+            .start(&self.engine, request.into_inner(), self.shutdown.clone())
             .await
             .map(Response::new)
     }
