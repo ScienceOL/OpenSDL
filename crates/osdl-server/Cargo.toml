@@ -28,6 +28,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 directories = { workspace = true }
+url = "2"
 hyper-util = { workspace = true }
 tower = { workspace = true }
 

@@ -59,6 +59,16 @@ impl OsdlService {
 
 #[tonic::async_trait]
 impl pb::osdl_server::Osdl for OsdlService {
+    type PublishMediaStream = crate::media_publish::PublishStream;
+
+    async fn publish_media(
+        &self,
+        request: Request<pb::PublishMediaRequest>,
+    ) -> Result<Response<Self::PublishMediaStream>, Status> {
+        crate::media_publish::start(&self.engine, request.into_inner(), self.shutdown.clone())
+            .await
+            .map(Response::new)
+    }
     async fn status(
         &self,
         _req: Request<pb::StatusRequest>,

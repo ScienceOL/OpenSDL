@@ -16,6 +16,7 @@ pub mod background;
 pub mod convert;
 pub mod lockfile;
 pub mod managed;
+mod media_publish;
 pub mod paths;
 pub mod service;
 pub mod simulation_asset;

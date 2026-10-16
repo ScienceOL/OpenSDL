@@ -43,8 +43,21 @@ service Osdl {
   // (the gap is reported as a Lagged event).
   rpc StreamEvents(StreamEventsRequest) returns (stream Event);
 
+  // Device-local remote camera publishing. Dropping the authenticated RPC
+  // stops the publisher; the server never queues work for an offline device.
+  rpc PublishMedia(PublishMediaRequest) returns (stream PublishMediaStatus);
+
   // Ask the server to stop. Authorized callers only (TODO: auth).
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message PublishMediaRequest {
+  string source_id = 1;
+  string publish_url = 2;
+}
+
+message PublishMediaStatus {
+  bool running = 1;
 }
 
 // ===== Status =====
