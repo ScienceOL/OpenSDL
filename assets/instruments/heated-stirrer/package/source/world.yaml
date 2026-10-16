@@ -1,0 +1,169 @@
+{
+  "world_id": "heated-stirrer",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "water_vessel",
+      "mass_kg": 0.25,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.04
+    }
+  ],
+  "devices": [
+    {
+      "id": "heated-stirrer-1",
+      "device_type": "simulation.heated_stirrer",
+      "role": "heater",
+      "description": "HS 150 Heated Magnetic Stirrer",
+      "actions": [
+        {
+          "name": "power",
+          "description": "Power",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "heat",
+          "description": "Heat",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stir",
+          "description": "Stir",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_vessel",
+          "description": "Load vessel",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_vessel",
+          "description": "Unload vessel",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "probe",
+          "description": "Probe",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set plate target, not liquid temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 22.0,
+                "maximum": 150.0
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_speed",
+          "description": "Set stir target speed",
+          "params": {
+            "type": "object",
+            "properties": {
+              "rpm": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1500.0
+              }
+            },
+            "required": [
+              "rpm"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "heated-stirrer",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "heated_stirrer",
+        "model_id": "opensdl.hs150",
+        "ambient_c": 22.0,
+        "max_plate_c": 150.0,
+        "max_loaded_plate_c": 95.0,
+        "max_rpm": 1500.0,
+        "heater_w": 500.0,
+        "plate_capacity_j_k": 360.0,
+        "liquid_capacity_j_k": 836.0,
+        "plate_liquid_w_k": 6.0,
+        "plate_air_w_k": 1.4,
+        "liquid_air_w_k": 0.7,
+        "slew_rpm_s": 300.0,
+        "vessel_radius_m": 0.04
+      }
+    }
+  ]
+}

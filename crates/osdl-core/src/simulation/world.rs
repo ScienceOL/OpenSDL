@@ -1,4 +1,4 @@
-use super::{balance::BalanceState, InstrumentConfig, SampleInventory};
+use super::{InstrumentState, SampleInventory};
 use crate::{
     config::{SimulationConfig, SimulationDeviceConfig},
     transport::{
@@ -54,9 +54,7 @@ impl WorldRuntime {
         config.validate()?;
         let mut devices = HashMap::new();
         for c in &config.devices {
-            let balance = c.model.as_ref().map(|model| match model {
-                InstrumentConfig::AnalyticalBalance(config) => BalanceState::new(config.clone()),
-            });
+            let instrument = c.model.as_ref().map(InstrumentState::new);
             let mut initial_properties = c.properties.clone();
             if let Some(asset) = &c.asset_ref {
                 initial_properties.insert("simulation_asset".into(), json!(asset));
@@ -69,7 +67,7 @@ impl WorldRuntime {
                     state: SimulationState {
                         initial_properties: initial_properties.clone(),
                         properties: initial_properties,
-                        balance,
+                        instrument,
                         step: 0,
                         revision: 0,
                         last_action: None,
@@ -162,8 +160,8 @@ impl WorldRuntime {
         let state = &device.state;
         let config = &device.config;
         let mut properties = state.properties.clone();
-        if let Some(balance) = &state.balance {
-            properties.extend(balance.properties(
+        if let Some(instrument) = &state.instrument {
+            properties.extend(instrument.properties(
                 &config.id,
                 &self.run_id,
                 &world.samples,

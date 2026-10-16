@@ -4,7 +4,7 @@
   "metadata": {
     "name": "analytical-balance",
     "displayName": "AX 240 Analytical Balance",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "description": "Original metre-scale analytical balance with three sliding glass doors and a local weighing model.",
     "tags": [
       "original",
@@ -12,7 +12,7 @@
       "metrology"
     ],
     "license": {
-      "spdx": "MIT",
+      "spdx": "CC-BY-NC-4.0",
       "file": "LICENSE"
     }
   },

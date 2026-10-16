@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.hs150",
+  "dimensions_m": [
+    0.188,
+    0.388,
+    0.303
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Enclosure and probe stand",
+      "parent": "instrument"
+    },
+    {
+      "id": "plate",
+      "label": "150 mm ceramic plate",
+      "parent": "instrument"
+    },
+    {
+      "id": "heat_dial",
+      "label": "Plate temperature dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_temperature",
+        "params": {},
+        "parameter": "temperature_c",
+        "state": "target_c",
+        "min": 22.0,
+        "max": 150.0,
+        "step": 5
+      }
+    },
+    {
+      "id": "speed_dial",
+      "label": "Stir speed dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_speed",
+        "params": {},
+        "parameter": "rpm",
+        "state": "target_rpm",
+        "min": 0,
+        "max": 1500.0,
+        "step": 100
+      }
+    },
+    {
+      "id": "power_key",
+      "label": "Power",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "power",
+        "params": {}
+      }
+    },
+    {
+      "id": "heat_key",
+      "label": "Heat enable",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "heat",
+        "params": {}
+      }
+    },
+    {
+      "id": "stir_key",
+      "label": "Stir enable",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stir",
+        "params": {}
+      }
+    },
+    {
+      "id": "plate_screen",
+      "label": "Plate temperature",
+      "parent": "instrument"
+    },
+    {
+      "id": "liquid_screen",
+      "label": "Immersed probe temperature",
+      "parent": "instrument"
+    },
+    {
+      "id": "rpm_screen",
+      "label": "Stir speed",
+      "parent": "instrument"
+    },
+    {
+      "id": "vessel",
+      "label": "200 ml water vessel",
+      "parent": "instrument"
+    },
+    {
+      "id": "probe",
+      "label": "Immersion probe",
+      "parent": "instrument"
+    },
+    {
+      "id": "bar",
+      "label": "PTFE stir bar",
+      "parent": "instrument"
+    },
+    {
+      "id": "hot_lamp",
+      "label": "Hot surface warning",
+      "parent": "instrument"
+    }
+  ],
+  "joints": [
+    {
+      "id": "heat_dial_joint",
+      "component": "heat_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "heat_dial_rad"
+    },
+    {
+      "id": "speed_dial_joint",
+      "component": "speed_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "speed_dial_rad"
+    },
+    {
+      "id": "bar_joint",
+      "component": "bar",
+      "kind": "continuous",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "bar_rad",
+      "velocity_state": "bar_rad_s"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "plate_screen",
+      "state": "plate_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "liquid_screen",
+      "state": "probe_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "rpm_screen",
+      "state": "rpm",
+      "digits": 0,
+      "unit": "rpm"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "vessel",
+      "state": "vessel_visible"
+    },
+    {
+      "component": "bar",
+      "state": "vessel_visible"
+    },
+    {
+      "component": "probe",
+      "state": "probe_visible"
+    },
+    {
+      "component": "hot_lamp",
+      "state": "hot"
+    }
+  ],
+  "placements": [
+    {
+      "id": "plate",
+      "component": "plate",
+      "position": [
+        0,
+        0.12,
+        -0.028
+      ],
+      "radius_m": 0.04
+    }
+  ]
+}

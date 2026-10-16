@@ -28,6 +28,22 @@ pub struct Component {
     pub label: String,
     pub parent: String,
     pub control: Option<Control>,
+    pub scale: Option<ScaleBinding>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScaleBinding {
+    pub axis: ScaleAxis,
+    pub state: String,
+    pub min: f64,
+    pub max: f64,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScaleAxis {
+    X,
+    Y,
+    Z,
 }
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -35,6 +51,15 @@ pub enum Control {
     Command {
         action: String,
         params: HashMap<String, Value>,
+    },
+    Dial {
+        action: String,
+        params: HashMap<String, Value>,
+        parameter: String,
+        state: String,
+        min: f64,
+        max: f64,
+        step: f64,
     },
     Toggle {
         action: String,
@@ -55,6 +80,7 @@ pub struct Joint {
     pub min: f64,
     pub max: f64,
     pub state: String,
+    pub velocity_state: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,9 +153,41 @@ impl ModelDefinition {
             {
                 return Err(invalid("component identity"));
             }
+            if let Some(scale) = &c.scale {
+                if !valid_id(&scale.state)
+                    || !scale.min.is_finite()
+                    || !scale.max.is_finite()
+                    || scale.min < 0.0
+                    || scale.min >= scale.max
+                {
+                    return Err(invalid("component scale"));
+                }
+            }
             if let Some(control) = &c.control {
                 let (action, params) = match control {
                     Control::Command { action, params } => (action, params),
+                    Control::Dial {
+                        action,
+                        params,
+                        parameter,
+                        state,
+                        min,
+                        max,
+                        step,
+                    } => {
+                        if !valid_id(parameter)
+                            || !valid_id(state)
+                            || !min.is_finite()
+                            || !max.is_finite()
+                            || min >= max
+                            || !step.is_finite()
+                            || *step <= 0.0
+                            || *step > max - min
+                        {
+                            return Err(invalid("dial control"));
+                        }
+                        (action, params)
+                    }
                     Control::Toggle {
                         action,
                         params,
@@ -178,6 +236,12 @@ impl ModelDefinition {
         let mut ids = HashSet::new();
         let mut moving = HashSet::new();
         for j in &self.joints {
+            match (&j.kind, &j.velocity_state) {
+                (JointKind::Continuous, Some(state)) if valid_id(state) => {}
+                (JointKind::Continuous, _) => return Err(invalid("continuous joint velocity")),
+                (_, Some(_)) => return Err(invalid("velocity belongs to continuous joints")),
+                (_, None) => {}
+            }
             let norm = j.axis.iter().map(|n| n * n).sum::<f64>().sqrt();
             if !valid_id(&j.id)
                 || !ids.insert(&j.id)

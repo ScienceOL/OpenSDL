@@ -1,0 +1,94 @@
+{
+  "world_id": "ph-meter",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [],
+  "devices": [
+    {
+      "id": "ph-meter-1",
+      "device_type": "simulation.ph_meter",
+      "role": "probe",
+      "description": "PH 14 Bench Meter",
+      "actions": [
+        {
+          "name": "power",
+          "description": "Power",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "probe",
+          "description": "Probe",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "calibrate",
+          "description": "Calibrate",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_buffer",
+          "description": "Choose synthetic buffer",
+          "params": {
+            "type": "object",
+            "properties": {
+              "ph": {
+                "type": "number",
+                "enum": [
+                  4,
+                  7,
+                  10
+                ]
+              }
+            },
+            "required": [
+              "ph"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "ph-meter",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "ph_meter",
+        "model_id": "opensdl.ph14",
+        "response_s": 2.0,
+        "probe_travel_m": 0.06
+      }
+    }
+  ]
+}

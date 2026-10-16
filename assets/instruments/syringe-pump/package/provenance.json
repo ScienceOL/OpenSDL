@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.sp10",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design; Original 10 mL syringe fixture with 14 mm bore and 65 mm travel. Area-based displacement conserves source, syringe and receiver volume. No backpressure, compliance or delivery accuracy claim.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/syringe-pump/model.yaml": "26d164b539c186e5454a7439da06cd8efe8d250b22fd9e204f7fd52f71fb39e2",
+    "assets/instruments/syringe-pump/SOURCE.md": "c4ef1531b91f73c0e73d391dc17501b5f6793f64dd3d02d9ba91f71c90c07578",
+    "assets/instruments/syringe-pump/geometry.py": "8f7c19dbc92a0686040c39d1255813da2274e640274dffe77b9367340904ae7a",
+    "tools/instrument-models/author.py": "18ecb404fe7029e946a3f9530a75d0f2b97d8efd958fc9b426b1e48f671f396b",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "6013d7182a70926831a3d5563eb2f093a68807a7c40e4a78f19c61b63e9eaabb"
+  }
+}

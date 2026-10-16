@@ -45,7 +45,7 @@ export function parseModel(value) {
   const components = new Map([["instrument", null]]);
   for (const c of value.components) {
     requireValue(
-      closed(c, ["id", "label", "parent", "control"]) &&
+      closed(c, ["id", "label", "parent", "control", "scale"]) &&
         id(c.id) &&
         !components.has(c.id) &&
         id(c.parent) &&
@@ -54,24 +54,48 @@ export function parseModel(value) {
       "component",
     );
     components.set(c.id, c);
-    if (c.control) {
+    if (c.scale !== undefined && c.scale !== null) {
+      const s = c.scale;
+      requireValue(
+        closed(s, ["axis", "state", "min", "max"]) &&
+          ["x", "y", "z"].includes(s.axis) &&
+          id(s.state) &&
+          finite(s.min) &&
+          finite(s.max) &&
+          s.min >= 0 &&
+          s.min < s.max,
+        "component scale",
+      );
+    }
+    if (c.control !== undefined && c.control !== null) {
       const t = c.control;
       requireValue(
         closed(
           t,
           t.kind === "command"
             ? ["kind", "action", "params"]
-            : [
-                "kind",
-                "action",
-                "params",
-                "parameter",
-                "state",
-                "open",
-                "closed",
-              ],
+            : t.kind === "dial"
+              ? [
+                  "kind",
+                  "action",
+                  "params",
+                  "parameter",
+                  "state",
+                  "min",
+                  "max",
+                  "step",
+                ]
+              : [
+                  "kind",
+                  "action",
+                  "params",
+                  "parameter",
+                  "state",
+                  "open",
+                  "closed",
+                ],
         ) &&
-          ["command", "toggle"].includes(t.kind) &&
+          ["command", "toggle", "dial"].includes(t.kind) &&
           id(t.action) &&
           record(t.params) &&
           Object.keys(t.params).length <= 16 &&
@@ -84,6 +108,18 @@ export function parseModel(value) {
           ),
         "control",
       );
+      if (t.kind === "dial")
+        requireValue(
+          id(t.parameter) &&
+            id(t.state) &&
+            finite(t.min) &&
+            finite(t.max) &&
+            t.min < t.max &&
+            finite(t.step) &&
+            t.step > 0 &&
+            t.step <= t.max - t.min,
+          "dial",
+        );
       if (t.kind === "toggle")
         requireValue(
           id(t.parameter) && id(t.state) && finite(t.open) && finite(t.closed),
@@ -109,7 +145,16 @@ export function parseModel(value) {
     moving = new Set();
   for (const j of value.joints) {
     requireValue(
-      closed(j, ["id", "component", "kind", "axis", "min", "max", "state"]) &&
+      closed(j, [
+        "id",
+        "component",
+        "kind",
+        "axis",
+        "min",
+        "max",
+        "state",
+        "velocity_state",
+      ]) &&
         id(j.id) &&
         !jointIds.has(j.id) &&
         j.component !== "instrument" &&
@@ -126,6 +171,12 @@ export function parseModel(value) {
         j.min <= j.max &&
         id(j.state),
       "joint frame/limits",
+    );
+    requireValue(
+      j.kind === "continuous"
+        ? id(j.velocity_state)
+        : j.velocity_state === undefined || j.velocity_state === null,
+      "joint velocity",
     );
     jointIds.add(j.id);
     moving.add(j.component);

@@ -1,0 +1,17 @@
+{
+  "model": "opensdl.hs150",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design, authored dimensions and engineering assumptions. Water fixture 0.2 kg with assumed heat capacity 4180 J/(kg K); no manufacturer calibration or CFD validation.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/heated-stirrer/model.yaml": "a536f9f72bc0a85581582c9f00e1fce4e276a813e2916929b18062659eef2ba4",
+    "assets/instruments/heated-stirrer/SOURCE.md": "c85ad7dba3971a7a418ef30cc184dc42acd5c1c01427f56883d39141c276de49",
+    "tools/instrument-models/build_stirrer.py": "6911c3aab85b5a3f4644426fb27c54942ab1ff5623b49a5b40bdced3c1d492b9",
+    "tools/instrument-models/author.py": "18ecb404fe7029e946a3f9530a75d0f2b97d8efd958fc9b426b1e48f671f396b",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/optimize.py": "6013d7182a70926831a3d5563eb2f093a68807a7c40e4a78f19c61b63e9eaabb"
+  }
+}

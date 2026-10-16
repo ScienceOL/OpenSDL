@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.do20",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design; Original insulated chamber, 700 W heating and two declared thermal nodes. Inert sample temperature changes; moisture removal and drying time are not predicted.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/drying-oven/model.yaml": "4e6a03902eb7152a8c76f768dc74d32a97f28377ba831ef9d7eb212ce7159267",
+    "assets/instruments/drying-oven/SOURCE.md": "b54a3a42b07a458b784d95f2932c1df8f103fe472485c1301806562f4120fdcd",
+    "assets/instruments/drying-oven/geometry.py": "d671c8a524e8530200d6f28d6e177349d7752467bfef861c29d54319d2e2b7f2",
+    "tools/instrument-models/author.py": "18ecb404fe7029e946a3f9530a75d0f2b97d8efd958fc9b426b1e48f671f396b",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "6013d7182a70926831a3d5563eb2f093a68807a7c40e4a78f19c61b63e9eaabb"
+  }
+}

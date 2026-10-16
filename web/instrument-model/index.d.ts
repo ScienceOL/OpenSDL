@@ -3,6 +3,7 @@ import type {
   ModelState,
   ModelAction,
   ModelValues,
+  ModelControl,
 } from "./contract.js";
 export * from "./contract.js";
 /** Structural scene boundary; hosts retain ownership of their Three.js types and resources. */
@@ -13,9 +14,15 @@ export interface InstrumentNode {
 }
 export interface InstrumentBinding {
   definition: ModelDefinition;
+  control(object: InstrumentNode): ModelControl | null;
   apply(state: ModelState): void;
+  animate(dt: number): void;
   inspect(jointId: string, value: number): void;
-  action(object: InstrumentNode, values: ModelValues): ModelAction | null;
+  action(
+    object: InstrumentNode,
+    values: ModelValues,
+    steps?: number,
+  ): ModelAction | null;
 }
 export function bindInstrument(root: InstrumentNode): InstrumentBinding | null;
 export function createReadouts(binding: InstrumentBinding): {

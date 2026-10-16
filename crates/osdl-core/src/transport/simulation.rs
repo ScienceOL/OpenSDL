@@ -4,7 +4,7 @@ use super::TransportRx;
 use crate::config::{SimulationConfig, SimulationDeviceConfig};
 use crate::protocol::{CommandResult, CommandStatus, DeviceCommand};
 use crate::simulation::{
-    balance::BalanceState, basic::KinematicBackend, world::WorldRuntime, SampleInventory,
+    basic::KinematicBackend, world::WorldRuntime, InstrumentState, SampleInventory,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 pub struct SimulationState {
     pub initial_properties: HashMap<String, Value>,
     pub properties: HashMap<String, Value>,
-    pub balance: Option<BalanceState>,
+    pub instrument: Option<InstrumentState>,
     pub step: u64,
     pub revision: u64,
     pub last_action: Option<String>,

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.ph14",
+  "dimensions_m": [
+    0.221,
+    0.385,
+    0.222
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "probe",
+      "label": "Probe",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "probe",
+        "params": {}
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "power_key",
+      "label": "Power Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "power",
+        "params": {}
+      }
+    },
+    {
+      "id": "calibrate_key",
+      "label": "Calibrate Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "calibrate",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "probe_joint",
+      "component": "probe",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": -0.06,
+      "max": 0,
+      "state": "probe_m"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "ph",
+      "digits": 2,
+      "unit": "pH"
+    }
+  ],
+  "visibility": [],
+  "placements": []
+}

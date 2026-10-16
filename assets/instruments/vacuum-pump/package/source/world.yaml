@@ -1,0 +1,76 @@
+{
+  "world_id": "vacuum-pump",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [],
+  "devices": [
+    {
+      "id": "vacuum-pump-1",
+      "device_type": "simulation.vacuum_pump",
+      "role": "valve",
+      "description": "VP 20 Vacuum Pump",
+      "actions": [
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "vent",
+          "description": "Vent",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "vacuum-pump",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "vacuum_pump",
+        "model_id": "opensdl.vp20",
+        "ambient_kpa": 101.325,
+        "ultimate_kpa": 2.0,
+        "chamber_l": 0.5,
+        "pumping_l_s": 0.02,
+        "leak_l_s": 2e-05
+      }
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "world_id": "pipette",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [],
+  "devices": [
+    {
+      "id": "pipette-1",
+      "device_type": "simulation.pipette",
+      "role": "generic",
+      "description": "P 200 Single Channel Pipette",
+      "actions": [
+        {
+          "name": "tip",
+          "description": "Tip",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "aspirate",
+          "description": "Aspirate",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "dispense",
+          "description": "Dispense",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stroke",
+          "description": "Stroke",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_volume",
+          "description": "Set pipette volume",
+          "params": {
+            "type": "object",
+            "properties": {
+              "volume_ul": {
+                "type": "integer",
+                "minimum": 20.0,
+                "maximum": 200.0
+              }
+            },
+            "required": [
+              "volume_ul"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "move_to",
+          "description": "Place the pipette at its stand, source vial, or receiver vial; explicit fixture placement, not a robot path",
+          "params": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "string",
+                "enum": [
+                  "park",
+                  "source",
+                  "receiver"
+                ]
+              }
+            },
+            "required": [
+              "position"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "pipette",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "pipette",
+        "model_id": "opensdl.p200",
+        "min_ul": 20,
+        "max_ul": 200,
+        "stroke_m": 0.012,
+        "reservoir_ul": 2000,
+        "source_x_m": -0.05,
+        "receiver_x_m": 0.05,
+        "immersion_m": 0.0115
+      }
+    }
+  ]
+}

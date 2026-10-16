@@ -1,7 +1,7 @@
 # AX 240 analytical balance
 
-Original OpenSDL geometry and engineering design, licensed under the repository's
-MIT license. No third-party meshes, textures, parameters, contract files, or
+Original OpenSDL geometry and engineering design. Edition 1.1.0 uses CC BY-NC 4.0;
+previous edition 1.0.1 retains its MIT license. No third-party meshes, textures, parameters, contract files, or
 manufacturer artwork are inputs. The AX 240 is a generic educational instrument,
 not a model or certified digital twin of a commercial product.
 
@@ -36,3 +36,7 @@ The package carries optional fixture meshes. Hosts apply the portable visibility
 at load time; only fixtures confirmed by the local world are shown on the pan. The Hub's
 joint sliders inspect geometry without running the device. A device observation includes
 a per-run identity and monotonic revision so restarting a local world cannot reuse stale poses.
+
+## Edition 1.1.0
+
+The new edition adds nonfunctional internal provenance inserts and uses CC BY-NC 4.0 for model, model-specific authoring source and parameters. Attribution: OpenSDL / LiyanLabs. The earlier 1.0.1 asset and its historical authoring source remain available under their existing MIT grant; this edition does not revoke it.

@@ -17,8 +17,8 @@ impl SimulationBackend for KinematicBackend {
         action: &str,
         params: &Value,
     ) -> Result<(), String> {
-        if let Some(balance) = &mut state.balance {
-            return balance.apply(device, action, params, samples);
+        if let Some(instrument) = &mut state.instrument {
+            return instrument.apply(device, action, params, samples);
         }
         match action {
             "reset" => self.reset(state),
@@ -96,8 +96,8 @@ impl SimulationBackend for KinematicBackend {
     }
 
     fn advance(&self, state: &mut SimulationState, dt: f64) -> bool {
-        if let Some(balance) = &mut state.balance {
-            return balance.advance(dt);
+        if let Some(instrument) = &mut state.instrument {
+            return instrument.advance(dt);
         }
         let previous = state.properties.clone();
         if let (Some(Value::Number(current)), Some(Value::Number(target))) = (
