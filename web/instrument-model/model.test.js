@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { Box3, Mesh, Vector3 } from "three";
+import { Box3, Mesh, Object3D, Vector3 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { bindInstrument, parseModel, parseModelState } from "./index.js";
 const asset = new URL(
@@ -228,30 +228,75 @@ test("readout surfaces are instance-owned and redraw only a changed value", asyn
   }
 });
 
+// Rigid consolidation joins disconnected solids. Recover their connected vertex
+// groups so an empty gap between two rails is not treated as occupied geometry.
+function solidBounds(mesh) {
+  const positions = mesh.geometry.attributes.position;
+  const points = [],
+    ids = [],
+    parents = [],
+    byPosition = new Map();
+  const find = (n) => {
+    while (parents[n] !== n) {
+      parents[n] = parents[parents[n]];
+      n = parents[n];
+    }
+    return n;
+  };
+  for (let i = 0; i < positions.count; i++) {
+    const point = new Vector3().fromBufferAttribute(positions, i);
+    const key = point
+      .toArray()
+      .map((n) => n.toFixed(6))
+      .join(",");
+    let id = byPosition.get(key);
+    if (id === undefined) {
+      id = parents.length;
+      parents.push(id);
+      byPosition.set(key, id);
+    }
+    ids.push(id);
+    points.push(point.applyMatrix4(mesh.matrixWorld));
+  }
+  const indices =
+    mesh.geometry.index?.array ??
+    Array.from({ length: positions.count }, (_, i) => i);
+  for (let i = 0; i < indices.length; i += 3) {
+    const root = find(ids[indices[i]]);
+    parents[find(ids[indices[i + 1]])] = root;
+    parents[find(ids[indices[i + 2]])] = root;
+  }
+  const bounds = new Map();
+  for (let i = 0; i < points.length; i++) {
+    const id = find(ids[i]);
+    if (!bounds.has(id)) bounds.set(id, new Box3());
+    bounds.get(id).expandByPoint(points[i]);
+  }
+  return [...bounds.values()];
+}
 test("every draft-shield door has a clear swept path through its complete travel", async () => {
   const root = await load(),
     binding = bindInstrument(root);
   root.updateMatrixWorld(true);
   const fixed = [];
   binding.parts.get("draft_shield").traverse((node) => {
-    if (node.isMesh) fixed.push(node);
+    if (node.isMesh) fixed.push(...solidBounds(node));
   });
   for (const joint of binding.definition.joints) {
     const travel = new Vector3(...joint.axis).multiplyScalar(joint.max);
     binding.parts.get(joint.component).traverse((node) => {
       if (!node.isMesh) return;
-      const swept = new Box3().setFromObject(node);
-      swept.union(swept.clone().translate(travel));
-      for (const obstacle of fixed) {
-        const intersection = swept
-          .clone()
-          .intersect(new Box3().setFromObject(obstacle));
-        if (intersection.isEmpty()) continue;
-        const size = intersection.getSize(new Vector3());
-        assert.ok(
-          Math.min(size.x, size.y, size.z) <= 1e-6,
-          `${joint.id}: ${node.name} intersects ${obstacle.name}`,
-        );
+      for (const part of solidBounds(node)) {
+        const swept = part.clone().union(part.clone().translate(travel));
+        for (const obstacle of fixed) {
+          const intersection = swept.clone().intersect(obstacle);
+          if (intersection.isEmpty()) continue;
+          const size = intersection.getSize(new Vector3());
+          assert.ok(
+            Math.min(size.x, size.y, size.z) <= 1e-6,
+            `${joint.id}: ${node.name} intersects a fixed solid`,
+          );
+        }
       }
     });
   }
@@ -268,4 +313,20 @@ test("the hollow vessel has a closed centre floor, rather than a toroidal hole",
     new Vector3(0, -1, 0),
   ).intersectObject(binding.parts.get("vessel"), true);
   assert.ok(hits.some((hit) => Math.abs(hit.point.y - 0.0975) < 1e-6));
+});
+
+test("controls resolve only validated node identities, even if extras are modified", async () => {
+  const binding = bindInstrument(await load());
+  const left = binding.parts.get("door_left"),
+    mesh = left.children[0];
+  mesh.userData.opensdlComponent = "tare_key";
+  left.userData.opensdlComponent = "zero_key";
+  assert.equal(binding.control(mesh).action, "set_door");
+  assert.deepEqual(binding.action(mesh, { door_left_m: 0 }), {
+    action: "set_door",
+    params: { door: "left", opening_m: 0.12 },
+  });
+  const foreign = new Object3D();
+  foreign.userData.opensdlComponent = "tare_key";
+  assert.equal(binding.control(foreign), null);
 });

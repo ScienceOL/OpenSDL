@@ -1,25 +1,20 @@
 # SPDX-License-Identifier: CC-BY-NC-4.0
 """Build the original AX 240; run inside official Blender 4.5.3."""
-import argparse
-import hashlib
-import json
 import math
 from pathlib import Path
-import struct
 import sys
 
 import bpy
 
 sys.path.insert(0, str(Path(__file__).parent))
-from geometry import box, component, cylinder, label, material, studio, vessel
+from geometry import box, component, cylinder, label, material, vessel
+from author import build, action, numeric
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "assets/instruments/analytical-balance"
 
 
 def create_model(p):
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete(use_global=False)
     palette = {
         "shell": material("Warm ceramic enamel", (0.72, 0.75, 0.76), roughness=0.28),
         "trim": material("Graphite polymer", (0.035, 0.048, 0.056), roughness=0.38),
@@ -228,7 +223,7 @@ def create_model(p):
     return root, parts
 
 
-def model_graph(p):
+def model_graph(p, _parts):
     labels = {
         "body": "Enclosure",
         "draft_shield": "Draft shield",
@@ -305,124 +300,56 @@ def model_graph(p):
     }
 
 
-def inject_graph(path, graph):
-    data = path.read_bytes()
-    length = struct.unpack_from("<I", data, 12)[0]
-    gltf = json.loads(data[20 : 20 + length])
-    node = next(
-        n
-        for n in gltf["nodes"]
-        if n.get("extras", {}).get("opensdlComponent") == "instrument"
-    )
-    node.setdefault("extras", {})["opensdlModel"] = graph
-    encoded = json.dumps(gltf, separators=(",", ":")).encode()
-    encoded += b" " * (-len(encoded) % 4)
-    binary = data[20 + length :]
-    path.write_bytes(
-        struct.pack(
-            "<5I",
-            0x46546C67,
-            2,
-            20 + len(encoded) + len(binary),
-            len(encoded),
-            0x4E4F534A,
-        )
-        + encoded
-        + binary
-    )
-    return gltf
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--proofs", type=Path, required=True)
-    args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
-    if bpy.app.version[:3] != (4, 5, 3):
-        raise RuntimeError("Use pinned Blender 4.5.3")
-    p = json.loads((SOURCE / "model.yaml").read_text())
-    out = args.output.resolve()
-    args.proofs.mkdir(parents=True, exist_ok=True)
-    if out.exists():
-        raise RuntimeError("Output must be a new directory")
-    (out / "source").mkdir(parents=True)
-    root, parts = create_model(p)
-    from origin import mark
-
-    mark(parts["body"], p)
-    graph = model_graph(p)
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in root.children_recursive + [root]:
-        obj.select_set(True)
-    bpy.ops.export_scene.gltf(
-        filepath=str(out / "preview.glb"),
-        export_format="GLB",
-        use_selection=True,
-        export_extras=True,
-        export_yup=True,
-        export_animations=False,
-    )
-    gltf = inject_graph(out / "preview.glb", graph)
-    bpy.ops.wm.usd_export(
-        filepath=str(out / "source/model.usda"),
-        selected_objects_only=True,
-        export_textures=False,
-        export_materials=True,
-    )
-    usd = out / "source/model.usda"
-    usd.write_text(usd.read_text().rstrip() + "\n")
-    (out / "source/model.graph.json").write_text(json.dumps(graph, indent=2) + "\n")
-    (out / "LICENSE").write_text(
-        f"{p['name']} / {p['id']} / {p['version']}\n"
-        "Copyright 2026 OpenSDL / LiyanLabs. Attribution: OpenSDL / LiyanLabs.\n"
-        "License: CC BY-NC 4.0. Source: https://github.com/ScienceOL/OpenSDL/tree/main/assets/instruments/analytical-balance\n"
-        "Earlier edition 1.0.1 remains available under its existing MIT grant.\n"
-        "License URL: https://creativecommons.org/licenses/by-nc/4.0/\n\n"
-        + (REPO / "licenses/CC-BY-NC-4.0.txt").read_text()
-    )
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "balance_package", Path(__file__).with_name("package.py")
-    )
-    package = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(package)
-    package.write_config(out, p)
-    metrics = {
-        "preview_bytes": (out / "preview.glb").stat().st_size,
-        "triangles": sum(
-            gltf["accessors"][pr["indices"]]["count"] // 3
-            for m in gltf["meshes"]
-            for pr in m["primitives"]
+def runtime(p):
+    actions = [
+        action("reset", "Reset this simulated instrument and release its fixtures"),
+        action("power", "Toggle balance power"),
+        action("tare", "Tare the stable pan load"),
+        action("zero", "Zero a stable unloaded balance"),
+        action(
+            "set_door",
+            "Move a draft-shield door",
+            {
+                "door": {"type": "string", "enum": ["left", "right", "top"]},
+                "opening_m": numeric(0, p["door_travel_m"]),
+            },
         ),
-        "model_json_bytes": len(json.dumps(graph, separators=(",", ":")).encode()),
-    }
-    (out / "validation.json").write_text(json.dumps(metrics, indent=2) + "\n")
-    sources = [
-        SOURCE / "model.yaml",
-        SOURCE / "SOURCE.md",
-        Path(__file__),
-        Path(__file__).with_name("geometry.py"),
-        Path(__file__).with_name("package.py"),
-        Path(__file__).with_name("origin.py"),
+        *[
+            action(
+                name,
+                description,
+                {"sample_id": {"type": "string", "enum": list(p["fixtures"])}},
+            )
+            for name, description in [
+                ("load_sample", "Place a fixture on the pan"),
+                ("unload_sample", "Remove a fixture from the pan"),
+            ]
+        ],
     ]
-    provenance = {
-        "model": p["id"],
-        "license": p["license"],
-        "creator": "OpenSDL / LiyanLabs",
-        "evidence": p["evidence"],
-        "blender": bpy.app.version_string,
-        "build_hash": bpy.app.build_hash.decode(),
-        "inputs": {
-            str(f.relative_to(REPO)): hashlib.sha256(f.read_bytes()).hexdigest()
-            for f in sources
+    model = {
+        "kind": "analytical_balance",
+        "model_id": p["id"],
+        **{
+            k: p[k]
+            for k in (
+                "capacity_kg",
+                "readability_kg",
+                "settling_s",
+                "door_travel_m",
+                "pan_radius_m",
+            )
         },
     }
-    (out / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    scene = studio()
+    samples = [
+        {"id": name, **{k: fixture[k] for k in ("mass_kg", "position_m", "radius_m")}}
+        for name, fixture in p["fixtures"].items()
+    ]
+    return actions, model, samples
+
+
+def preview(p, parts, scene, output, proofs):
     for name in ("mass_5g", "mass_20g", "overload"):
-        parts[name].hide_render = True
-        for child in parts[name].children_recursive:
+        for child in [parts[name], *parts[name].children_recursive]:
             child.hide_render = True
     for name, opening in (
         ("closed", 0),
@@ -432,13 +359,18 @@ def main():
         for side in ("left", "right", "top"):
             parts["door_" + side].location.y = opening
         scene.render.filepath = str(
-            out / "thumbnail.png" if name == "closed" else args.proofs / (name + ".png")
+            output / "thumbnail.png" if name == "closed" else proofs / (name + ".png")
         )
         bpy.ops.render.render(write_still=True)
-    if metrics["triangles"] > 30000 or metrics["preview_bytes"] > 4 * 1024 * 1024:
-        raise RuntimeError(f"Model exceeds geometry budget: {metrics}")
-    print("MODEL_METRICS", json.dumps(metrics), flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    build(
+        SOURCE,
+        create_model,
+        model_graph,
+        runtime,
+        "analytical-balance",
+        "balance",
+        preview=preview,
+    )

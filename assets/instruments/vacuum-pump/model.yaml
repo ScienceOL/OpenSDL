@@ -65,5 +65,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "vacuum-pump",
+  "device_id": "vacuum-pump-1"
 }

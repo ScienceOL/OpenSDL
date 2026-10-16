@@ -5,11 +5,10 @@
     "name": "analytical-balance",
     "displayName": "AX 240 Analytical Balance",
     "version": "1.1.0",
-    "description": "Original metre-scale analytical balance with three sliding glass doors and a local weighing model.",
+    "description": "Original OpenSDL generic design. Dimensions and process parameters are authored engineering fixtures, not manufacturer specifications or measurements.",
     "tags": [
       "original",
-      "balance",
-      "metrology"
+      "balance"
     ],
     "license": {
       "spdx": "CC-BY-NC-4.0",
@@ -41,7 +40,7 @@
         {
           "name": "opensdl",
           "versions": [
-            ">=0.3.2"
+            ">=0.4.0"
           ],
           "status": "expected"
         }

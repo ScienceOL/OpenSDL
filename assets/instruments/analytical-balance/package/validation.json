@@ -1,5 +1,11 @@
 {
-  "preview_bytes": 564484,
+  "preview_bytes": 595388,
   "triangles": 19526,
-  "model_json_bytes": 2318
+  "draw_primitives": 30,
+  "model_json_bytes": 2318,
+  "measured_dimensions_m": [
+    0.23600000143051147,
+    0.3540000021457672,
+    0.335999995470047
+  ]
 }

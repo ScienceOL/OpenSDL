@@ -102,5 +102,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "vortex-mixer",
+  "device_id": "vortex-mixer-1"
 }

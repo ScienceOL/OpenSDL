@@ -125,5 +125,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "drying-oven",
+  "device_id": "drying-oven-1"
 }

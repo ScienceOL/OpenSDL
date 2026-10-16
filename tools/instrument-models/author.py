@@ -98,7 +98,7 @@ def inject_graph(path, graph):
     return gltf
 
 
-def build(source, create_model, model_graph, runtime, slug, role):
+def build(source, create_model, model_graph, runtime, slug, role, *, preview=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--proofs", type=Path, required=True)
@@ -166,19 +166,21 @@ def build(source, create_model, model_graph, runtime, slug, role):
         "Copyright 2026 OpenSDL / LiyanLabs.\n"
         "Attribution: OpenSDL / LiyanLabs. License: CC BY-NC 4.0.\n"
         f"Source: https://github.com/ScienceOL/OpenSDL/tree/main/assets/instruments/{slug}\n"
-        "License URL: https://creativecommons.org/licenses/by-nc/4.0/\n\n"
+        "License URL: https://creativecommons.org/licenses/by-nc/4.0/\n"
+        + p.get("license_history", "")
+        + "\n"
         + (repo / "licenses/CC-BY-NC-4.0.txt").read_text()
     )
     actions, model, samples = runtime(p)
     world = {
-        "world_id": slug,
+        "world_id": p["world_id"],
         "engine": "kinematic",
         "tick_hz": 10,
         "seed": 0,
         "samples": samples,
         "devices": [
             {
-                "id": slug + "-1",
+                "id": p["device_id"],
                 "device_type": "simulation." + model["kind"],
                 "role": role,
                 "description": p["name"],
@@ -272,6 +274,9 @@ def build(source, create_model, model_graph, runtime, slug, role):
         .to_track_quat("-Z", "Y")
         .to_euler()
     )
-    scene.render.filepath = str(out / "thumbnail.png")
-    bpy.ops.render.render(write_still=True)
+    if preview is None:
+        scene.render.filepath = str(out / "thumbnail.png")
+        bpy.ops.render.render(write_still=True)
+    else:
+        preview(p, parts, scene, out, args.proofs)
     print("MODEL_METRICS", json.dumps(metrics), flush=True)

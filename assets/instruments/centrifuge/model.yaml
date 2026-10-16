@@ -157,5 +157,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "centrifuge",
+  "device_id": "centrifuge-1"
 }

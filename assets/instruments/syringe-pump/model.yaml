@@ -82,5 +82,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "syringe-pump",
+  "device_id": "syringe-pump-1"
 }
