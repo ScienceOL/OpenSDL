@@ -31,6 +31,13 @@ pub struct MediaGatewayConfig {
     #[serde(default)]
     pub binary: Option<PathBuf>,
 
+    /// Explicit device-local FFmpeg executable for remote camera publishing.
+    /// Missing binaries leave remote publishing unavailable.
+    #[serde(default)]
+    pub ffmpeg_binary: Option<PathBuf>,
+    #[serde(default)]
+    pub ffmpeg_ca_file: Option<PathBuf>,
+
     /// Listener ports. Defaults match mediamtx itself (8554/8888/8889).
     #[serde(default)]
     pub ports: ListenerPorts,
@@ -41,6 +48,8 @@ impl Default for MediaGatewayConfig {
         Self {
             advertise_host: default_advertise_host(),
             binary: None,
+            ffmpeg_binary: None,
+            ffmpeg_ca_file: None,
             ports: ListenerPorts::default(),
         }
     }
