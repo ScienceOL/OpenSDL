@@ -132,7 +132,8 @@ impl CentrifugeState {
         );
         self.angle = (self.angle + self.rpm * std::f64::consts::TAU / 60.0 * dt)
             .rem_euclid(std::f64::consts::TAU);
-        previous != (self.rpm, self.angle)
+        // Repeated sampled angles still represent motion (e.g. one turn per tick).
+        self.rpm > 0.0 || previous != (self.rpm, self.angle)
     }
     pub fn values(&self) -> Value {
         json!({
