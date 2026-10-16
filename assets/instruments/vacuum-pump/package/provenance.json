@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/vacuum-pump/model.yaml": "35be68f97055cb4e4e54a29d31dc18a164157a58916bcf7b5ff99a2914972935",
+    "assets/instruments/vacuum-pump/model.yaml": "e13a046e8bd071a20a662cb9769a6d9ed570810fee53ad8fdaa2b2a40dedfc0d",
     "assets/instruments/vacuum-pump/SOURCE.md": "11ad595cceb5451e9e3b0dd649160662d903b1daf7ab38bd7ff2e306566e4de7",
     "assets/instruments/vacuum-pump/geometry.py": "5e81bb85dae5451efb00ca58bf64381a55faf31726a3173cd51fcdfd3f6bb8c7",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

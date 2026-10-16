@@ -4,7 +4,7 @@
   "metadata": {
     "name": "drying-oven",
     "displayName": "DO 20 Drying Oven",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Original OpenSDL generic design; Original insulated chamber, 700 W heating and two declared thermal nodes. Inert sample temperature changes; moisture removal and drying time are not predicted.",
     "tags": [
       "original",

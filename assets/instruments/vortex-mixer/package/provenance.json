@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/vortex-mixer/model.yaml": "676b99e6728c0c34425e295a0f887b8427c16f33cc5c75db99ff004b4a385821",
+    "assets/instruments/vortex-mixer/model.yaml": "6b48e5e8a49a84fd8872304c2214ec743f283c9d40974cf5b63e8f7918194dd4",
     "assets/instruments/vortex-mixer/SOURCE.md": "1c57c6a5a6e0e90fb74ac99c001d76656701066ff4d591715faae6e03645b56f",
     "assets/instruments/vortex-mixer/geometry.py": "73ee848e3adb2a0c6b9d42ed8d9d77059960846e3f02211fc41a1fbb702bbfee",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

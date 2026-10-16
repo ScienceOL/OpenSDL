@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/water-bath/model.yaml": "84785e43fb0ed532a50b8387d90a059ef91ddc7e306c7a287586c081717f105d",
+    "assets/instruments/water-bath/model.yaml": "841d0f66750f85c68ed20d25135eb67878403c5860e1d59d3cf13f31529c807f",
     "assets/instruments/water-bath/SOURCE.md": "340ae4514ff1bc135f5b128dda4dde3a09020e672ec6c70ed0c6269eb73165f9",
     "assets/instruments/water-bath/geometry.py": "a7641663d0f31311d220558d5a5772f686bab0f28e71c921b5af718f96704511",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

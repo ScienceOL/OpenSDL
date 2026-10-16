@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/centrifuge/model.yaml": "0ce31784bdd435fcc52dbde29374b735017985c4467877759d1dc098f53138af",
+    "assets/instruments/centrifuge/model.yaml": "5fc439a19dab02ec312fdf77ba33497a3170f7b023705d6f895ba4bf5b19f19a",
     "assets/instruments/centrifuge/SOURCE.md": "3c76205d4f5d4266d4127926cb85d7211a402cf1e8ce578adfd0f33938c3c5b8",
     "assets/instruments/centrifuge/geometry.py": "a59c9b1cd346f7c1199d5c9ec4144079a6062eecae55e437b081a5fcbbab2306",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

@@ -109,7 +109,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "pipette",
-        "version": "1.0.0"
+        "version": "1.0.1"
       },
       "model": {
         "kind": "pipette",

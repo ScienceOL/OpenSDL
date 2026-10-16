@@ -1,7 +1,7 @@
 {
   "id": "opensdl.ax240",
   "name": "AX 240 Analytical Balance",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "dimensions_m": [
     0.236,
     0.354,

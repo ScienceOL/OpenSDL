@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/drying-oven/model.yaml": "fde21873531a792e826e13c4a6715837c53d8bc26f3a929ff136151d4ef5c518",
+    "assets/instruments/drying-oven/model.yaml": "348087a7315e409aa812e772ae4fed77dd39a760317b2fb9498a48078b3fe440",
     "assets/instruments/drying-oven/SOURCE.md": "b54a3a42b07a458b784d95f2932c1df8f103fe472485c1301806562f4120fdcd",
     "assets/instruments/drying-oven/geometry.py": "d671c8a524e8530200d6f28d6e177349d7752467bfef861c29d54319d2e2b7f2",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

@@ -4,7 +4,7 @@
   "metadata": {
     "name": "vortex-mixer",
     "displayName": "VX 30 Vortex Mixer",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Original OpenSDL generic design; Original 4 mm orbit diameter, 3000 rpm maximum and 800 rpm/s slew. The sample follows a prescribed orbit; no fluid mixing efficiency, sloshing or retention/contact validation.",
     "tags": [
       "original",

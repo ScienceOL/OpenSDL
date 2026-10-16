@@ -4,7 +4,7 @@
   "metadata": {
     "name": "water-bath",
     "displayName": "WB 2 Water Bath",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Original OpenSDL generic design; Original bath with 2 kg water charge at constant assumed 4180 J/(kg K), lumped 600 W heating, declared conductances and lid-dependent losses. No evaporation or calibrated uniformity claim.",
     "tags": [
       "original",

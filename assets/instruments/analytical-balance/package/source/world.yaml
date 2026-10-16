@@ -168,7 +168,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "analytical-balance",
-        "version": "1.1.0"
+        "version": "1.1.1"
       },
       "model": {
         "kind": "analytical_balance",

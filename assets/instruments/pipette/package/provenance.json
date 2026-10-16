@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/pipette/model.yaml": "e2f7c1778c7d3d82bb7d7ad416e441326e0c44660d2c9fbbf52ac297784f8d6f",
+    "assets/instruments/pipette/model.yaml": "f1196362bd168776b7b1fda0ad6145bcfa71938e928684e5c2b2675c922e20df",
     "assets/instruments/pipette/SOURCE.md": "76ae137efb42ad7a3f9e527f946911b660ba3e4a7bcb56709b891206f6e84716",
     "assets/instruments/pipette/geometry.py": "a0b6b0d3ec86261e3f7946c25942e038dc1931cdad9ee16b272aad9525182841",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

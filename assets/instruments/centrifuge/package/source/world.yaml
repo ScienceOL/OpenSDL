@@ -151,7 +151,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "centrifuge",
-        "version": "1.0.0"
+        "version": "1.0.1"
       },
       "model": {
         "kind": "centrifuge",

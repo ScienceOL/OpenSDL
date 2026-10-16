@@ -146,7 +146,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "heated-stirrer",
-        "version": "1.0.0"
+        "version": "1.0.1"
       },
       "model": {
         "kind": "heated_stirrer",

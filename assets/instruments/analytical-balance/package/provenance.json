@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/analytical-balance/model.yaml": "786cb879c922195ec59c9b9a96b79905ef004db8fbd4405657c21b7c84ec5fa7",
+    "assets/instruments/analytical-balance/model.yaml": "796777aa3daa666bf721ed544275a31a883be9f36c6779eb4442bd1635926b41",
     "assets/instruments/analytical-balance/SOURCE.md": "2e4e7646a33d30ebfeabef14d2ca1c88917e1e282d5cc5c10ae9b06c4be7b9b3",
     "tools/instrument-models/build_balance.py": "47eb4511da6fd8ad76d002ed2c2773dd1b14bf1c5c7fe6fd359c89960670d23d",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",

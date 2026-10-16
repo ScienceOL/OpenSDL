@@ -6,7 +6,7 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/syringe-pump/model.yaml": "eb20159b62fb890bdf0a9b59afb2884397011a737d554ecaadbd1c39873d102a",
+    "assets/instruments/syringe-pump/model.yaml": "56805c9744ea1f14f112815d28a8ea542c44d3341611ac9e4d4ed751af3981a1",
     "assets/instruments/syringe-pump/SOURCE.md": "c4ef1531b91f73c0e73d391dc17501b5f6793f64dd3d02d9ba91f71c90c07578",
     "assets/instruments/syringe-pump/geometry.py": "8f7c19dbc92a0686040c39d1255813da2274e640274dffe77b9367340904ae7a",
     "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
