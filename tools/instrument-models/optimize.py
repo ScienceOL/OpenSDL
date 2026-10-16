@@ -17,5 +17,8 @@ def consolidate(root):
             obj.select_set(True)
         bpy.context.view_layer.objects.active = objects[0]
         bpy.ops.object.convert(target="MESH")
+        # Bake each mesh into its component frame before merging. Otherwise a
+        # tilted active mesh gives the merged geometry an inflated rotated AABB.
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         bpy.ops.object.join()
         bpy.context.object.parent = parent

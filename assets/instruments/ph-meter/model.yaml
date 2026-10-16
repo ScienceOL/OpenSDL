@@ -83,5 +83,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "ph-meter",
+  "device_id": "ph-meter-1"
 }

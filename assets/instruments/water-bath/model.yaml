@@ -125,5 +125,7 @@
         "additionalProperties": false
       }
     }
-  ]
+  ],
+  "world_id": "water-bath",
+  "device_id": "water-bath-1"
 }

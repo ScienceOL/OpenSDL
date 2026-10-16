@@ -34,6 +34,11 @@ export function bindInstrument(root) {
       `node parent ${c.id}`,
     );
   }
+  const controls = new Map(
+    definition.components
+      .filter((c) => c.control)
+      .map((c) => [parts.get(c.id), c.control]),
+  );
   for (const binding of definition.visibility)
     parts.get(binding.component).visible = false;
   const rest = new Map(
@@ -144,11 +149,10 @@ export function bindInstrument(root) {
     },
     control(object) {
       let node = object;
-      while (node && node !== root.parent) {
-        const control = definition.components.find(
-          (c) => c.id === node.userData.opensdlComponent,
-        )?.control;
+      while (node) {
+        const control = controls.get(node);
         if (control) return control;
+        if (node === root) break;
         node = node.parent;
       }
       return null;

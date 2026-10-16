@@ -121,5 +121,7 @@
     0.035,
     0.0445,
     0.244
-  ]
+  ],
+  "world_id": "pipette",
+  "device_id": "pipette-1"
 }

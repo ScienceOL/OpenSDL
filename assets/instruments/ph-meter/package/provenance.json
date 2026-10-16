@@ -6,14 +6,14 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/ph-meter/model.yaml": "e01d9ad80421af5706375ee3298a855b7bbcd885fa8ba5324e3f9bdd8e6582a3",
+    "assets/instruments/ph-meter/model.yaml": "283a780250d910b4a048e432b7425add6dd27b355ef309ee3d0176149eb25e44",
     "assets/instruments/ph-meter/SOURCE.md": "33c128766a2773d3a51ff5a2104469a166b7097482fbc7b9c8809805e52da57c",
     "assets/instruments/ph-meter/geometry.py": "9d1f68ab365500c1a1a441d031076dd28e2b0f8756e71c94a3ec7c5dcb487c16",
-    "tools/instrument-models/author.py": "18ecb404fe7029e946a3f9530a75d0f2b97d8efd958fc9b426b1e48f671f396b",
+    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
     "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
     "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
     "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
     "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
-    "tools/instrument-models/optimize.py": "6013d7182a70926831a3d5563eb2f093a68807a7c40e4a78f19c61b63e9eaabb"
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
   }
 }
