@@ -123,6 +123,10 @@ impl EngineHandle {
         self.media_sources.read().await.values().cloned().collect()
     }
 
+    pub async fn get_media_source(&self, source_id: &str) -> Option<MediaSourceState> {
+        self.media_sources.read().await.get(source_id).cloned()
+    }
+
     /// Get a reference to the event store (for querying logs).
     pub fn store(&self) -> Option<&Arc<EventStore>> {
         self.store.as_ref()
