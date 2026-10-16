@@ -143,7 +143,8 @@ async fn publish_process(
         .ok_or_else(|| Status::unavailable("camera diagnostics unavailable"))?;
     let mut diagnostics = Box::pin(log_diagnostics(stderr));
     let mut progress = BufReader::new(stdout).lines();
-    tokio::time::timeout(std::time::Duration::from_secs(8), async {
+    // MediaMTX on-demand source startup permits 10 seconds before the first frame.
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             let line = tokio::select! {
                 _ = &mut stopped => return Err(Status::unavailable("device media runtime stopped")),
