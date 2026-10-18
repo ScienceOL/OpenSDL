@@ -2,6 +2,7 @@ pub mod balance;
 pub mod basic;
 pub mod centrifuge;
 pub mod chamber;
+pub mod orbital;
 pub mod ph;
 pub mod pipette;
 pub mod stirrer;
@@ -23,6 +24,7 @@ pub enum InstrumentConfig {
     DryingOven(chamber::ChamberConfig),
     Centrifuge(centrifuge::CentrifugeConfig),
     VortexMixer(vortex::VortexConfig),
+    OrbitalShaker(orbital::OrbitalConfig),
     Pipette(pipette::PipetteConfig),
     SyringePump(syringe::SyringeConfig),
     VacuumPump(vacuum::VacuumConfig),
@@ -44,6 +46,7 @@ impl InstrumentConfig {
             Self::DryingOven(c) => c.validate(),
             Self::Centrifuge(c) => c.validate(),
             Self::VortexMixer(c) => c.validate(),
+            Self::OrbitalShaker(c) => c.validate(),
             Self::Pipette(c) => c.validate(),
             Self::SyringePump(c) => c.validate(),
             Self::VacuumPump(c) => c.validate(),
@@ -58,6 +61,7 @@ impl InstrumentConfig {
             Self::DryingOven(c) => &c.model_id,
             Self::Centrifuge(c) => &c.model_id,
             Self::VortexMixer(c) => &c.model_id,
+            Self::OrbitalShaker(c) => &c.model_id,
             Self::Pipette(c) => &c.model_id,
             Self::SyringePump(c) => &c.model_id,
             Self::VacuumPump(c) => &c.model_id,
@@ -159,6 +163,7 @@ pub enum InstrumentState {
     Chamber(chamber::ChamberState),
     Centrifuge(centrifuge::CentrifugeState),
     Vortex(vortex::VortexState),
+    Orbital(orbital::OrbitalState),
     Pipette(pipette::PipetteState),
     Syringe(syringe::SyringeState),
     Vacuum(vacuum::VacuumState),
@@ -179,6 +184,9 @@ impl InstrumentState {
                 Self::Centrifuge(centrifuge::CentrifugeState::new(c.clone()))
             }
             InstrumentConfig::VortexMixer(c) => Self::Vortex(vortex::VortexState::new(c.clone())),
+            InstrumentConfig::OrbitalShaker(c) => {
+                Self::Orbital(orbital::OrbitalState::new(c.clone()))
+            }
             InstrumentConfig::Pipette(c) => Self::Pipette(pipette::PipetteState::new(c.clone())),
             InstrumentConfig::SyringePump(c) => {
                 Self::Syringe(syringe::SyringeState::new(c.clone()))
@@ -200,6 +208,7 @@ impl InstrumentState {
             Self::Chamber(s) => s.apply(device, action, params, samples),
             Self::Centrifuge(s) => s.apply(device, action, params, samples),
             Self::Vortex(s) => s.apply(device, action, params, samples),
+            Self::Orbital(s) => s.apply(device, action, params, samples),
             Self::Pipette(s) => s.apply(device, action, params, samples),
             Self::Syringe(s) => s.apply(device, action, params, samples),
             Self::Vacuum(s) => s.apply(device, action, params, samples),
@@ -213,6 +222,7 @@ impl InstrumentState {
             Self::Chamber(s) => s.advance(dt),
             Self::Centrifuge(s) => s.advance(dt),
             Self::Vortex(s) => s.advance(dt),
+            Self::Orbital(s) => s.advance(dt),
             Self::Pipette(s) => s.advance(dt),
             Self::Syringe(s) => s.advance(dt),
             Self::Vacuum(s) => s.advance(dt),
@@ -233,6 +243,7 @@ impl InstrumentState {
             Self::Chamber(s) => (&s.config.model_id, s.values()),
             Self::Centrifuge(s) => (&s.config.model_id, s.values()),
             Self::Vortex(s) => (&s.config.model_id, s.values()),
+            Self::Orbital(s) => (&s.config.model_id, s.values()),
             Self::Pipette(s) => (&s.config.model_id, s.values()),
             Self::Syringe(s) => (&s.config.model_id, s.values()),
             Self::Vacuum(s) => (&s.config.model_id, s.values()),

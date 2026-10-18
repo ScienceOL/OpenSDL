@@ -223,3 +223,58 @@ test("rotation spans the host observation window, freezes at its bound, and rese
     /prediction window/,
   );
 });
+
+test("orbital platform remains level throughout a 25mm orbit and carries the flask and clamps", async () => {
+  const { Quaternion } = await import("three");
+  const root = await load("orbital-shaker"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    orbit_rad: 0,
+    platform_rad: 0,
+    flask_visible: true,
+    clamp_rad: 0,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const platform = binding.parts.get("platform"),
+    eccentric = binding.parts.get("eccentric");
+  const orientation = platform.getWorldQuaternion(new Quaternion());
+  const first = platform.getWorldPosition(new Vector3());
+  for (const angle of [Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    Object.assign(state.values, { orbit_rad: angle, platform_rad: -angle });
+    binding.apply(state);
+    root.updateMatrixWorld(true);
+    assert.ok(
+      Math.abs(platform.getWorldQuaternion(new Quaternion()).dot(orientation)) >
+        1 - 1e-8,
+    );
+    const offset = platform
+      .getWorldPosition(new Vector3())
+      .sub(eccentric.getWorldPosition(new Vector3()));
+    assert.ok(Math.abs(Math.hypot(offset.x, offset.z) - 0.0125) < 1e-7);
+    assert.ok(Math.abs(offset.y - 0.012) < 1e-7);
+    for (const name of ["flask", "clamp_0", "clamp_1", "clamp_2"])
+      assert.equal(binding.parts.get(name).parent, platform);
+    if (angle === Math.PI)
+      assert.ok(
+        Math.abs(
+          platform.getWorldPosition(new Vector3()).distanceTo(first) - 0.025,
+        ) < 1e-7,
+      );
+  }
+  const clamp = binding.parts.get("clamp_0"),
+    closed = clamp.quaternion.clone();
+  state.values.clamp_rad = 0.35;
+  binding.apply(state);
+  assert.ok(!clamp.quaternion.equals(closed));
+  assert.deepEqual(binding.action(clamp.children[0], state.values), {
+    action: "clamp",
+    params: {},
+  });
+  const dial = binding.parts.get("speed_dial").children[0];
+  assert.deepEqual(
+    binding.action(dial, { ...state.values, target_rpm: 490 }, 1),
+    { action: "set_speed", params: { rpm: 500 } },
+  );
+});

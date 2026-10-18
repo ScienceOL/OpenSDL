@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.os250",
+  "dimensions_m": [
+    0.321,
+    0.252,
+    0.309
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "eccentric",
+      "label": "Eccentric",
+      "parent": "instrument"
+    },
+    {
+      "id": "platform",
+      "label": "Platform",
+      "parent": "eccentric"
+    },
+    {
+      "id": "flask",
+      "label": "Flask",
+      "parent": "platform"
+    },
+    {
+      "id": "clamp_0",
+      "label": "Clamp 0",
+      "parent": "platform",
+      "control": {
+        "kind": "command",
+        "action": "clamp",
+        "params": {}
+      }
+    },
+    {
+      "id": "clamp_1",
+      "label": "Clamp 1",
+      "parent": "platform",
+      "control": {
+        "kind": "command",
+        "action": "clamp",
+        "params": {}
+      }
+    },
+    {
+      "id": "clamp_2",
+      "label": "Clamp 2",
+      "parent": "platform",
+      "control": {
+        "kind": "command",
+        "action": "clamp",
+        "params": {}
+      }
+    },
+    {
+      "id": "speed_dial",
+      "label": "Speed Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_speed",
+        "params": {},
+        "parameter": "rpm",
+        "state": "target_rpm",
+        "min": 0,
+        "max": 500.0,
+        "step": 25
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "eccentric_joint",
+      "component": "eccentric",
+      "kind": "continuous",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "orbit_rad",
+      "velocity_state": "orbit_rad_s"
+    },
+    {
+      "id": "platform_joint",
+      "component": "platform",
+      "kind": "continuous",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": -6.283185307179586,
+      "max": 0,
+      "state": "platform_rad",
+      "velocity_state": "platform_rad_s"
+    },
+    {
+      "id": "speed_dial_joint",
+      "component": "speed_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "speed_dial_rad"
+    },
+    {
+      "id": "clamp_0_joint",
+      "component": "clamp_0",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.35,
+      "state": "clamp_rad"
+    },
+    {
+      "id": "clamp_1_joint",
+      "component": "clamp_1",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.35,
+      "state": "clamp_rad"
+    },
+    {
+      "id": "clamp_2_joint",
+      "component": "clamp_2",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 0.35,
+      "state": "clamp_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "rpm",
+      "digits": 0,
+      "unit": "rpm"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "flask",
+      "state": "flask_visible"
+    }
+  ],
+  "placements": []
+}
