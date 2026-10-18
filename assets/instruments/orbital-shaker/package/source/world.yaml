@@ -1,0 +1,124 @@
+{
+  "world_id": "orbital-shaker",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "orbital_flask",
+      "mass_kg": 0.18,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.039
+    }
+  ],
+  "devices": [
+    {
+      "id": "orbital-shaker-1",
+      "device_type": "simulation.orbital_shaker",
+      "role": "stirrer",
+      "description": "OS 250 Orbital Shaker",
+      "actions": [
+        {
+          "name": "load_flask",
+          "description": "Load the original flask fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_flask",
+          "description": "Remove the stopped, unclamped flask",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "clamp",
+          "description": "Secure or release all flask clamp fingers",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start the secured platform",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Decelerate the platform to rest",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset a stopped instrument",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_speed",
+          "description": "Set target orbital speed",
+          "params": {
+            "type": "object",
+            "properties": {
+              "rpm": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 500
+              }
+            },
+            "required": [
+              "rpm"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "orbital-shaker",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "orbital_shaker",
+        "model_id": "opensdl.os250",
+        "max_rpm": 500.0,
+        "slew_rpm_s": 120.0,
+        "orbit_m": 0.0125,
+        "sample_id": "orbital_flask",
+        "sample_radius_m": 0.05
+      }
+    }
+  ]
+}
