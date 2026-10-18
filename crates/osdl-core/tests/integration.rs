@@ -169,6 +169,13 @@ async fn test_simulation_world_uses_the_device_contract() {
     .await
     .expect("simulation status");
     assert_eq!(status.properties["simulation"], serde_json::json!(true));
+    let snapshot = handle.get_device(&device.id).await.unwrap();
+    assert!(snapshot.properties_timestamp_ms >= status.timestamp);
+    assert!(snapshot.properties_timestamp_ms > 0);
+    assert_eq!(
+        snapshot.properties["target_temperature"],
+        serde_json::json!(80.0)
+    );
 
     handle.request_stop();
     task.await.expect("engine task");
@@ -239,6 +246,7 @@ fn test_event_store_query_filters() {
         description: "test".into(),
         online: true,
         properties: Default::default(),
+        properties_timestamp_ms: 1730000000123,
         actions: vec![],
         role: None,
     };

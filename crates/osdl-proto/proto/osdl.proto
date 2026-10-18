@@ -128,6 +128,8 @@ message Device {
   repeated ActionSchema actions = 8;
   // Optional semantic tag from bus manifest: "stirrer", "drain_valve", etc.
   optional string role = 9;
+  // Unix milliseconds when the properties snapshot was initialized or updated.
+  int64 properties_timestamp_ms = 10;
 }
 
 message ListNodesRequest {}

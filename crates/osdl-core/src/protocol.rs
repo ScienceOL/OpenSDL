@@ -42,6 +42,8 @@ pub struct Device {
     pub description: String,
     pub online: bool,
     pub properties: HashMap<String, serde_json::Value>,
+    /// Unix milliseconds when this properties snapshot was initialized or updated.
+    pub properties_timestamp_ms: i64,
     pub actions: Vec<ActionSchema>,
     /// Optional semantic tag (e.g. "stirrer", "drain_valve", "syringe_pump")
     /// sourced from the `buses:` config. Free-form; consumers should treat

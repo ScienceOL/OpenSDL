@@ -50,6 +50,7 @@ pub fn device_to_pb(d: &CoreDevice) -> pb::Device {
         description: d.description.clone(),
         online: d.online,
         properties: Some(properties),
+        properties_timestamp_ms: d.properties_timestamp_ms,
         actions: d.actions.iter().map(action_to_pb).collect(),
         role: d.role.clone(),
     }
@@ -316,6 +317,25 @@ fn json_to_value(v: &serde_json::Value) -> PbValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inventory_preserves_the_observed_properties_timestamp() {
+        let device = CoreDevice {
+            id: "sim:test:heater".into(),
+            transport_id: "test".into(),
+            device_type: "simulation.heated_stirrer".into(),
+            adapter: "simulation".into(),
+            description: String::new(),
+            online: true,
+            properties: HashMap::from([("rpm".into(), serde_json::json!(600))]),
+            properties_timestamp_ms: 1792317784673,
+            actions: vec![],
+            role: None,
+        };
+        let wire = device_to_pb(&device);
+        assert_eq!(wire.properties_timestamp_ms, device.properties_timestamp_ms);
+        assert_eq!(struct_to_json(&wire.properties.unwrap())["rpm"], 600);
+    }
 
     #[test]
     fn json_roundtrips_through_struct() {
