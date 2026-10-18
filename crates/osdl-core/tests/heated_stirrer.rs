@@ -179,3 +179,24 @@ fn water_fixture_stays_in_its_nonboiling_domain_and_rejections_are_atomic() {
         "WAIT_FOR_COOL_STOP"
     );
 }
+
+#[test]
+fn a_cold_stirrer_reports_coasting_until_the_motor_has_stopped() {
+    let (mut state, mut samples) = setup();
+    for action in ["load_vessel", "power"] {
+        state.apply("s", action, &json!({}), &mut samples).unwrap();
+    }
+    state
+        .apply("s", "set_speed", &json!({"rpm":600}), &mut samples)
+        .unwrap();
+    state.apply("s", "stir", &json!({}), &mut samples).unwrap();
+    state.advance(2.0);
+    state.apply("s", "stop", &json!({}), &mut samples).unwrap();
+    assert_eq!(state.values()["status"], "decelerating");
+    state.advance(1.0);
+    assert_eq!(state.values()["status"], "decelerating");
+    assert_eq!(state.values()["rpm"], 300.0);
+    state.advance(1.0);
+    assert_eq!(state.values()["status"], "ready");
+    assert_eq!(state.values()["rpm"], 0.0);
+}
