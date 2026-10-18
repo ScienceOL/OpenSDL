@@ -278,3 +278,81 @@ test("orbital platform remains level throughout a 25mm orbit and carries the fla
     { action: "set_speed", params: { rpm: 500 } },
   );
 });
+
+test("roller fixture has tangent support and overhead carriage clears the vessel rim before loading", async () => {
+  const roller = bindInstrument(await load("tube-roller"));
+  const rs = observation(roller);
+  Object.assign(rs.values, { tube_visible: true, roller_rad: 0, tube_rad: 0 });
+  roller.apply(rs);
+  roller.parts.get("body").parent.updateMatrixWorld(true);
+  const tubeCentre = roller.parts.get("tube").getWorldPosition(new Vector3());
+  for (const name of ["roller_1", "roller_2"]) {
+    const distance = tubeCentre.distanceTo(
+      roller.parts.get(name).getWorldPosition(new Vector3()),
+    );
+    assert.ok(
+      Math.abs(distance - 0.028) < 1e-7,
+      "declared radii must meet without penetration",
+    );
+  }
+  const overhead = bindInstrument(await load("overhead-stirrer"));
+  const os = observation(overhead);
+  Object.assign(os.values, {
+    vessel_visible: true,
+    carriage_m: 0.1,
+    shaft_rad: 0,
+    clamp_rad: 0,
+  });
+  overhead.apply(os);
+  overhead.parts.get("body").parent.updateWorldMatrix(true, true);
+  const shaft = new Box3().setFromObject(overhead.parts.get("shaft"));
+  const vesselBounds = new Box3().setFromObject(overhead.parts.get("vessel"));
+  assert.ok(
+    shaft.min.y > vesselBounds.max.y + 0.04,
+    "raised impeller must clear the rim",
+  );
+  os.values.carriage_m = 0;
+  overhead.apply(os);
+  overhead.parts.get("body").parent.updateWorldMatrix(true, true);
+  shaft.setFromObject(overhead.parts.get("shaft"));
+  assert.ok(
+    shaft.min.y > vesselBounds.min.y + 0.003,
+    "lowered impeller cannot strike the floor",
+  );
+  assert.ok(
+    shaft.min.y < vesselBounds.min.y + 0.12,
+    "paddle reaches the synthetic liquid",
+  );
+  for (const name of ["shaft", "clamp", "screen", "speed_dial"])
+    assert.equal(
+      overhead.parts.get(name).parent,
+      overhead.parts.get("carriage"),
+    );
+});
+
+test("dry block has real blind wells with floors and a supported cover that opens upward", async () => {
+  const { Raycaster } = await import("three");
+  const binding = bindInstrument(await load("dry-block-heater"));
+  const state = observation(binding);
+  Object.assign(state.values, { lid_rad: 1.7, sample_visible: false });
+  binding.apply(state);
+  binding.parts.get("body").parent.updateMatrixWorld(true);
+  const ray = new Raycaster(new Vector3(0, 0.3, 0.007), new Vector3(0, -1, 0));
+  let hits = ray.intersectObject(binding.parts.get("body"), true);
+  assert.ok(hits.length > 0);
+  assert.ok(
+    Math.abs(hits[0].point.y - 0.085) < 0.0001,
+    "well bottom leaves a 10mm floor",
+  );
+  ray.ray.origin.x = 0.012;
+  hits = ray.intersectObject(binding.parts.get("body"), true);
+  assert.ok(
+    Math.abs(hits[0].point.y - 0.125) < 0.0001,
+    "solid block surrounds the bore",
+  );
+  const lid = new Box3().setFromObject(binding.parts.get("lid"));
+  assert.ok(
+    lid.max.y > 0.25,
+    "cover sweeps above the tubes rather than through the block",
+  );
+});

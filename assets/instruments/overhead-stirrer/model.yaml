@@ -1,0 +1,149 @@
+{
+  "id": "opensdl.oh1000",
+  "name": "OH 1000 Overhead Stirrer",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.26,
+    0.28,
+    0.535
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design. 100 mm carriage travel, explicit stand clamp, immersed paddle and 1000 rpm maximum. No fluid torque, viscosity, shear rate, sloshing or reaction is predicted.",
+  "runtime": {
+    "kind": "overhead_stirrer",
+    "model_id": "opensdl.oh1000",
+    "max_rpm": 1000.0,
+    "slew_rpm_s": 250.0,
+    "lift_m": 0.1,
+    "immersion_max_m": 0.01,
+    "sample_id": "overhead_vessel",
+    "sample_radius_m": 0.05
+  },
+  "samples": [
+    {
+      "id": "overhead_vessel",
+      "mass_kg": 0.25,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.044
+    }
+  ],
+  "role": "stirrer",
+  "actions": [
+    {
+      "name": "load_vessel",
+      "description": "Load vessel",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_vessel",
+      "description": "Unload vessel",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clamp",
+      "description": "Clamp",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lift",
+      "description": "Lift",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_speed",
+      "description": "Set target motor speed",
+      "params": {
+        "type": "object",
+        "properties": {
+          "rpm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "rpm"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_height",
+      "description": "Set unlocked motor carriage height",
+      "params": {
+        "type": "object",
+        "properties": {
+          "height_m": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.1
+          }
+        },
+        "required": [
+          "height_m"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "overhead-stirrer",
+  "device_id": "overhead-stirrer-1"
+}

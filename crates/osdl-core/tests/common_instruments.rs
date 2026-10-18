@@ -360,3 +360,122 @@ async fn whole_turn_motor_ticks_still_confirm_motion_to_the_client() {
         }
     }
 }
+
+#[tokio::test]
+async fn tube_roller_keeps_its_noninteger_ratio_across_complete_motor_turns() {
+    let (world, mut rx, id) = setup("tube-roller");
+    send(&world, &id, "load_tube", json!({})).await;
+    send(&world, &id, "set_speed", json!({"rpm":60})).await;
+    send(&world, &id, "start", json!({})).await;
+    for (seconds, expected_angle) in [(2.0, 0.25), (1.0, 0.50), (1.0, 0.75)] {
+        world.advance(seconds).await;
+        let state = last(&mut rx);
+        assert!(
+            (v(&state)["tube_rad"].as_f64().unwrap() - expected_angle * std::f64::consts::TAU)
+                .abs()
+                < 1e-9
+        );
+        assert_eq!(v(&state)["rpm"], 60.0);
+        assert!(
+            (v(&state)["tube_rad_s"].as_f64().unwrap() + 0.75 * std::f64::consts::TAU).abs() < 1e-9
+        );
+    }
+    send(&world, &id, "stop", json!({})).await;
+    world.advance(1.0).await;
+    assert_eq!(
+        world
+            .apply(&id, "unload_tube", &json!({}))
+            .await
+            .unwrap_err(),
+        "MOTOR_MOVING"
+    );
+    world.advance(1.0).await;
+    let state = send(&world, &id, "unload_tube", json!({})).await;
+    assert_eq!(v(&state)["tube_visible"], false);
+}
+
+#[tokio::test]
+async fn overhead_stirrer_requires_a_clamped_immersed_shaft_and_clear_loading_envelope() {
+    let (world, mut rx, id) = setup("overhead-stirrer");
+    send(&world, &id, "load_vessel", json!({})).await;
+    send(&world, &id, "set_speed", json!({"rpm":400})).await;
+    assert_eq!(
+        world.apply(&id, "start", &json!({})).await.unwrap_err(),
+        "SECURE_STAND_FIRST"
+    );
+    send(&world, &id, "clamp", json!({})).await;
+    assert_eq!(
+        world.apply(&id, "start", &json!({})).await.unwrap_err(),
+        "IMMERSE_SHAFT_FIRST"
+    );
+    assert_eq!(
+        world
+            .apply(&id, "set_height", &json!({"height_m":0}))
+            .await
+            .unwrap_err(),
+        "UNCLAMP_STAND_FIRST"
+    );
+    send(&world, &id, "clamp", json!({})).await;
+    send(&world, &id, "lift", json!({})).await;
+    send(&world, &id, "clamp", json!({})).await;
+    send(&world, &id, "start", json!({})).await;
+    world.advance(1.0).await;
+    let state = last(&mut rx);
+    assert_eq!(v(&state)["rpm"], 250.0);
+    assert_eq!(v(&state)["carriage_m"], 0.0);
+    for action in ["clamp", "lift", "unload_vessel"] {
+        assert_eq!(
+            world.apply(&id, action, &json!({})).await.unwrap_err(),
+            "MOTOR_MOVING"
+        );
+    }
+    send(&world, &id, "stop", json!({})).await;
+    world.advance(2.0).await;
+    assert_eq!(
+        world
+            .apply(&id, "unload_vessel", &json!({}))
+            .await
+            .unwrap_err(),
+        "RAISE_SHAFT_FIRST"
+    );
+    send(&world, &id, "clamp", json!({})).await;
+    send(&world, &id, "lift", json!({})).await;
+    let state = send(&world, &id, "unload_vessel", json!({})).await;
+    assert_eq!(v(&state)["vessel_visible"], false);
+    assert_eq!(v(&state)["carriage_m"], 0.1);
+}
+
+#[tokio::test]
+async fn dry_block_uses_the_canonical_thermal_pair_and_retains_heat_after_stop() {
+    let (world, mut rx, id) = setup("dry-block-heater");
+    assert_eq!(
+        world
+            .apply(&id, "load_sample", &json!({}))
+            .await
+            .unwrap_err(),
+        "OPEN_DOOR_FIRST"
+    );
+    send(&world, &id, "lid", json!({})).await;
+    send(&world, &id, "load_sample", json!({})).await;
+    send(&world, &id, "lid", json!({})).await;
+    send(&world, &id, "set_temperature", json!({"temperature_c":60})).await;
+    send(&world, &id, "start", json!({})).await;
+    world.advance(240.0).await;
+    let hot = last(&mut rx);
+    assert!(v(&hot)["temperature_c"].as_f64().unwrap() > v(&hot)["sample_c"].as_f64().unwrap());
+    assert!(v(&hot)["sample_c"].as_f64().unwrap() > 45.0);
+    let stopped = send(&world, &id, "stop", json!({})).await;
+    assert_eq!(v(&hot)["temperature_c"], v(&stopped)["temperature_c"]);
+    send(&world, &id, "lid", json!({})).await;
+    assert_eq!(
+        world
+            .apply(&id, "unload_sample", &json!({}))
+            .await
+            .unwrap_err(),
+        "WAIT_FOR_COOL_STOP"
+    );
+    world.advance(1000.0).await;
+    let cold = send(&world, &id, "unload_sample", json!({})).await;
+    assert_eq!(v(&cold)["sample_c"], Value::Null);
+    assert_eq!(v(&cold)["sample_visible"], false);
+}

@@ -1,0 +1,125 @@
+{
+  "id": "opensdl.db6",
+  "name": "DB 6 Dry Block Heater",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.22045,
+    0.2113,
+    0.1745
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design. Six 14 mm open wells, a hinged clear cover, 150 W maximum heater, 600 J/K block and 60 J/K synthetic sample node. Block/sample lag and residual heat use the canonical thermal chamber model. No assay kinetics, real sample calibration or temperature-uniformity claim.",
+  "runtime": {
+    "kind": "dry_block_heater",
+    "model_id": "opensdl.db6",
+    "ambient_c": 22.0,
+    "max_c": 100.0,
+    "heater_w": 150.0,
+    "chamber_capacity_j_k": 600.0,
+    "sample_capacity_j_k": 60.0,
+    "exchange_w_k": 3.0,
+    "loss_w_k": 0.3,
+    "opening_rad": 1.7,
+    "sample_id": "dry_block_tubes",
+    "sample_radius_m": 0.08
+  },
+  "samples": [
+    {
+      "id": "dry_block_tubes",
+      "mass_kg": 0.018,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.07
+    }
+  ],
+  "role": "heater",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Lid",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_sample",
+      "description": "Load sample",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_sample",
+      "description": "Unload sample",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_temperature",
+      "description": "Set block temperature",
+      "params": {
+        "type": "object",
+        "properties": {
+          "temperature_c": {
+            "type": "number",
+            "minimum": 22,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "temperature_c"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "dry-block-heater",
+  "device_id": "dry-block-heater-1"
+}

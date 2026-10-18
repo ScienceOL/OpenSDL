@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.tr60",
+  "dimensions_m": [
+    0.32045,
+    0.10598,
+    0.2113
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "tube",
+      "label": "Tube",
+      "parent": "instrument"
+    },
+    {
+      "id": "speed_dial",
+      "label": "Speed Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_speed",
+        "params": {},
+        "parameter": "rpm",
+        "state": "target_rpm",
+        "min": 0,
+        "max": 60.0,
+        "step": 5
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    },
+    {
+      "id": "roller_0",
+      "label": "Roller 0",
+      "parent": "instrument"
+    },
+    {
+      "id": "roller_1",
+      "label": "Roller 1",
+      "parent": "instrument"
+    },
+    {
+      "id": "roller_2",
+      "label": "Roller 2",
+      "parent": "instrument"
+    },
+    {
+      "id": "roller_3",
+      "label": "Roller 3",
+      "parent": "instrument"
+    },
+    {
+      "id": "roller_4",
+      "label": "Roller 4",
+      "parent": "instrument"
+    }
+  ],
+  "joints": [
+    {
+      "id": "roller_0_joint",
+      "component": "roller_0",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "roller_rad",
+      "velocity_state": "roller_rad_s"
+    },
+    {
+      "id": "roller_1_joint",
+      "component": "roller_1",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "roller_rad",
+      "velocity_state": "roller_rad_s"
+    },
+    {
+      "id": "roller_2_joint",
+      "component": "roller_2",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "roller_rad",
+      "velocity_state": "roller_rad_s"
+    },
+    {
+      "id": "roller_3_joint",
+      "component": "roller_3",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "roller_rad",
+      "velocity_state": "roller_rad_s"
+    },
+    {
+      "id": "roller_4_joint",
+      "component": "roller_4",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "roller_rad",
+      "velocity_state": "roller_rad_s"
+    },
+    {
+      "id": "tube_joint",
+      "component": "tube",
+      "kind": "continuous",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "tube_rad",
+      "velocity_state": "tube_rad_s"
+    },
+    {
+      "id": "speed_dial_joint",
+      "component": "speed_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "speed_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "rpm",
+      "digits": 1,
+      "unit": "rpm"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "tube",
+      "state": "tube_visible"
+    }
+  ],
+  "placements": []
+}

@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "dry-block-heater",
+    "displayName": "DB 6 Dry Block Heater",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic design. Six 14 mm open wells, a hinged clear cover, 150 W maximum heater, 600 J/K block and 60 J/K synthetic sample node. Block/sample lag and residual heat use the canonical thermal chamber model. No assay kinetics, real sample calibration or temperature-uniformity claim.",
+    "tags": [
+      "original",
+      "heater"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.dry_block_heater"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}
