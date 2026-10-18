@@ -1,0 +1,161 @@
+{
+  "world_id": "vacuum-filtration",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "filtration_slurry",
+      "mass_kg": 0.1,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.035
+    }
+  ],
+  "devices": [
+    {
+      "id": "vacuum-filtration-1",
+      "device_type": "simulation.vacuum_filtration",
+      "role": "filtration",
+      "description": "VF 100 Vacuum Filtration Assembly",
+      "actions": [
+        {
+          "name": "assemble",
+          "description": "Place or remove funnel",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "seal",
+          "description": "Close or release collet seal",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "install_filter",
+          "description": "Install synthetic filter disc",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "remove_filter",
+          "description": "Remove filter disc",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_slurry",
+          "description": "Load 100 mL synthetic liquid fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "clear_slurry",
+          "description": "Account for and remove remaining source liquid",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "empty_receiver",
+          "description": "Account for and empty receiver",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Enable attached vacuum source",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Disable vacuum source",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "vent",
+          "description": "Open or close vent",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset vented test fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "vacuum-filtration",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "vacuum_filtration",
+        "model_id": "opensdl.vf100",
+        "ambient_kpa": 101.325,
+        "ultimate_kpa": 20.0,
+        "chamber_l": 0.75,
+        "pumping_l_s": 0.2,
+        "leak_l_s": 0.0001,
+        "filter_ml_s_kpa": 0.04,
+        "source_ml": 100.0,
+        "receiver_capacity_ml": 250.0,
+        "sample_id": "filtration_slurry",
+        "sample_radius_m": 0.04
+      }
+    }
+  ]
+}

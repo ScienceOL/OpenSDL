@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: CC-BY-NC-4.0
 """Original DB6 heater: six actual machined wells, tubes and a hinged clear cover."""
 import math
-import bpy
-from geometry import box, cylinder, label, vessel
+from geometry import box, cylinder, label, vessel, bore_world
 from bench_helpers import assembly, enclosure, knob, front_screen, graph
 from author import joint, command, dial
 
@@ -49,16 +48,7 @@ def create_model(p):
     )
     for x in (-0.045, 0, 0.045):
         for y in (-0.007, 0.037):
-            bpy.ops.mesh.primitive_cylinder_add(
-                vertices=40, radius=0.007, depth=0.045, location=(x, y, 0.1075)
-            )
-            cutter = bpy.context.object
-            modifier = block.modifiers.new("Tube well", "BOOLEAN")
-            modifier.operation = "DIFFERENCE"
-            modifier.object = cutter
-            bpy.context.view_layer.objects.active = block
-            bpy.ops.object.modifier_apply(modifier=modifier.name)
-            bpy.data.objects.remove(cutter, do_unlink=True)
+            bore_world(block, (x, y, 0.1075), 0.007, 0.045, vertices=40)
             tube = vessel(
                 parts["sample"],
                 m["glass"],

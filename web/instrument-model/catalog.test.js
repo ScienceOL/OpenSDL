@@ -561,3 +561,130 @@ test("thermal cycler wells support the tube strip and its heated cover meets the
   root.updateMatrixWorld(true);
   assert.ok(new Box3().setFromObject(binding.parts.get("lid")).max.y > 0.36);
 });
+
+test("filtration has a continuous open drain and vacuum sidearm, supported filter and measured liquid inventories", async () => {
+  const { Raycaster } = await import("three");
+  const root = await load("vacuum-filtration"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    funnel_visible: true,
+    filter_visible: false,
+    source_liquid_visible: false,
+    receiver_liquid_visible: false,
+    source_fraction: 1,
+    receiver_fraction: 1,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const sidearm = new Raycaster(
+    new Vector3(-0.065, 0.12, -0.02),
+    new Vector3(1, 0, 0),
+    0,
+    0.074,
+  );
+  assert.equal(
+    sidearm.intersectObject(binding.parts.get("body"), true).length,
+    0,
+    "receiver wall must open into the hollow vacuum sidearm",
+  );
+  const drain = new Raycaster(
+    new Vector3(-0.065, 0.25, -0.02),
+    new Vector3(0, -1, 0),
+    0,
+    0.115,
+  );
+  assert.equal(
+    drain
+      .intersectObject(binding.parts.get("funnel"), true)
+      .filter((hit) => hit.object.parent === binding.parts.get("funnel"))
+      .length,
+    0,
+    "perforated support and stem share an open drain",
+  );
+  state.values.filter_visible = true;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const filter = drain.intersectObject(binding.parts.get("filter"), true)[0];
+  assert.ok(filter && Math.abs(filter.point.y - 0.241) < 1e-6);
+  assert.ok(
+    Math.abs(meshVolume(binding.parts.get("source_liquid")) * 1e6 - 100) < 0.3,
+  );
+  assert.ok(
+    Math.abs(meshVolume(binding.parts.get("receiver_liquid")) * 1e6 - 250) <
+      0.5,
+  );
+});
+
+test("rotary flask turns around its inclined neck while 200mL liquid stays level and the lift clears the bath", async () => {
+  const root = await load("rotary-evaporator"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    carriage_m: 0,
+    flask_rad: 0,
+    flask_visible: true,
+    liquid_visible: true,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const liquid = binding.parts.get("liquid"),
+    level = new Box3().setFromObject(liquid);
+  assert.ok(Math.abs(meshVolume(liquid) * 1e6 - 200) < 2);
+  let index;
+  binding.parts.get("flask").traverse((n) => {
+    if (n.isMesh && n.material.name === "Control accent") index = n;
+  });
+  assert.ok(index);
+  const before = new Box3().setFromObject(index).getCenter(new Vector3());
+  state.values.flask_rad = Math.PI / 2;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const displacement = new Box3()
+    .setFromObject(index)
+    .getCenter(new Vector3())
+    .sub(before);
+  assert.ok(displacement.length() > 0.06);
+  assert.ok(
+    Math.abs(displacement.dot(new Vector3(0, Math.SQRT1_2, -Math.SQRT1_2))) <
+      1e-6,
+  );
+  assert.ok(new Box3().setFromObject(liquid).min.distanceTo(level.min) < 1e-7);
+  assert.ok(new Box3().setFromObject(liquid).max.distanceTo(level.max) < 1e-7);
+  state.values.carriage_m = 0.14;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  assert.ok(
+    new Box3().setFromObject(binding.parts.get("flask"), true).min.y > 0.22,
+    "raised flask clears the 178mm bath rim",
+  );
+});
+
+test("sliding instrument supports retain actual mast bores throughout their travel", async () => {
+  const { Raycaster } = await import("three");
+  for (const [slug, part, stateKey, travel, x, z] of [
+    ["conductivity-meter", "probe", "probe_m", [-0.08, 0], 0.14, -0.08],
+    ["overhead-stirrer", "carriage", "carriage_m", [0, 0.1], 0, -0.095],
+    ["rotary-evaporator", "carriage", "carriage_m", [0, 0.14], -0.08, -0.14],
+  ]) {
+    const root = await load(slug),
+      binding = bindInstrument(root),
+      state = observation(binding);
+    for (const height of travel) {
+      state.values[stateKey] = height;
+      binding.apply(state);
+      root.updateMatrixWorld(true);
+      const ray = new Raycaster(
+        new Vector3(x, 0.8, z),
+        new Vector3(0, -1, 0),
+        0,
+        0.7,
+      );
+      assert.equal(
+        ray.intersectObject(binding.parts.get(part), true).length,
+        0,
+        `${slug} sliding collar/arm must clear its fixed mast at ${height}m`,
+      );
+    }
+  }
+});

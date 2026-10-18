@@ -4,14 +4,17 @@ pub mod centrifuge;
 pub mod chamber;
 pub mod conductivity;
 pub mod cycler;
+pub mod filtration;
 mod motor;
 pub mod orbital;
 pub mod overhead;
 pub mod peristaltic;
 pub mod ph;
 pub mod pipette;
+mod pressure;
 pub mod refrigerator;
 pub mod roller;
+pub mod rotavap;
 pub mod stirrer;
 pub mod syringe;
 pub mod thermal;
@@ -43,6 +46,8 @@ pub enum InstrumentConfig {
     ConductivityMeter(conductivity::ConductivityConfig),
     UvVisSpectrophotometer(uvvis::UvVisConfig),
     ThermalCycler(cycler::CyclerConfig),
+    VacuumFiltration(filtration::FiltrationConfig),
+    RotaryEvaporator(rotavap::RotavapConfig),
     Pipette(pipette::PipetteConfig),
     SyringePump(syringe::SyringeConfig),
     VacuumPump(vacuum::VacuumConfig),
@@ -74,6 +79,8 @@ impl InstrumentConfig {
             Self::ConductivityMeter(c) => c.validate(),
             Self::UvVisSpectrophotometer(c) => c.validate(),
             Self::ThermalCycler(c) => c.validate(),
+            Self::VacuumFiltration(c) => c.validate(),
+            Self::RotaryEvaporator(c) => c.validate(),
             Self::Pipette(c) => c.validate(),
             Self::SyringePump(c) => c.validate(),
             Self::VacuumPump(c) => c.validate(),
@@ -98,6 +105,8 @@ impl InstrumentConfig {
             Self::ConductivityMeter(c) => &c.model_id,
             Self::UvVisSpectrophotometer(c) => &c.model_id,
             Self::ThermalCycler(c) => &c.model_id,
+            Self::VacuumFiltration(c) => &c.model_id,
+            Self::RotaryEvaporator(c) => &c.model_id,
             Self::Pipette(c) => &c.model_id,
             Self::SyringePump(c) => &c.model_id,
             Self::VacuumPump(c) => &c.model_id,
@@ -208,6 +217,8 @@ pub enum InstrumentState {
     Conductivity(conductivity::ConductivityState),
     UvVis(uvvis::UvVisState),
     Cycler(cycler::CyclerState),
+    Filtration(filtration::FiltrationState),
+    Rotavap(rotavap::RotavapState),
     Pipette(pipette::PipetteState),
     Syringe(syringe::SyringeState),
     Vacuum(vacuum::VacuumState),
@@ -254,6 +265,12 @@ impl InstrumentState {
                 Self::UvVis(uvvis::UvVisState::new(c.clone()))
             }
             InstrumentConfig::ThermalCycler(c) => Self::Cycler(cycler::CyclerState::new(c.clone())),
+            InstrumentConfig::VacuumFiltration(c) => {
+                Self::Filtration(filtration::FiltrationState::new(c.clone()))
+            }
+            InstrumentConfig::RotaryEvaporator(c) => {
+                Self::Rotavap(rotavap::RotavapState::new(c.clone()))
+            }
             InstrumentConfig::Pipette(c) => Self::Pipette(pipette::PipetteState::new(c.clone())),
             InstrumentConfig::SyringePump(c) => {
                 Self::Syringe(syringe::SyringeState::new(c.clone()))
@@ -284,6 +301,8 @@ impl InstrumentState {
             Self::Conductivity(s) => s.apply(device, action, params, samples),
             Self::UvVis(s) => s.apply(device, action, params, samples),
             Self::Cycler(s) => s.apply(device, action, params, samples),
+            Self::Filtration(s) => s.apply(device, action, params, samples),
+            Self::Rotavap(s) => s.apply(device, action, params, samples),
             Self::Pipette(s) => s.apply(device, action, params, samples),
             Self::Syringe(s) => s.apply(device, action, params, samples),
             Self::Vacuum(s) => s.apply(device, action, params, samples),
@@ -306,6 +325,8 @@ impl InstrumentState {
             Self::Conductivity(s) => s.advance(dt),
             Self::UvVis(s) => s.advance(dt),
             Self::Cycler(s) => s.advance(dt),
+            Self::Filtration(s) => s.advance(dt),
+            Self::Rotavap(s) => s.advance(dt),
             Self::Pipette(s) => s.advance(dt),
             Self::Syringe(s) => s.advance(dt),
             Self::Vacuum(s) => s.advance(dt),
@@ -335,6 +356,8 @@ impl InstrumentState {
             Self::Conductivity(s) => (&s.config.model_id, s.values()),
             Self::UvVis(s) => (&s.config.model_id, s.values()),
             Self::Cycler(s) => (&s.config.model_id, s.values()),
+            Self::Filtration(s) => (&s.config.model_id, s.values()),
+            Self::Rotavap(s) => (&s.config.model_id, s.values()),
             Self::Pipette(s) => (&s.config.model_id, s.values()),
             Self::Syringe(s) => (&s.config.model_id, s.values()),
             Self::Vacuum(s) => (&s.config.model_id, s.values()),

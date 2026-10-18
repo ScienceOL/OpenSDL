@@ -171,5 +171,6 @@
     }
   ],
   "world_id": "ultrasonic-cleaner",
-  "device_id": "ultrasonic-cleaner-1"
+  "device_id": "ultrasonic-cleaner-1",
+  "minimum_runtime_version": "0.5.0"
 }

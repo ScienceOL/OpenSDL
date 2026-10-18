@@ -1,7 +1,7 @@
 {
   "id": "opensdl.ph14",
   "name": "PH 14 Bench Meter",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "dimensions_m": [
     0.221,
     0.222,
@@ -85,5 +85,6 @@
     }
   ],
   "world_id": "ph-meter",
-  "device_id": "ph-meter-1"
+  "device_id": "ph-meter-1",
+  "minimum_runtime_version": "0.4.0"
 }

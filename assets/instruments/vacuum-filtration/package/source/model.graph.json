@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.vf100",
+  "dimensions_m": [
+    0.36,
+    0.294,
+    0.28
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "pump",
+      "label": "Pump",
+      "parent": "instrument"
+    },
+    {
+      "id": "funnel",
+      "label": "Funnel",
+      "parent": "instrument"
+    },
+    {
+      "id": "filter",
+      "label": "Filter",
+      "parent": "funnel"
+    },
+    {
+      "id": "source_liquid",
+      "label": "Source Liquid",
+      "parent": "funnel",
+      "scale": {
+        "axis": "y",
+        "state": "source_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "receiver_liquid",
+      "label": "Receiver Liquid",
+      "parent": "instrument",
+      "scale": {
+        "axis": "y",
+        "state": "receiver_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "seal",
+      "label": "Seal",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "seal",
+        "params": {}
+      }
+    },
+    {
+      "id": "vent",
+      "label": "Vent",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "vent",
+        "params": {}
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "source_screen",
+      "label": "Source Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "receiver_screen",
+      "label": "Receiver Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "seal_joint",
+      "component": "seal",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 1.0471975511965976,
+      "state": "seal_rad"
+    },
+    {
+      "id": "vent_joint",
+      "component": "vent",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 1.5707963267948966,
+      "state": "vent_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "pressure_kpa",
+      "digits": 1,
+      "unit": "kPa"
+    },
+    {
+      "component": "source_screen",
+      "state": "source_ml",
+      "digits": 1,
+      "unit": "mL"
+    },
+    {
+      "component": "receiver_screen",
+      "state": "receiver_ml",
+      "digits": 1,
+      "unit": "mL"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "funnel",
+      "state": "funnel_visible"
+    },
+    {
+      "component": "filter",
+      "state": "filter_visible"
+    },
+    {
+      "component": "source_liquid",
+      "state": "source_liquid_visible"
+    },
+    {
+      "component": "receiver_liquid",
+      "state": "receiver_liquid_visible"
+    }
+  ],
+  "placements": []
+}

@@ -6,11 +6,11 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/heated-stirrer/model.yaml": "570f70f7e813783cce6c7c77089d24700dfa4c362a1338dea6dea97c96e60d41",
+    "assets/instruments/heated-stirrer/model.yaml": "d8d52229de629aaa281b454b0f28218ecd07c8aa13ebb34c72a4b22912128e73",
     "assets/instruments/heated-stirrer/SOURCE.md": "c85ad7dba3971a7a418ef30cc184dc42acd5c1c01427f56883d39141c276de49",
     "tools/instrument-models/build_stirrer.py": "6911c3aab85b5a3f4644426fb27c54942ab1ff5623b49a5b40bdced3c1d492b9",
-    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
-    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/author.py": "3b439e95fe0c6f2ce5065f2fedfb2194721eac22fac175eb152ad33cca633f34",
+    "tools/instrument-models/geometry.py": "cf20d74322069da94b99c6e86b9e871dfd8d9efeac9b71e4ff1294a0540e4691",
     "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
     "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
   }

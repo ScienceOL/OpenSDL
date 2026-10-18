@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: CC-BY-NC-4.0
 """Original EC2 bench meter with a supported lift carriage and open two-electrode cell."""
 import math
-from geometry import box, cylinder, label, vessel
+from geometry import box, cylinder, label, vessel, bore_world
 from bench_helpers import assembly, enclosure, front_screen, graph
 from author import joint, command
 
@@ -36,7 +36,7 @@ def create_model(p):
     )
     probe = parts["probe"]
     probe.location.z = p["probe_travel_m"]
-    box(
+    clamp = box(
         probe,
         "Sliding clamp",
         (0.140, 0.080, 0.260),
@@ -44,7 +44,8 @@ def create_model(p):
         m["trim"],
         0.003,
     )
-    box(
+    bore_world(clamp, (0.140, 0.080, 0.260 + p["probe_travel_m"]), 0.0055, 0.040)
+    arm = box(
         probe,
         "Probe support arm",
         (0.120, 0.0275, 0.260),
@@ -52,6 +53,7 @@ def create_model(p):
         m["steel"],
         0.002,
     )
+    bore_world(arm, (0.140, 0.080, 0.260 + p["probe_travel_m"]), 0.0055, 0.040)
     cylinder(
         probe,
         "Electrode stem",

@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "rotary-evaporator",
+    "displayName": "RE 500 Rotary Evaporator",
+    "version": "1.0.0",
+    "description": "Original OpenSDL inclined rotating hollow flask, supported 140 mm lift, heated open bath, hollow condenser coil and receiving flask. Prescribed drive, separate bath/sample temperatures and isothermal vacuum response. Evaporation and recovery quantities are unavailable; no solvent or yield prediction.",
+    "tags": [
+      "original",
+      "rotary-evaporator"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.rotary_evaporator"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.5.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

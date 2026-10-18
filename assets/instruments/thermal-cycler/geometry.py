@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: CC-BY-NC-4.0
 """Original TC8, eight real blind wells, tube strip, heated cover and latch."""
 import math
-import bpy
-from geometry import box, cylinder, label, vessel
+from geometry import box, cylinder, label, vessel, bore_world
 from bench_helpers import assembly, enclosure, front_screen, graph
 from author import joint, command
 
@@ -33,16 +32,7 @@ def create_model(p):
     )
     for x in (-0.0525, -0.0175, 0.0175, 0.0525):
         for y in (-0.0025, 0.0425):
-            bpy.ops.mesh.primitive_cylinder_add(
-                vertices=32, radius=0.0035, depth=0.024, location=(x, y, 0.151)
-            )
-            cutter = bpy.context.object
-            mod = block.modifiers.new("Blind tube well", "BOOLEAN")
-            mod.operation = "DIFFERENCE"
-            mod.object = cutter
-            bpy.context.view_layer.objects.active = block
-            bpy.ops.object.modifier_apply(modifier=mod.name)
-            bpy.data.objects.remove(cutter, do_unlink=True)
+            bore_world(block, (x, y, 0.151), 0.0035, 0.024)
             tube = vessel(
                 parts["sample"],
                 m["glass"],

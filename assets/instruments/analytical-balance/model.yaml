@@ -1,7 +1,7 @@
 {
   "id": "opensdl.ax240",
   "name": "AX 240 Analytical Balance",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "dimensions_m": [
     0.236,
     0.354,
@@ -62,5 +62,6 @@
   ],
   "world_id": "ax240",
   "device_id": "balance-1",
-  "license_history": "Earlier edition 1.0.1 remains available under its existing MIT grant.\n"
+  "license_history": "Earlier edition 1.0.1 remains available under its existing MIT grant.\n",
+  "minimum_runtime_version": "0.4.0"
 }

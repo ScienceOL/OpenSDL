@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "vacuum-filtration",
+    "displayName": "VF 100 Vacuum Filtration Assembly",
+    "version": "1.0.0",
+    "description": "Original OpenSDL filtration bench with hollow receiver and sidearm, open funnel drain, perforated support, filter disc, collet seal, vent and continuous hollow vacuum hose. Declared synthetic liquid conductance and gas headspace balance. No real separation efficiency, particle capture or pressure certification.",
+    "tags": [
+      "original",
+      "filtration"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.vacuum_filtration"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.5.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

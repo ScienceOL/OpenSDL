@@ -1,0 +1,20 @@
+{
+  "model": "opensdl.vf100",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL filtration bench with hollow receiver and sidearm, open funnel drain, perforated support, filter disc, collet seal, vent and continuous hollow vacuum hose. Declared synthetic liquid conductance and gas headspace balance. No real separation efficiency, particle capture or pressure certification.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/vacuum-filtration/model.yaml": "74956b5b7474e1646a6e8dc79bafaf84121742eb89547d7c3239306de1cd6087",
+    "assets/instruments/vacuum-filtration/SOURCE.md": "2615a0d7c9a596faff9241ca8c241c09717ad21b7830bfdd1ed1eada6c0354fa",
+    "assets/instruments/vacuum-filtration/geometry.py": "f5b312d758be51eb7186a43a4df7e950bdfabad9176b93909f80242ff9caa687",
+    "tools/instrument-models/author.py": "3b439e95fe0c6f2ce5065f2fedfb2194721eac22fac175eb152ad33cca633f34",
+    "tools/instrument-models/geometry.py": "cf20d74322069da94b99c6e86b9e871dfd8d9efeac9b71e4ff1294a0540e4691",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/tubing.py": "d06591e322768e0dc4950a34f23b4f5ff44886a32095a31dc3cb15aeed86ff1d",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

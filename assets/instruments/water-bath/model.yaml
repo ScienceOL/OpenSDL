@@ -1,7 +1,7 @@
 {
   "id": "opensdl.wb2",
   "name": "WB 2 Water Bath",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "dimensions_m": [
     0.3,
     0.283,
@@ -127,5 +127,6 @@
     }
   ],
   "world_id": "water-bath",
-  "device_id": "water-bath-1"
+  "device_id": "water-bath-1",
+  "minimum_runtime_version": "0.4.0"
 }

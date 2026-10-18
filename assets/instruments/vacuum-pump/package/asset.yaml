@@ -4,7 +4,7 @@
   "metadata": {
     "name": "vacuum-pump",
     "displayName": "VP 20 Vacuum Pump",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design; Original diaphragm pump and 0.5 L isothermal test volume. Declared pumping/leak conductance and 2 kPa ideal ultimate pressure; no real pump curve or vacuum certification.",
     "tags": [
       "original",

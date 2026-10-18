@@ -139,5 +139,6 @@
     }
   ],
   "world_id": "conductivity-meter",
-  "device_id": "conductivity-meter-1"
+  "device_id": "conductivity-meter-1",
+  "minimum_runtime_version": "0.5.0"
 }

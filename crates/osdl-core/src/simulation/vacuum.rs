@@ -1,5 +1,5 @@
 //! Original VP20 pump plus sealed test chamber, isothermal ideal gas fixture.
-use super::{thermal, SampleInventory};
+use super::{pressure::pressure_after, thermal, SampleInventory};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,12 +83,15 @@ impl VacuumState {
         let c = &self.config;
         let pump = if self.running { c.pumping_l_s } else { 0.0 };
         let leak = if self.vent { 2.0 } else { c.leak_l_s };
-        let equilibrium = (pump * c.ultimate_kpa + leak * c.ambient_kpa) / (pump + leak);
-        self.pressure =
-            equilibrium + (self.pressure - equilibrium) * (-(pump + leak) * dt / c.chamber_l).exp();
-        if (self.pressure - equilibrium).abs() < 1e-7 {
-            self.pressure = equilibrium;
-        }
+        self.pressure = pressure_after(
+            self.pressure,
+            dt,
+            pump,
+            leak,
+            c.ultimate_kpa,
+            c.ambient_kpa,
+            c.chamber_l,
+        );
         old != self.pressure
     }
     pub fn values(&self) -> Value {

@@ -4,7 +4,7 @@
   "metadata": {
     "name": "pipette",
     "displayName": "P 200 Single Channel Pipette",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design; Original 20-200 uL hand pipette. Finite source, tip and receiver volumes conserve liquid under ideal displacement. No calibration accuracy, compressibility, viscosity or droplet simulation.",
     "tags": [
       "original",

@@ -1,7 +1,7 @@
 {
   "id": "opensdl.sp10",
   "name": "SP 10 Syringe Pump",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "dimensions_m": [
     0.261,
     0.162,
@@ -84,5 +84,6 @@
     }
   ],
   "world_id": "syringe-pump",
-  "device_id": "syringe-pump-1"
+  "device_id": "syringe-pump-1",
+  "minimum_runtime_version": "0.4.0"
 }

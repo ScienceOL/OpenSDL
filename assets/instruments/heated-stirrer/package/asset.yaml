@@ -4,7 +4,7 @@
   "metadata": {
     "name": "heated-stirrer",
     "displayName": "HS 150 Heated Magnetic Stirrer",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design, authored dimensions and engineering assumptions. Water fixture 0.2 kg with assumed heat capacity 4180 J/(kg K); no manufacturer calibration or CFD validation.",
     "tags": [
       "original",
