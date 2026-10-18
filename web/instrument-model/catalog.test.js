@@ -26,12 +26,20 @@ function observation(binding) {
   for (const r of binding.definition.readouts) values[r.state] = null;
   for (const b of binding.definition.visibility) values[b.state] = false;
   return {
-    schema_version: 1,
+    schema_version: 2,
     model_id: binding.definition.model_id,
     run_id: "catalog-test",
     revision: 0,
     time_s: 0,
     values,
+    motion: Object.fromEntries(
+      binding.definition.joints
+        .filter((j) => j.kind === "continuous")
+        .map((j) => [
+          j.velocity_state,
+          { target_velocity: 0, slew_per_s: 1, stop_after_s: null },
+        ]),
+    ),
   };
 }
 function meshVolume(part) {
@@ -204,6 +212,7 @@ test("rotation spans the host observation window, freezes at its bound, and rese
   const binding = bindInstrument(root, { predictionWindowSeconds: 5 });
   const state = observation(binding);
   Object.assign(state.values, { bar_rad: 0, bar_rad_s: 1 });
+  state.motion.bar_rad_s.target_velocity = 1;
   binding.apply(state);
   const bar = binding.parts.get("bar");
   binding.animate(1);
@@ -224,6 +233,43 @@ test("rotation spans the host observation window, freezes at its bound, and rese
   assert.throws(
     () => bindInstrument(root, { predictionWindowSeconds: -1 }),
     /prediction window/,
+  );
+});
+
+test("the actual stir bar coasts to rest before the next poll and retains measured readouts", async () => {
+  const binding = bindInstrument(await load("heated-stirrer"), {
+    predictionWindowSeconds: 5,
+  });
+  const state = observation(binding);
+  Object.assign(state.values, {
+    bar_rad: 0,
+    bar_rad_s: Math.PI * 20,
+    rpm: 600,
+  });
+  state.motion.bar_rad_s = {
+    target_velocity: 0,
+    slew_per_s: Math.PI * 10,
+    stop_after_s: null,
+  };
+  binding.apply(state);
+  const bar = binding.parts.get("bar");
+  binding.animate(1);
+  const coasting = bar.quaternion.clone();
+  binding.animate(1);
+  const stopped = bar.quaternion.clone();
+  assert.ok(coasting.angleTo(stopped) > 3);
+  binding.animate(2);
+  assert.ok(
+    stopped.angleTo(bar.quaternion) < 1e-7,
+    "motor must stop inside the observation window",
+  );
+  assert.equal(
+    state.values.rpm,
+    600,
+    "prediction cannot invent a new measured reading",
+  );
+  assert.ok(
+    bar.quaternion.angleTo(binding.parts.get("instrument").quaternion) < 1e-7,
   );
 });
 

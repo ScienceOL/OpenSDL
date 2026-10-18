@@ -197,8 +197,8 @@ impl BalanceState {
         HashMap::from([
             (
                 "model_state".into(),
-                json!({"schema_version":1, "model_id":self.config.model_id, "run_id":run_id,
-            "revision":revision,"time_s":time_s,"values":values}),
+                json!({"schema_version":2, "model_id":self.config.model_id, "run_id":run_id,
+            "revision":revision,"time_s":time_s,"values":values,"motion":{}}),
             ),
             ("mass_g".into(), json!(mass_g)),
             ("balance_status".into(), json!(status)),

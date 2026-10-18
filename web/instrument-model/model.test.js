@@ -19,11 +19,12 @@ async function load() {
 }
 function state(values = {}) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     run_id: "test-run",
     model_id: "opensdl.ax240",
     revision: 1,
     time_s: 0,
+    motion: {},
     values: {
       door_left_m: 0,
       door_right_m: 0,

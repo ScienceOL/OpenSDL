@@ -65,12 +65,20 @@ export interface ModelDefinition {
   }[];
 }
 export interface ModelState {
-  schema_version: 1;
+  schema_version: 2;
   run_id: string;
   model_id: string;
   revision: number;
   time_s: number;
   values: ModelValues;
+  motion: Record<
+    string,
+    {
+      target_velocity: number;
+      slew_per_s: number;
+      stop_after_s: number | null;
+    }
+  >;
 }
 export interface ModelAction {
   action: string;

@@ -1,5 +1,6 @@
 //! Original HS150 water fixture: two thermal nodes, bounded motor slew, no CFD/magnetic coupling.
 use super::{
+    motor,
     thermal::{self, ThermalPair},
     SampleInventory,
 };
@@ -232,7 +233,7 @@ impl StirrerState {
             self.fault = true;
             self.heating = false;
         }
-        self.rpm = thermal::approach(
+        let (rpm, radians) = motor::advance_rpm(
             self.rpm,
             if self.powered && self.stirring {
                 self.target_rpm
@@ -242,8 +243,8 @@ impl StirrerState {
             self.config.slew_rpm_s,
             dt,
         );
-        self.angle = (self.angle + self.rpm * std::f64::consts::TAU / 60.0 * dt)
-            .rem_euclid(std::f64::consts::TAU);
+        self.rpm = rpm;
+        self.angle = (self.angle + radians).rem_euclid(std::f64::consts::TAU);
         // Repeated sampled angles still represent motion (e.g. one turn per tick).
         self.rpm > 0.0
             || previous
@@ -255,6 +256,14 @@ impl StirrerState {
                     self.fault,
                     self.heating,
                 )
+    }
+    pub fn motion(&self) -> Value {
+        let target = if self.powered && self.stirring {
+            self.target_rpm
+        } else {
+            0.0
+        };
+        json!({"bar_rad_s": motor::profile(target, self.config.slew_rpm_s, 1.0, None)})
     }
     pub fn values(&self) -> Value {
         json!({

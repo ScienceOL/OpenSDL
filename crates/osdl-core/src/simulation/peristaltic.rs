@@ -195,6 +195,21 @@ impl PeristalticState {
         self.roller_angle = (self.roller_angle - ratio * radians).rem_euclid(TAU);
         radians > 0.0
     }
+    pub fn motion(&self) -> Value {
+        let available = self
+            .source_ml
+            .min(self.config.receiver_capacity_ml - self.receiver_ml)
+            .max(0.0);
+        let stop = (self.motor.running
+            && self.loaded
+            && self.line_ml >= self.config.dead_volume_ml)
+            .then(|| {
+                self.motor
+                    .time_to_angle(available / self.config.displacement_ml_rev * TAU)
+            });
+        let ratio = -(1.0 + self.config.roller_orbit_m / self.config.roller_radius_m);
+        json!({"rotor_rad_s": self.motor.motion(1.0, stop), "roller_rad_s": self.motor.motion(ratio, stop)})
+    }
     pub fn values(&self) -> Value {
         let primed = self.loaded && self.line_ml >= self.config.dead_volume_ml;
         let roller_ratio = 1.0 + self.config.roller_orbit_m / self.config.roller_radius_m;

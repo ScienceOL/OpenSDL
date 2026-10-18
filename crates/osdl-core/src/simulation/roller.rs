@@ -98,6 +98,9 @@ impl RollerState {
         }
         radians > 0.0
     }
+    pub fn motion(&self) -> Value {
+        json!({"roller_rad_s": self.motor.motion(1.0, None), "tube_rad_s": self.motor.motion(-self.config.roller_radius_m/self.config.tube_radius_m, None)})
+    }
     pub fn values(&self) -> Value {
         json!({"rpm":self.motor.rpm, "target_rpm":self.motor.target,
             "roller_rad":self.motor.angle, "roller_rad_s":self.motor.velocity(),
