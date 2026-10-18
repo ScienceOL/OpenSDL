@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.tc8",
+  "dimensions_m": [
+    0.26045,
+    0.222,
+    0.288
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "lid",
+      "label": "Lid",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "lid",
+        "params": {}
+      }
+    },
+    {
+      "id": "latch",
+      "label": "Latch",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "latch",
+        "params": {}
+      }
+    },
+    {
+      "id": "sample",
+      "label": "Sample",
+      "parent": "instrument"
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "sample_screen",
+      "label": "Sample Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "lid_screen",
+      "label": "Lid Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "lid_joint",
+      "component": "lid",
+      "kind": "revolute",
+      "axis": [
+        -1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 1.7,
+      "state": "lid_rad"
+    },
+    {
+      "id": "latch_joint",
+      "component": "latch",
+      "kind": "revolute",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 1.5707963267948966,
+      "state": "latch_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "temperature_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "sample_screen",
+      "state": "sample_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "lid_screen",
+      "state": "lid_temperature_c",
+      "digits": 1,
+      "unit": "C"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "sample",
+      "state": "sample_visible"
+    }
+  ],
+  "placements": []
+}

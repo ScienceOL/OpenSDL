@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.uv10",
+  "dimensions_m": [
+    0.38,
+    0.211,
+    0.3313
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "lid",
+      "label": "Lid",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "lid",
+        "params": {}
+      }
+    },
+    {
+      "id": "cuvette",
+      "label": "Cuvette",
+      "parent": "instrument"
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "wavelength_screen",
+      "label": "Wavelength Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "wavelength_dial",
+      "label": "Wavelength Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_wavelength",
+        "params": {},
+        "parameter": "wavelength_nm",
+        "state": "wavelength_nm",
+        "min": 190.0,
+        "max": 900.0,
+        "step": 10
+      }
+    },
+    {
+      "id": "power_key",
+      "label": "Power Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "power",
+        "params": {}
+      }
+    },
+    {
+      "id": "blank_key",
+      "label": "Blank Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "blank",
+        "params": {}
+      }
+    },
+    {
+      "id": "measure_key",
+      "label": "Measure Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "measure",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "lid_joint",
+      "component": "lid",
+      "kind": "revolute",
+      "axis": [
+        -1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 1.75,
+      "state": "lid_rad"
+    },
+    {
+      "id": "wavelength_dial_joint",
+      "component": "wavelength_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "wavelength_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "absorbance",
+      "digits": 3,
+      "unit": "A"
+    },
+    {
+      "component": "wavelength_screen",
+      "state": "wavelength_nm",
+      "digits": 0,
+      "unit": "nm"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "cuvette",
+      "state": "cuvette_visible"
+    }
+  ],
+  "placements": []
+}

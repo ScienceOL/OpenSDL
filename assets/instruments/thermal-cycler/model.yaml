@@ -1,0 +1,153 @@
+{
+  "id": "opensdl.tc8",
+  "name": "TC 8 Thermal Cycler",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.26045,
+    0.288,
+    0.222
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.025
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL eight-well thermal block, tube strip, heated hinged lid and independent latch. Bounded demonstration 95/60/72 C schedule, sample lag, temperature-qualified holds, active final cooling and hot-cover interlocks. No DNA amplification, yield or assay protocol claim.",
+  "runtime": {
+    "kind": "thermal_cycler",
+    "model_id": "opensdl.tc8",
+    "ambient_c": 22.0,
+    "heater_w": 200.0,
+    "cooling_w": 150.0,
+    "block_capacity_j_k": 300.0,
+    "sample_capacity_j_k": 20.0,
+    "exchange_w_k": 10.0,
+    "loss_w_k": 0.25,
+    "lid_heater_w": 60.0,
+    "lid_capacity_j_k": 100.0,
+    "lid_target_c": 105.0,
+    "opening_rad": 1.7,
+    "max_cycles": 10,
+    "stages": [
+      {
+        "temperature_c": 95.0,
+        "hold_s": 5.0
+      },
+      {
+        "temperature_c": 60.0,
+        "hold_s": 5.0
+      },
+      {
+        "temperature_c": 72.0,
+        "hold_s": 5.0
+      }
+    ],
+    "sample_id": "pcr_tube_strip",
+    "sample_radius_m": 0.06
+  },
+  "samples": [
+    {
+      "id": "pcr_tube_strip",
+      "mass_kg": 0.003,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.05
+    }
+  ],
+  "role": "thermal-cycler",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Open or close thermal cover",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "latch",
+      "description": "Lock or unlock cover",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_tubes",
+      "description": "Load eight synthetic tubes",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_tubes",
+      "description": "Remove tube strip",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start declared demonstration temperature program",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Abort program and actively cool",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset cool test fixture",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_cycles",
+      "description": "Set demonstration repeat count",
+      "params": {
+        "type": "object",
+        "properties": {
+          "cycles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "cycles"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "thermal-cycler",
+  "device_id": "thermal-cycler-1"
+}

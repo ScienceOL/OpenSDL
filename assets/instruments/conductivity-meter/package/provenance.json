@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.ec2",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic meter, lift carriage, two separate cell electrodes and removable 100 mL synthetic vessel. First-order cell response, declared linear 25 C temperature compensation and one-point synthetic standard calibration. No measured cell constant or real sample identification.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/conductivity-meter/model.yaml": "a7cba67b6f494e0894aab8b9d4f3e915f2461511dd99969152b0c64ef76bdd4d",
+    "assets/instruments/conductivity-meter/SOURCE.md": "1a686d4d17584c5dfeba56739067959c1d882c8a99a0e5a5f9a6cd88c021866c",
+    "assets/instruments/conductivity-meter/geometry.py": "7052cc7503212f608a39061dbd5e33ad320de228651613f8e8921f2f2dad3fdd",
+    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

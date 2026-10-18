@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.ec2",
+  "dimensions_m": [
+    0.36,
+    0.352,
+    0.28
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "meter",
+      "label": "Meter",
+      "parent": "instrument"
+    },
+    {
+      "id": "probe",
+      "label": "Probe",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "probe",
+        "params": {}
+      }
+    },
+    {
+      "id": "sample",
+      "label": "Sample",
+      "parent": "instrument"
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "temperature_screen",
+      "label": "Temperature Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "power_key",
+      "label": "Power Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "power",
+        "params": {}
+      }
+    },
+    {
+      "id": "calibrate_key",
+      "label": "Calibrate Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "calibrate",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "probe_joint",
+      "component": "probe",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": -0.08,
+      "max": 0,
+      "state": "probe_m"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "conductivity_25_us_cm",
+      "digits": 1,
+      "unit": "uS/cm"
+    },
+    {
+      "component": "temperature_screen",
+      "state": "temperature_c",
+      "digits": 1,
+      "unit": "C"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "sample",
+      "state": "sample_visible"
+    }
+  ],
+  "placements": []
+}

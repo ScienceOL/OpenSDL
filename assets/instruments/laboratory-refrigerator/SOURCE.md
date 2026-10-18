@@ -1,0 +1,7 @@
+# LR 88 laboratory refrigerator: original design
+
+Independently authored generic cabinet continuing OpenSDL source 33912808a56d7064c016cf8f0ac36ce7c82a8a30 and this branch. No external CAD, mesh, texture, generator or manufacturer parameter table is used. The 500 mm cabinet, 380 × 380 × 600 mm usable cavity, 90 W maximum cooling and thermal parameters are original design assumptions, not measured equipment data.
+
+Real separate walls, floor, roof, rear panel and gasket enclose the working cavity. Wire shelves support a removable vial rack. Two hinge brackets support the door; its vertical pivot sweeps the handle outward without scaling the cabinet. Cooling is a declared proportional sink, disabled while the door is open; sample and compartment temperatures evolve independently using the canonical energy balance. Loading introduces an ambient sample; stopping retains stored cold. No refrigerant-cycle, humidity, temperature uniformity or cold-chain certification is modeled.
+
+Models, model-specific geometry, parameters and derived assets: CC BY-NC 4.0, attribution OpenSDL / LiyanLabs. General exporter/runtime software retains its repository license. Inert internal geometry identifiers perform no network reporting. Build with pinned Blender 4.5.3 and tools/instrument-models/build_catalog.py. The prior signed 0.4.0 binary does not implement this kind; release compatibility, immutable Hub publication and actual Dev/mobile acceptance remain open.
