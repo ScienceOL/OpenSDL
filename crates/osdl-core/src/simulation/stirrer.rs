@@ -283,6 +283,6 @@ impl StirrerState {
             "vessel_visible":self.loaded,
             "probe_visible":self.probe,
             "hot":self.thermal.plate_c>45.0,
-            "status":if self.fault {"thermal_cutoff"} else if self.heating {"heating"} else if self.thermal.plate_c>45.0 {"hot"} else if self.stirring {"stirring"} else if self.powered {"ready"} else {"off"}})
+            "status":if self.fault {"thermal_cutoff"} else if self.heating {"heating"} else if self.thermal.plate_c>45.0 {"hot"} else if self.stirring {"stirring"} else if self.rpm>0.0 {"decelerating"} else if self.powered {"ready"} else {"off"}})
     }
 }
