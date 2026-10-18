@@ -195,3 +195,31 @@ test("pipette liquid volume, fixture positions, and clockwise encoders follow th
     ).x > 0.9,
   );
 });
+
+test("rotation spans the host observation window, freezes at its bound, and resets on actual state", async () => {
+  const root = await load("heated-stirrer");
+  const binding = bindInstrument(root, { predictionWindowSeconds: 5 });
+  const state = observation(binding);
+  Object.assign(state.values, { bar_rad: 0, bar_rad_s: 1 });
+  binding.apply(state);
+  const bar = binding.parts.get("bar");
+  binding.animate(1);
+  const afterOne = bar.quaternion.clone();
+  binding.animate(1);
+  assert.ok(!afterOne.equals(bar.quaternion));
+  binding.animate(10);
+  const last = bar.quaternion.clone();
+  binding.animate(1);
+  assert.ok(last.equals(bar.quaternion));
+  binding.apply({ ...state, revision: 1 });
+  binding.animate(1);
+  assert.ok(afterOne.equals(bar.quaternion));
+  assert.throws(
+    () => bindInstrument(root, { predictionWindowSeconds: Infinity }),
+    /prediction window/,
+  );
+  assert.throws(
+    () => bindInstrument(root, { predictionWindowSeconds: -1 }),
+    /prediction window/,
+  );
+});
