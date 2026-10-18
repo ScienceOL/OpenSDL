@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.pp56",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design. Three-roller head with 56 mL/min nominal maximum, priming and explicit source/receiver/line/removed liquid inventories. No validated tube deformation, pressure curve, occlusion forces or measured flow calibration.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/peristaltic-pump/model.yaml": "a188ef7c8c3e7508b4700900d8889d8322e03fd938cf116efdb667bd29b7434b",
+    "assets/instruments/peristaltic-pump/SOURCE.md": "30b5a1055e9cd1a54d5bb97225e7a79ab7c6df6e4627211148316beb66398c85",
+    "assets/instruments/peristaltic-pump/geometry.py": "a019a5ea77c344fc798a94c5c976436f92415deaf8d690c5b6c377012c0b2fed",
+    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

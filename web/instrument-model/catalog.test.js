@@ -34,6 +34,24 @@ function observation(binding) {
     values,
   };
 }
+function meshVolume(part) {
+  let result = 0;
+  part.traverse((node) => {
+    if (!node.isMesh) return;
+    const p = node.geometry.attributes.position,
+      indices = node.geometry.index;
+    for (let i = 0; i < (indices?.count ?? p.count); i += 3) {
+      const vertices = [0, 1, 2].map((k) =>
+        new Vector3()
+          .fromBufferAttribute(p, indices ? indices.getX(i + k) : i + k)
+          .applyMatrix4(node.matrixWorld),
+      );
+      result += vertices[0].dot(vertices[1].clone().cross(vertices[2])) / 6;
+    }
+  });
+  return Math.abs(result);
+}
+
 for (const slug of (await readdir(folder, { withFileTypes: true }))
   .filter((d) => d.isDirectory())
   .map((d) => d.name)) {
@@ -167,24 +185,9 @@ test("pipette liquid volume, fixture positions, and clockwise encoders follow th
   const tip = new Box3().setFromObject(binding.parts.get("tip"));
   assert.ok(Math.abs(tip.getCenter(new Vector3()).x + 0.05) < 1e-6);
   assert.ok(Math.abs(tip.min.y - 0.0105) < 1e-6);
-  function volume(part) {
-    let result = 0;
-    part.traverse((node) => {
-      if (!node.isMesh) return;
-      const p = node.geometry.attributes.position,
-        indices = node.geometry.index;
-      for (let i = 0; i < (indices?.count ?? p.count); i += 3) {
-        const vertices = [0, 1, 2].map((k) =>
-          new Vector3()
-            .fromBufferAttribute(p, indices ? indices.getX(i + k) : i + k)
-            .applyMatrix4(node.matrixWorld),
-        );
-        result += vertices[0].dot(vertices[1].clone().cross(vertices[2])) / 6;
-      }
-    });
-    return Math.abs(result);
-  }
-  assert.ok(Math.abs(volume(binding.parts.get("liquid")) * 1e9 - 100) < 0.5);
+  assert.ok(
+    Math.abs(meshVolume(binding.parts.get("liquid")) * 1e9 - 100) < 0.5,
+  );
   const stirrer = bindInstrument(await load("heated-stirrer")),
     s = observation(stirrer);
   s.values.heat_dial_rad = Math.PI / 2;
@@ -355,4 +358,93 @@ test("dry block has real blind wells with floors and a supported cover that open
     lid.max.y > 0.25,
     "cover sweeps above the tubes rather than through the block",
   );
+});
+
+test("peristaltic tube has an open lumen, the declared 7mL fluid volume and rolling followers", async () => {
+  const { Quaternion, Raycaster } = await import("three");
+  const root = await load("peristaltic-pump"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    rotor_rad: 0,
+    roller_rad: 0,
+    liquid_visible: true,
+    tube_visible: true,
+    source_fraction: 1,
+    receiver_fraction: 0,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const volume = meshVolume(binding.parts.get("liquid")) * 1e6;
+  assert.ok(Math.abs(volume - 7) < 0.14, `actual lumen volume ${volume}mL`);
+  const ray = new Raycaster(
+    new Vector3(-0.17, 0.028, 0.035),
+    new Vector3(0, 1, 0),
+    0,
+    0.004,
+  );
+  assert.equal(
+    ray.intersectObject(binding.parts.get("tubing"), true).length,
+    0,
+    "tube inlet must have an open bore",
+  );
+  const follower = binding.parts.get("roller_0"),
+    rest = follower.getWorldQuaternion(new Quaternion());
+  const angle = 0.3;
+  Object.assign(state.values, {
+    rotor_rad: angle,
+    roller_rad: (-4 * angle + Math.PI * 2) % (Math.PI * 2),
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const delta = follower
+    .getWorldQuaternion(new Quaternion())
+    .multiply(rest.invert());
+  assert.ok(
+    Math.abs(
+      delta.dot(
+        new Quaternion().setFromAxisAngle(new Vector3(0, 0, -1), -3 * angle),
+      ),
+    ) >
+      1 - 1e-8,
+  );
+});
+
+test("ultrasonic tank water volume matches thermal parameters and the basket rests on its floor", async () => {
+  const root = await load("ultrasonic-cleaner"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    lid_rad: 1.8,
+    fill_fraction: 1,
+    water_visible: true,
+    sample_visible: true,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const spec = JSON.parse(
+    await readFile(new URL("ultrasonic-cleaner/model.yaml", folder)),
+  );
+  const water = binding.parts.get("water"),
+    full = meshVolume(water) * 1e6;
+  assert.ok(
+    Math.abs(full - spec.runtime.water_capacity_j_k / 4.18) < full * 0.01,
+  );
+  const basket = new Box3().setFromObject(binding.parts.get("sample"));
+  assert.ok(
+    Math.abs(basket.min.y - 0.082) < 1e-6,
+    "basket legs must rest on the basin floor",
+  );
+  assert.ok(
+    basket.min.x > -0.128 &&
+      basket.max.x < 0.128 &&
+      basket.min.z > -0.09 &&
+      basket.max.z < 0.09,
+  );
+  state.values.fill_fraction = 0.5;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const half = new Box3().setFromObject(water);
+  assert.ok(Math.abs(half.min.y - 0.082) < 1e-6);
+  assert.ok(Math.abs(half.getSize(new Vector3()).y - 0.0375) < 1e-6);
 });

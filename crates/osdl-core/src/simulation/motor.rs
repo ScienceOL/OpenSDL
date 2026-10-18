@@ -52,6 +52,27 @@ impl Motor {
         self.angle = (self.angle + radians).rem_euclid(TAU);
         radians
     }
+    /// Inverse of the same ramp integral, for an attainable angle within a step.
+    pub fn time_to_angle(&self, radians: f64) -> f64 {
+        if radians <= 0.0 {
+            return 0.0;
+        }
+        let target = if self.running { self.target } else { 0.0 };
+        let ramp = (target - self.rpm).abs() / self.slew_rpm_s;
+        let ramp_area = (self.rpm + target) * 0.5 * ramp;
+        let area = radians * 60.0 / TAU;
+        if ramp > 0.0 && area <= ramp_area {
+            let acceleration = (target - self.rpm).signum() * self.slew_rpm_s;
+            let speed = (self.rpm * self.rpm + 2.0 * acceleration * area)
+                .max(0.0)
+                .sqrt();
+            2.0 * area / (self.rpm + speed)
+        } else if target > 0.0 {
+            ramp + (area - ramp_area) / target
+        } else {
+            ramp
+        }
+    }
     pub fn velocity(&self) -> f64 {
         self.rpm * TAU / 60.0
     }
