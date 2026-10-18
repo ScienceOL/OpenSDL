@@ -1,5 +1,5 @@
 //! Original eccentric cup oscillator. Pose only, not fluid mixing efficiency.
-use super::{thermal, SampleInventory};
+use super::{motor, thermal, SampleInventory};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,16 +95,20 @@ impl VortexState {
     }
     pub fn advance(&mut self, dt: f64) -> bool {
         let old = (self.rpm, self.angle);
-        self.rpm = thermal::approach(
+        let (rpm, radians) = motor::advance_rpm(
             self.rpm,
             if self.running { self.target } else { 0.0 },
             self.config.slew_rpm_s,
             dt,
         );
-        self.angle = (self.angle + self.rpm * std::f64::consts::TAU / 60.0 * dt)
-            .rem_euclid(std::f64::consts::TAU);
+        self.rpm = rpm;
+        self.angle = (self.angle + radians).rem_euclid(std::f64::consts::TAU);
         // Repeated sampled angles still represent motion (e.g. one turn per tick).
         self.rpm > 0.0 || old != (self.rpm, self.angle)
+    }
+    pub fn motion(&self) -> Value {
+        let target = if self.running { self.target } else { 0.0 };
+        json!({"orbit_rad_s": motor::profile(target, self.config.slew_rpm_s, 1.0, None), "cup_rad_s": motor::profile(target, self.config.slew_rpm_s, -1.0, None)})
     }
     pub fn values(&self) -> Value {
         json!({

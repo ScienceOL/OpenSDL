@@ -127,6 +127,9 @@ impl OverheadState {
     pub fn advance(&mut self, dt: f64) -> bool {
         self.motor.advance(dt) > 0.0
     }
+    pub fn motion(&self) -> Value {
+        json!({"shaft_rad_s": self.motor.motion(1.0, None)})
+    }
     pub fn values(&self) -> Value {
         json!({"rpm":self.motor.rpm,"target_rpm":self.motor.target,"shaft_rad":self.motor.angle,
             "shaft_rad_s":self.motor.velocity(),"speed_dial_rad":self.motor.dial(),"carriage_m":self.height_m,

@@ -224,8 +224,9 @@ export function parseModelState(value) {
       "revision",
       "time_s",
       "values",
+      "motion",
     ]) ||
-    value.schema_version !== 1 ||
+    value.schema_version !== 2 ||
     !id(value.model_id) ||
     !id(value.run_id) ||
     !Number.isSafeInteger(value.revision) ||
@@ -233,7 +234,9 @@ export function parseModelState(value) {
     !finite(value.time_s) ||
     value.time_s < 0 ||
     !record(value.values) ||
-    Object.keys(value.values).length > 256
+    Object.keys(value.values).length > 256 ||
+    !record(value.motion) ||
+    Object.keys(value.motion).length > 256
   )
     return null;
   if (
@@ -247,6 +250,20 @@ export function parseModelState(value) {
     )
   )
     return null;
+  for (const [key, motion] of Object.entries(value.motion))
+    if (
+      !id(key) ||
+      !finite(value.values[key]) ||
+      !closed(motion, ["target_velocity", "slew_per_s", "stop_after_s"]) ||
+      !finite(motion.target_velocity) ||
+      !finite(motion.slew_per_s) ||
+      motion.slew_per_s <= 0 ||
+      !(
+        motion.stop_after_s === null ||
+        (finite(motion.stop_after_s) && motion.stop_after_s >= 0)
+      )
+    )
+      return null;
   return value;
 }
 

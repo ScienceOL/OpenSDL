@@ -1,0 +1,62 @@
+[
+  {
+    "name": "start",
+    "rpm": 0,
+    "target_rpm": 600,
+    "slew_rpm_s": 300,
+    "seconds": 1,
+    "stop_after_s": null,
+    "ratio": 1,
+    "expected_radians": 15.707963267948966
+  },
+  {
+    "name": "cruise",
+    "rpm": 0,
+    "target_rpm": 600,
+    "slew_rpm_s": 300,
+    "seconds": 5,
+    "stop_after_s": null,
+    "ratio": 1,
+    "expected_radians": 251.32741228718345
+  },
+  {
+    "name": "stop",
+    "rpm": 600,
+    "target_rpm": 0,
+    "slew_rpm_s": 300,
+    "seconds": 5,
+    "stop_after_s": null,
+    "ratio": 1,
+    "expected_radians": 62.83185307179586
+  },
+  {
+    "name": "geared stop",
+    "rpm": 600,
+    "target_rpm": 0,
+    "slew_rpm_s": 300,
+    "seconds": 5,
+    "stop_after_s": null,
+    "ratio": -0.75,
+    "expected_radians": -47.12388980384689
+  },
+  {
+    "name": "capacity during ramp",
+    "rpm": 0,
+    "target_rpm": 600,
+    "slew_rpm_s": 300,
+    "seconds": 5,
+    "stop_after_s": 1,
+    "ratio": 1,
+    "expected_radians": 31.41592653589793
+  },
+  {
+    "name": "capacity after cruise",
+    "rpm": 300,
+    "target_rpm": 300,
+    "slew_rpm_s": 100,
+    "seconds": 5,
+    "stop_after_s": 1,
+    "ratio": 1,
+    "expected_radians": 78.53981633974483
+  }
+]

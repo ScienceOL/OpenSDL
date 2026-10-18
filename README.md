@@ -366,3 +366,21 @@ Camera credentials remain on the selected device. FFmpeg receives its scoped
 short-lived ingest URL in its process arguments; operators of multi-user hosts
 must restrict local process inspection to the trusted device account. Diagnostic
 logs emit fixed error categories and never raw FFmpeg stderr or target URLs.
+
+### Instrument observations and motion
+
+Runtime and instrument SDK 0.5 use `model_state.schema_version: 2`. The current
+observation contains `model_id`, `run_id`, `revision`, `time_s`, scalar `values`
+and a required `motion` map. Static instruments have an empty motion map. Each
+continuous joint's declared `velocity_state` names a profile containing
+`target_velocity` (rad/s), positive `slew_per_s` (rad/s²), and `stop_after_s`
+(seconds until automatic stopping begins, or `null`). Profiles are bound to
+numeric observed velocities. Version 1 observations are rejected.
+
+All eight rotating instrument kinds use the same exact rate-limited motor
+integral. The SDK integrates that trajectory only within the host's bounded
+observation window, including geared counter-rotation and a pump's known
+capacity cutoff followed by coasting. New observations reset the prediction.
+Predicted transforms never change measured readouts. The portable asset's
+structure declaration remains schema 1; no meshes or dimensions are rescaled
+to animate a device.

@@ -292,6 +292,9 @@ impl RotavapState {
                 self.pressure,
             )
     }
+    pub fn motion(&self) -> Value {
+        json!({"flask_rad_s": self.motor.motion(1.0, None)})
+    }
     pub fn values(&self) -> Value {
         json!({
             "rpm":self.motor.rpm,

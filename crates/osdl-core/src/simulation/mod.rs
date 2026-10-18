@@ -363,10 +363,21 @@ impl InstrumentState {
             Self::Vacuum(s) => (&s.config.model_id, s.values()),
             Self::PH(s) => (&s.config.model_id, s.values()),
         };
+        let motion = match self {
+            Self::Stirrer(s) => s.motion(),
+            Self::Centrifuge(s) => s.motion(),
+            Self::Vortex(s) => s.motion(),
+            Self::Orbital(s) => s.motion(),
+            Self::Roller(s) => s.motion(),
+            Self::Overhead(s) => s.motion(),
+            Self::Peristaltic(s) => s.motion(),
+            Self::Rotavap(s) => s.motion(),
+            _ => serde_json::json!({}),
+        };
         HashMap::from([(
             "model_state".into(),
-            serde_json::json!({"schema_version":1,"model_id":model_id,
-            "run_id":run,"revision":revision,"time_s":time,"values":values}),
+            serde_json::json!({"schema_version":2,"model_id":model_id,
+            "run_id":run,"revision":revision,"time_s":time,"values":values,"motion":motion}),
         )])
     }
 }

@@ -1,4 +1,5 @@
 import { Quaternion, Vector3 } from "three";
+import { motionDistance } from "./motion.js";
 
 import {
   parseModel,
@@ -113,7 +114,11 @@ export function bindInstrument(root, { predictionWindowSeconds = 0.25 } = {}) {
         );
       for (const j of definition.joints)
         if (j.kind === "continuous")
-          requireValue(finite(state.values[j.velocity_state]), "joint speed");
+          requireValue(
+            finite(state.values[j.velocity_state]) &&
+              state.motion[j.velocity_state],
+            "joint motion",
+          );
       for (const s of scaling)
         requireValue(
           finite(state.values[s.binding.state]) &&
@@ -143,7 +148,11 @@ export function bindInstrument(root, { predictionWindowSeconds = 0.25 } = {}) {
           pose(
             j,
             observation.values[j.state] +
-              observation.values[j.velocity_state] * elapsed,
+              motionDistance(
+                observation.values[j.velocity_state],
+                observation.motion[j.velocity_state],
+                elapsed,
+              ),
           );
     },
     inspect(jointId, value) {

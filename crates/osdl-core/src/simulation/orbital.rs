@@ -109,6 +109,9 @@ impl OrbitalState {
         self.motor.advance(dt) > 0.0
     }
 
+    pub fn motion(&self) -> Value {
+        json!({"orbit_rad_s": self.motor.motion(1.0, None), "platform_rad_s": self.motor.motion(-1.0, None)})
+    }
     pub fn values(&self) -> Value {
         let velocity = self.motor.velocity();
         json!({

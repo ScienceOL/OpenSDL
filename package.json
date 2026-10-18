@@ -1,6 +1,6 @@
 {
   "name": "@opensdl/instrument-model",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Portable OpenSDL instrument structure and Three.js bindings",
   "type": "module",
   "license": "MIT",
@@ -18,6 +18,7 @@
     "web/instrument-model/index.js",
     "web/instrument-model/contract.js",
     "web/instrument-model/readouts.js",
+    "web/instrument-model/motion.js",
     "web/instrument-model/index.d.ts",
     "web/instrument-model/contract.d.ts"
   ],

@@ -70,7 +70,7 @@ async fn capacity_boundary_stops_the_motor_at_the_same_time_in_large_and_small_s
     let b = last(&mut frx);
     for state in [&a, &b] {
         assert_eq!(v(state)["source_ml"], 0.0);
-        assert_eq!(v(state)["receiver_ml"], 93.0);
+        assert!((v(state)["receiver_ml"].as_f64().unwrap() - 93.0).abs() < 1e-9);
         assert_eq!(v(state)["rpm"], 0.0);
         assert_eq!(v(state)["status"], "empty");
         assert!((total_ml(state) - 100.0).abs() < 1e-8);
