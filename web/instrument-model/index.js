@@ -10,7 +10,11 @@ import {
 export { parseModel, parseModelState, formatReadout } from "./contract.js";
 
 /** A binding owns only instance transforms. Geometry/material lifetimes belong to the host. */
-export function bindInstrument(root) {
+export function bindInstrument(root, { predictionWindowSeconds = 0.25 } = {}) {
+  requireValue(
+    finite(predictionWindowSeconds) && predictionWindowSeconds >= 0,
+    "invalid prediction window",
+  );
   let declaration;
   const parts = new Map();
   root.traverse((node) => {
@@ -130,8 +134,8 @@ export function bindInstrument(root) {
     },
     animate(dt) {
       if (!observation || !finite(dt) || dt <= 0) return;
-      // Predict at most 250 ms from an actual observation. Offline/stalled transport cannot spin forever.
-      const next = Math.min(0.25, elapsed + dt);
+      // The host supplies its observation window; stalled transport cannot spin forever.
+      const next = Math.min(predictionWindowSeconds, elapsed + dt);
       if (next === elapsed) return;
       elapsed = next;
       for (const j of definition.joints)
