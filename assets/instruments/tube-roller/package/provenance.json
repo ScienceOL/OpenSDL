@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.tr60",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL generic design. Five parallel rollers, 60 rpm maximum and 30 rpm/s slew. The tube rotates opposite the rollers with a 12:16 radius ratio. Motion is prescribed no-slip kinematics; contact, wobble and mixing efficiency are not solved.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/tube-roller/model.yaml": "ae4d08e6024460f2a5d94ee45283fdc72db1bc9f6cf77927502d82debe79d8af",
+    "assets/instruments/tube-roller/SOURCE.md": "836cc1eb416bf42f5468240e703c4c8bbc4d9dd1d9e7f00b018e5364e704750a",
+    "assets/instruments/tube-roller/geometry.py": "6fb162cc6ddac1766116568e128d6972d5a4169a891232115b0402e60c89f422",
+    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

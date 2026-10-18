@@ -1,0 +1,110 @@
+{
+  "id": "opensdl.tr60",
+  "name": "TR 60 Tube Roller",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.32045,
+    0.2113,
+    0.10598
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design. Five parallel rollers, 60 rpm maximum and 30 rpm/s slew. The tube rotates opposite the rollers with a 12:16 radius ratio. Motion is prescribed no-slip kinematics; contact, wobble and mixing efficiency are not solved.",
+  "runtime": {
+    "kind": "tube_roller",
+    "model_id": "opensdl.tr60",
+    "max_rpm": 60.0,
+    "slew_rpm_s": 30.0,
+    "roller_radius_m": 0.012,
+    "tube_radius_m": 0.016,
+    "sample_id": "roller_tube"
+  },
+  "samples": [
+    {
+      "id": "roller_tube",
+      "mass_kg": 0.04,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.016
+    }
+  ],
+  "role": "stirrer",
+  "actions": [
+    {
+      "name": "load_tube",
+      "description": "Load tube",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_tube",
+      "description": "Unload tube",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_speed",
+      "description": "Set target motor speed",
+      "params": {
+        "type": "object",
+        "properties": {
+          "rpm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "rpm"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "tube-roller",
+  "device_id": "tube-roller-1"
+}

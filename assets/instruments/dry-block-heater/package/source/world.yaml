@@ -1,0 +1,129 @@
+{
+  "world_id": "dry-block-heater",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "dry_block_tubes",
+      "mass_kg": 0.018,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.07
+    }
+  ],
+  "devices": [
+    {
+      "id": "dry-block-heater-1",
+      "device_type": "simulation.dry_block_heater",
+      "role": "heater",
+      "description": "DB 6 Dry Block Heater",
+      "actions": [
+        {
+          "name": "lid",
+          "description": "Lid",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_sample",
+          "description": "Load sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_sample",
+          "description": "Unload sample",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set block temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 22,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "dry-block-heater",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "dry_block_heater",
+        "model_id": "opensdl.db6",
+        "ambient_c": 22.0,
+        "max_c": 100.0,
+        "heater_w": 150.0,
+        "chamber_capacity_j_k": 600.0,
+        "sample_capacity_j_k": 60.0,
+        "exchange_w_k": 3.0,
+        "loss_w_k": 0.3,
+        "opening_rad": 1.7,
+        "sample_id": "dry_block_tubes",
+        "sample_radius_m": 0.08
+      }
+    }
+  ]
+}

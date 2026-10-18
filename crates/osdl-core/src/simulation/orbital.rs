@@ -1,5 +1,5 @@
 //! Original level-platform orbital shaker. Prescribed motion, not fluid/contact dynamics.
-use super::{thermal, SampleInventory};
+use super::{motor::Motor, thermal, SampleInventory};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -35,31 +35,17 @@ impl OrbitalConfig {
 #[derive(Debug, Clone)]
 pub struct OrbitalState {
     pub config: OrbitalConfig,
-    target: f64,
-    rpm: f64,
-    angle: f64,
+    motor: Motor,
     loaded: bool,
     secured: bool,
-    running: bool,
 }
 impl OrbitalState {
     pub fn new(config: OrbitalConfig) -> Self {
         Self {
+            motor: Motor::new(config.max_rpm, config.slew_rpm_s),
             config,
-            target: 0.0,
-            rpm: 0.0,
-            angle: 0.0,
             loaded: false,
             secured: false,
-            running: false,
-        }
-    }
-
-    fn require_stopped(&self) -> Result<(), String> {
-        if self.running || self.rpm > 0.0 {
-            Err("MOTOR_MOVING".into())
-        } else {
-            Ok(())
         }
     }
 
@@ -71,10 +57,10 @@ impl OrbitalState {
         samples: &mut SampleInventory,
     ) -> Result<(), String> {
         match action {
-            "set_speed" => self.target = thermal::number(params, "rpm", 0.0, self.config.max_rpm)?,
+            "set_speed" => self.motor.set_speed(params)?,
             "load_flask" | "unload_flask" => {
                 thermal::empty(params)?;
-                self.require_stopped()?;
+                self.motor.require_stopped()?;
                 if self.secured {
                     return Err("UNCLAMP_SAMPLE_FIRST".into());
                 }
@@ -88,7 +74,7 @@ impl OrbitalState {
             }
             "clamp" => {
                 thermal::empty(params)?;
-                self.require_stopped()?;
+                self.motor.require_stopped()?;
                 if !self.loaded {
                     return Err("LOAD_SAMPLE_FIRST".into());
                 }
@@ -96,24 +82,21 @@ impl OrbitalState {
             }
             "start" => {
                 thermal::empty(params)?;
-                if self.target <= 0.0 {
-                    return Err("SET_SPEED_FIRST".into());
-                }
                 if !self.loaded {
                     return Err("LOAD_SAMPLE_FIRST".into());
                 }
                 if !self.secured {
                     return Err("SECURE_SAMPLE_FIRST".into());
                 }
-                self.running = true;
+                self.motor.start()?;
             }
             "stop" => {
                 thermal::empty(params)?;
-                self.running = false;
+                self.motor.running = false;
             }
             "reset" => {
                 thermal::empty(params)?;
-                self.require_stopped()?;
+                self.motor.require_stopped()?;
                 samples.release_device(device);
                 *self = Self::new(self.config.clone());
             }
@@ -123,27 +106,19 @@ impl OrbitalState {
     }
 
     pub fn advance(&mut self, dt: f64) -> bool {
-        let target = if self.running { self.target } else { 0.0 };
-        let before = self.rpm;
-        self.rpm = thermal::approach(before, target, self.config.slew_rpm_s, dt);
-        // Integrate the ramp and any remaining constant-speed segment exactly.
-        let ramp_s = (target - before).abs() / self.config.slew_rpm_s;
-        let ramp_s = ramp_s.min(dt);
-        let turns = ((before + self.rpm) * 0.5 * ramp_s + self.rpm * (dt - ramp_s)) / 60.0;
-        self.angle = (self.angle + turns * std::f64::consts::TAU).rem_euclid(std::f64::consts::TAU);
-        before > 0.0 || self.rpm > 0.0
+        self.motor.advance(dt) > 0.0
     }
 
     pub fn values(&self) -> Value {
-        let velocity = self.rpm * std::f64::consts::TAU / 60.0;
+        let velocity = self.motor.velocity();
         json!({
-            "rpm": self.rpm, "target_rpm": self.target,
-            "orbit_rad": self.angle, "orbit_rad_s": velocity,
-            "platform_rad": -self.angle, "platform_rad_s": -velocity,
-            "speed_dial_rad": self.target / self.config.max_rpm * std::f64::consts::TAU * 0.75,
+            "rpm": self.motor.rpm, "target_rpm": self.motor.target,
+            "orbit_rad": self.motor.angle, "orbit_rad_s": velocity,
+            "platform_rad": -self.motor.angle, "platform_rad_s": -velocity,
+            "speed_dial_rad": self.motor.dial(),
             "clamp_rad": if self.secured { 0.0 } else { 0.35 },
-            "flask_visible": self.loaded, "secured": self.secured, "running": self.running,
-            "status": if self.running { "running" } else if self.rpm > 0.0 { "decelerating" } else { "idle" }
+            "flask_visible": self.loaded, "secured": self.secured, "running": self.motor.running,
+            "status": self.motor.status()
         })
     }
 }
