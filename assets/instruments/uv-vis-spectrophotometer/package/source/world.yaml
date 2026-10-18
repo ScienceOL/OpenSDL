@@ -1,0 +1,160 @@
+{
+  "world_id": "uv-vis-spectrophotometer",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "uv_blank",
+      "mass_kg": 0.006,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.009
+    },
+    {
+      "id": "uv_sample",
+      "mass_kg": 0.006,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.009
+    }
+  ],
+  "devices": [
+    {
+      "id": "uv-vis-spectrophotometer-1",
+      "device_type": "simulation.uv_vis_spectrophotometer",
+      "role": "sensor",
+      "description": "UV 10 Spectrophotometer",
+      "actions": [
+        {
+          "name": "power",
+          "description": "Toggle lamp power",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "lid",
+          "description": "Open or close sample compartment",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_cuvette",
+          "description": "Remove cuvette",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "blank",
+          "description": "Acquire synthetic blank reference",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "measure",
+          "description": "Acquire synthetic sample spectrum point",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset test fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_cuvette",
+          "description": "Insert synthetic blank or sample",
+          "params": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "blank",
+                  "sample"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_wavelength",
+          "description": "Set wavelength and invalidate the prior blank",
+          "params": {
+            "type": "object",
+            "properties": {
+              "wavelength_nm": {
+                "type": "number",
+                "minimum": 190,
+                "maximum": 900
+              }
+            },
+            "required": [
+              "wavelength_nm"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "uv-vis-spectrophotometer",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "uv_vis_spectrophotometer",
+        "model_id": "opensdl.uv10",
+        "warmup_s": 3.0,
+        "wavelength_min_nm": 190.0,
+        "wavelength_max_nm": 900.0,
+        "path_m": 0.01,
+        "peak_nm": 520.0,
+        "width_nm": 45.0,
+        "peak_absorbance": 1.15,
+        "baseline_absorbance": 0.05,
+        "opening_rad": 1.75,
+        "blank_id": "uv_blank",
+        "sample_id": "uv_sample",
+        "sample_radius_m": 0.015
+      }
+    }
+  ]
+}

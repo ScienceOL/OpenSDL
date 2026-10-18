@@ -1,0 +1,7 @@
+# TC 8 thermal cycler: original design
+
+Independent generic instrument continuing OpenSDL 33912808a56d7064c016cf8f0ac36ce7c82a8a30. No third-party CAD, meshes, textures, generator, manufacturer dimensions or assay protocol is used. Eight actual blind wells have a retained floor; the tube strip seats in them. A rear-supported heated lid and independent front latch follow separate pivots.
+
+The declared demonstration program repeats 95, 60 and 72 C holds of 5 s, with 1–10 bounded repeats. It is not a biological protocol. Separate block and sample energy stores produce finite ramp and lag. A hold counts only while the sample is within 1 C of its target and the lid is within 10 C of its target. The cover has its own declared thermal store and heater; cover locking is required before execution. Completion or abort actively cools the block before stopping. Unlocking/opening/removal is blocked while active or hot; resetting cannot erase residual heat. No DNA amplification, measured uniformity, yield, cooling qualification or real-device temperature calibration is claimed.
+
+Models, parameters and model-specific geometry/assets use CC BY-NC 4.0, attribution OpenSDL / LiyanLabs. General runtime/exporter retains its license. Internal geometry identifiers are inert. Build with pinned Blender 4.5.3 and tools/instrument-models/build_catalog.py. Release compatibility, Hub publication and actual Dev/mobile acceptance remain open.

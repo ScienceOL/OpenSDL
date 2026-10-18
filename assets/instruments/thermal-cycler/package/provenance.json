@@ -1,0 +1,19 @@
+{
+  "model": "opensdl.tc8",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL eight-well thermal block, tube strip, heated hinged lid and independent latch. Bounded demonstration 95/60/72 C schedule, sample lag, temperature-qualified holds, active final cooling and hot-cover interlocks. No DNA amplification, yield or assay protocol claim.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/thermal-cycler/model.yaml": "98965627229f7fafb240e88cd58f0cbc0e2d465c8a1e615e4484f860082c3259",
+    "assets/instruments/thermal-cycler/SOURCE.md": "788db23ab6fe845533edcb30b2ed76199c8114bdf1531b6ba16a9e6cac4cd62e",
+    "assets/instruments/thermal-cycler/geometry.py": "080f89f73ed462f0bb4eb1f3f8dac9b3c322015f82a883ea21eebba973e652d2",
+    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
+    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

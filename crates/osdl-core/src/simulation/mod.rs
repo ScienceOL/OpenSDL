@@ -2,17 +2,21 @@ pub mod balance;
 pub mod basic;
 pub mod centrifuge;
 pub mod chamber;
+pub mod conductivity;
+pub mod cycler;
 mod motor;
 pub mod orbital;
 pub mod overhead;
 pub mod peristaltic;
 pub mod ph;
 pub mod pipette;
+pub mod refrigerator;
 pub mod roller;
 pub mod stirrer;
 pub mod syringe;
 pub mod thermal;
 pub mod ultrasonic;
+pub mod uvvis;
 pub mod vacuum;
 pub mod vortex;
 pub mod world;
@@ -28,6 +32,7 @@ pub enum InstrumentConfig {
     WaterBath(chamber::ChamberConfig),
     DryingOven(chamber::ChamberConfig),
     DryBlockHeater(chamber::ChamberConfig),
+    LaboratoryRefrigerator(refrigerator::RefrigeratorConfig),
     Centrifuge(centrifuge::CentrifugeConfig),
     VortexMixer(vortex::VortexConfig),
     OrbitalShaker(orbital::OrbitalConfig),
@@ -35,6 +40,9 @@ pub enum InstrumentConfig {
     OverheadStirrer(overhead::OverheadConfig),
     UltrasonicCleaner(ultrasonic::UltrasonicConfig),
     PeristalticPump(peristaltic::PeristalticConfig),
+    ConductivityMeter(conductivity::ConductivityConfig),
+    UvVisSpectrophotometer(uvvis::UvVisConfig),
+    ThermalCycler(cycler::CyclerConfig),
     Pipette(pipette::PipetteConfig),
     SyringePump(syringe::SyringeConfig),
     VacuumPump(vacuum::VacuumConfig),
@@ -55,6 +63,7 @@ impl InstrumentConfig {
             }
             Self::DryingOven(c) => c.validate(),
             Self::DryBlockHeater(c) => c.validate(),
+            Self::LaboratoryRefrigerator(c) => c.validate(),
             Self::Centrifuge(c) => c.validate(),
             Self::VortexMixer(c) => c.validate(),
             Self::OrbitalShaker(c) => c.validate(),
@@ -62,6 +71,9 @@ impl InstrumentConfig {
             Self::OverheadStirrer(c) => c.validate(),
             Self::UltrasonicCleaner(c) => c.validate(),
             Self::PeristalticPump(c) => c.validate(),
+            Self::ConductivityMeter(c) => c.validate(),
+            Self::UvVisSpectrophotometer(c) => c.validate(),
+            Self::ThermalCycler(c) => c.validate(),
             Self::Pipette(c) => c.validate(),
             Self::SyringePump(c) => c.validate(),
             Self::VacuumPump(c) => c.validate(),
@@ -75,6 +87,7 @@ impl InstrumentConfig {
             Self::WaterBath(c) => &c.model_id,
             Self::DryingOven(c) => &c.model_id,
             Self::DryBlockHeater(c) => &c.model_id,
+            Self::LaboratoryRefrigerator(c) => &c.model_id,
             Self::Centrifuge(c) => &c.model_id,
             Self::VortexMixer(c) => &c.model_id,
             Self::OrbitalShaker(c) => &c.model_id,
@@ -82,6 +95,9 @@ impl InstrumentConfig {
             Self::OverheadStirrer(c) => &c.model_id,
             Self::UltrasonicCleaner(c) => &c.model_id,
             Self::PeristalticPump(c) => &c.model_id,
+            Self::ConductivityMeter(c) => &c.model_id,
+            Self::UvVisSpectrophotometer(c) => &c.model_id,
+            Self::ThermalCycler(c) => &c.model_id,
             Self::Pipette(c) => &c.model_id,
             Self::SyringePump(c) => &c.model_id,
             Self::VacuumPump(c) => &c.model_id,
@@ -185,9 +201,13 @@ pub enum InstrumentState {
     Vortex(vortex::VortexState),
     Orbital(orbital::OrbitalState),
     Roller(roller::RollerState),
+    Refrigerator(refrigerator::RefrigeratorState),
     Overhead(overhead::OverheadState),
     Ultrasonic(ultrasonic::UltrasonicState),
     Peristaltic(peristaltic::PeristalticState),
+    Conductivity(conductivity::ConductivityState),
+    UvVis(uvvis::UvVisState),
+    Cycler(cycler::CyclerState),
     Pipette(pipette::PipetteState),
     Syringe(syringe::SyringeState),
     Vacuum(vacuum::VacuumState),
@@ -207,6 +227,9 @@ impl InstrumentState {
             InstrumentConfig::DryBlockHeater(c) => {
                 Self::Chamber(chamber::ChamberState::new(c.clone()))
             }
+            InstrumentConfig::LaboratoryRefrigerator(c) => {
+                Self::Refrigerator(refrigerator::RefrigeratorState::new(c.clone()))
+            }
             InstrumentConfig::Centrifuge(c) => {
                 Self::Centrifuge(centrifuge::CentrifugeState::new(c.clone()))
             }
@@ -224,6 +247,13 @@ impl InstrumentState {
             InstrumentConfig::PeristalticPump(c) => {
                 Self::Peristaltic(peristaltic::PeristalticState::new(c.clone()))
             }
+            InstrumentConfig::ConductivityMeter(c) => {
+                Self::Conductivity(conductivity::ConductivityState::new(c.clone()))
+            }
+            InstrumentConfig::UvVisSpectrophotometer(c) => {
+                Self::UvVis(uvvis::UvVisState::new(c.clone()))
+            }
+            InstrumentConfig::ThermalCycler(c) => Self::Cycler(cycler::CyclerState::new(c.clone())),
             InstrumentConfig::Pipette(c) => Self::Pipette(pipette::PipetteState::new(c.clone())),
             InstrumentConfig::SyringePump(c) => {
                 Self::Syringe(syringe::SyringeState::new(c.clone()))
@@ -247,9 +277,13 @@ impl InstrumentState {
             Self::Vortex(s) => s.apply(device, action, params, samples),
             Self::Orbital(s) => s.apply(device, action, params, samples),
             Self::Roller(s) => s.apply(device, action, params, samples),
+            Self::Refrigerator(s) => s.apply(device, action, params, samples),
             Self::Overhead(s) => s.apply(device, action, params, samples),
             Self::Ultrasonic(s) => s.apply(device, action, params, samples),
             Self::Peristaltic(s) => s.apply(device, action, params, samples),
+            Self::Conductivity(s) => s.apply(device, action, params, samples),
+            Self::UvVis(s) => s.apply(device, action, params, samples),
+            Self::Cycler(s) => s.apply(device, action, params, samples),
             Self::Pipette(s) => s.apply(device, action, params, samples),
             Self::Syringe(s) => s.apply(device, action, params, samples),
             Self::Vacuum(s) => s.apply(device, action, params, samples),
@@ -265,9 +299,13 @@ impl InstrumentState {
             Self::Vortex(s) => s.advance(dt),
             Self::Orbital(s) => s.advance(dt),
             Self::Roller(s) => s.advance(dt),
+            Self::Refrigerator(s) => s.advance(dt),
             Self::Overhead(s) => s.advance(dt),
             Self::Ultrasonic(s) => s.advance(dt),
             Self::Peristaltic(s) => s.advance(dt),
+            Self::Conductivity(s) => s.advance(dt),
+            Self::UvVis(s) => s.advance(dt),
+            Self::Cycler(s) => s.advance(dt),
             Self::Pipette(s) => s.advance(dt),
             Self::Syringe(s) => s.advance(dt),
             Self::Vacuum(s) => s.advance(dt),
@@ -290,9 +328,13 @@ impl InstrumentState {
             Self::Vortex(s) => (&s.config.model_id, s.values()),
             Self::Orbital(s) => (&s.config.model_id, s.values()),
             Self::Roller(s) => (&s.config.model_id, s.values()),
+            Self::Refrigerator(s) => (&s.config.model_id, s.values()),
             Self::Overhead(s) => (&s.config.model_id, s.values()),
             Self::Ultrasonic(s) => (&s.config.model_id, s.values()),
             Self::Peristaltic(s) => (&s.config.model_id, s.values()),
+            Self::Conductivity(s) => (&s.config.model_id, s.values()),
+            Self::UvVis(s) => (&s.config.model_id, s.values()),
+            Self::Cycler(s) => (&s.config.model_id, s.values()),
             Self::Pipette(s) => (&s.config.model_id, s.values()),
             Self::Syringe(s) => (&s.config.model_id, s.values()),
             Self::Vacuum(s) => (&s.config.model_id, s.values()),

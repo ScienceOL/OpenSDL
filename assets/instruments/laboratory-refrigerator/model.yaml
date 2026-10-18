@@ -1,0 +1,126 @@
+{
+  "id": "opensdl.lr88",
+  "name": "LR 88 Laboratory Refrigerator",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.5,
+    0.556,
+    0.82
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.055
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic insulated cabinet with a supported hinged door, gasket, two wire shelves and removable synthetic vial rack. Declared 90 W proportional cooling, compartment/sample thermal lag and door-open recovery. No cold-chain qualification, compressor refrigerant cycle or temperature-uniformity claim.",
+  "runtime": {
+    "kind": "laboratory_refrigerator",
+    "model_id": "opensdl.lr88",
+    "ambient_c": 22.0,
+    "min_c": 2.0,
+    "max_c": 10.0,
+    "cooling_w": 90.0,
+    "chamber_capacity_j_k": 8000.0,
+    "sample_capacity_j_k": 500.0,
+    "exchange_w_k": 2.5,
+    "loss_w_k": 1.2,
+    "opening_rad": 1.65,
+    "sample_id": "refrigerator_rack",
+    "sample_radius_m": 0.18
+  },
+  "samples": [
+    {
+      "id": "refrigerator_rack",
+      "mass_kg": 0.12,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.15
+    }
+  ],
+  "role": "cooler",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Open or close cabinet door",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_sample",
+      "description": "Place vial rack on shelf",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_sample",
+      "description": "Remove vial rack",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Enable cooling",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Disable cooling",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset ambient test fixture",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_temperature",
+      "description": "Set compartment temperature",
+      "params": {
+        "type": "object",
+        "properties": {
+          "temperature_c": {
+            "type": "number",
+            "minimum": 2,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "temperature_c"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "laboratory-refrigerator",
+  "device_id": "laboratory-refrigerator-1"
+}

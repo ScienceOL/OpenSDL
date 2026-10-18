@@ -448,3 +448,116 @@ test("ultrasonic tank water volume matches thermal parameters and the basket res
   assert.ok(Math.abs(half.min.y - 0.082) < 1e-6);
   assert.ok(Math.abs(half.getSize(new Vector3()).y - 0.0375) < 1e-6);
 });
+
+test("refrigerator rack rests on its wire shelf and the supported door opens out of the cavity", async () => {
+  const { Raycaster } = await import("three");
+  const root = await load("laboratory-refrigerator"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, { lid_rad: 0, sample_visible: true });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const rack = new Box3().setFromObject(binding.parts.get("sample"));
+  assert.ok(Math.abs(rack.min.y - 0.347) < 1e-6);
+  assert.ok(rack.min.x > -0.19 && rack.max.x < 0.19);
+  const ray = new Raycaster(
+    new Vector3(0, 0.6, 0.5),
+    new Vector3(0, 0, -1),
+    0,
+    1,
+  );
+  const hit = ray.intersectObject(binding.parts.get("body"), true)[0];
+  assert.ok(
+    hit && hit.point.z < -0.18,
+    "working cavity must be clear to its rear panel",
+  );
+  state.values.lid_rad = 1.65;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  assert.ok(new Box3().setFromObject(binding.parts.get("lid")).max.z > 0.65);
+});
+
+test("conductivity cell clears the vessel rim when raised and reaches its declared 100mL liquid", async () => {
+  const root = await load("conductivity-meter"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, { probe_m: 0, sample_visible: true });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const vessel = new Box3().setFromObject(binding.parts.get("sample")),
+    raised = new Box3().setFromObject(binding.parts.get("probe"));
+  assert.ok(raised.min.y > vessel.max.y + 0.003);
+  state.values.probe_m = -0.08;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const lowered = new Box3().setFromObject(binding.parts.get("probe"));
+  assert.ok(lowered.min.y > 0.012 && lowered.min.y < 0.05);
+  let liquid;
+  binding.parts.get("sample").traverse((n) => {
+    if (n.isMesh && n.material.name === "Water") liquid = n;
+  });
+  assert.ok(liquid);
+  assert.ok(Math.abs(meshVolume(liquid) * 1e6 - 100) < 0.3);
+});
+
+test("spectrophotometer cuvette has a true 10mm hollow path and a cover that clears the cell", async () => {
+  const { Raycaster } = await import("three");
+  const root = await load("uv-vis-spectrophotometer"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, { lid_rad: 0, cuvette_visible: true });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const ray = new Raycaster(
+    new Vector3(0.08, 0.119, -0.02),
+    new Vector3(1, 0, 0),
+    0,
+    0.02,
+  );
+  const hit = ray.intersectObject(binding.parts.get("cuvette"), true)[0];
+  assert.ok(
+    hit && Math.abs(hit.point.x - 0.085) < 1e-6,
+    "inner optical cell face is 5mm from centre",
+  );
+  const lid = binding.parts.get("lid");
+  state.values.lid_rad = 1.75;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  assert.ok(new Box3().setFromObject(lid).max.y > 0.34);
+});
+
+test("thermal cycler wells support the tube strip and its heated cover meets the cap plane", async () => {
+  const { Raycaster } = await import("three");
+  const root = await load("thermal-cycler"),
+    binding = bindInstrument(root),
+    state = observation(binding);
+  Object.assign(state.values, {
+    lid_rad: 0,
+    latch_rad: 0,
+    sample_visible: true,
+  });
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  const sample = new Box3().setFromObject(binding.parts.get("sample"));
+  assert.ok(Math.abs(sample.min.y - 0.139) < 1e-6);
+  const well = new Raycaster(
+    new Vector3(-0.0525, 0.18, 0.0025),
+    new Vector3(0, -1, 0),
+    0,
+    0.1,
+  ).intersectObject(binding.parts.get("body"), true)[0];
+  assert.ok(
+    well && Math.abs(well.point.y - 0.139) < 1e-6,
+    "well has a 9mm retained floor supporting the tube",
+  );
+  const cover = new Box3().setFromObject(binding.parts.get("lid"));
+  assert.ok(
+    Math.abs(cover.min.y - sample.max.y) < 1e-6,
+    "heated underside contacts the closed cap plane",
+  );
+  state.values.lid_rad = 1.7;
+  state.values.latch_rad = Math.PI / 2;
+  binding.apply(state);
+  root.updateMatrixWorld(true);
+  assert.ok(new Box3().setFromObject(binding.parts.get("lid")).max.y > 0.36);
+});

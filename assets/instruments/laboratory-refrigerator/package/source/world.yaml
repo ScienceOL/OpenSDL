@@ -1,0 +1,130 @@
+{
+  "world_id": "laboratory-refrigerator",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "refrigerator_rack",
+      "mass_kg": 0.12,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.15
+    }
+  ],
+  "devices": [
+    {
+      "id": "laboratory-refrigerator-1",
+      "device_type": "simulation.laboratory_refrigerator",
+      "role": "cooler",
+      "description": "LR 88 Laboratory Refrigerator",
+      "actions": [
+        {
+          "name": "lid",
+          "description": "Open or close cabinet door",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_sample",
+          "description": "Place vial rack on shelf",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_sample",
+          "description": "Remove vial rack",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Enable cooling",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Disable cooling",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset ambient test fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set compartment temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 2,
+                "maximum": 10
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "laboratory-refrigerator",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "laboratory_refrigerator",
+        "model_id": "opensdl.lr88",
+        "ambient_c": 22.0,
+        "min_c": 2.0,
+        "max_c": 10.0,
+        "cooling_w": 90.0,
+        "chamber_capacity_j_k": 8000.0,
+        "sample_capacity_j_k": 500.0,
+        "exchange_w_k": 2.5,
+        "loss_w_k": 1.2,
+        "opening_rad": 1.65,
+        "sample_id": "refrigerator_rack",
+        "sample_radius_m": 0.18
+      }
+    }
+  ]
+}

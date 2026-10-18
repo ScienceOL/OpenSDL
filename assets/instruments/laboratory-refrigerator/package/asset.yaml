@@ -1,0 +1,54 @@
+{
+  "apiVersion": "assets.opensdl.org/v1alpha1",
+  "kind": "VirtualAsset",
+  "metadata": {
+    "name": "laboratory-refrigerator",
+    "displayName": "LR 88 Laboratory Refrigerator",
+    "version": "1.0.0",
+    "description": "Original OpenSDL generic insulated cabinet with a supported hinged door, gasket, two wire shelves and removable synthetic vial rack. Declared 90 W proportional cooling, compartment/sample thermal lag and door-open recovery. No cold-chain qualification, compressor refrigerant cycle or temperature-uniformity claim.",
+    "tags": [
+      "original",
+      "cooler"
+    ],
+    "license": {
+      "spdx": "CC-BY-NC-4.0",
+      "file": "LICENSE"
+    }
+  },
+  "spec": {
+    "type": "instrument",
+    "source": {
+      "format": "openusd",
+      "root": "source/model.usda"
+    },
+    "preview": {
+      "model": "preview.glb",
+      "thumbnail": "thumbnail.png"
+    },
+    "capabilities": [
+      "visual",
+      "simulation",
+      "opensdl-device"
+    ],
+    "bindings": {
+      "deviceTypes": [
+        "simulation.laboratory_refrigerator"
+      ]
+    },
+    "compatibility": {
+      "runtimes": [
+        {
+          "name": "opensdl",
+          "versions": [
+            ">=0.4.0"
+          ],
+          "status": "expected"
+        }
+      ]
+    },
+    "runtime": {
+      "engine": "kinematic",
+      "config": "source/world.yaml"
+    }
+  }
+}

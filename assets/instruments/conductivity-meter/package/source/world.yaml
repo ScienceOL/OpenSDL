@@ -1,0 +1,147 @@
+{
+  "world_id": "conductivity-meter",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "conductivity_vessel",
+      "mass_kg": 0.1,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.03
+    }
+  ],
+  "devices": [
+    {
+      "id": "conductivity-meter-1",
+      "device_type": "simulation.conductivity_meter",
+      "role": "sensor",
+      "description": "EC 2 Conductivity Meter",
+      "actions": [
+        {
+          "name": "power",
+          "description": "Toggle meter power",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "probe",
+          "description": "Raise or immerse probe",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "load_sample",
+          "description": "Load synthetic solution vessel",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_sample",
+          "description": "Remove solution vessel",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "calibrate",
+          "description": "Calibrate against synthetic 1413 uS/cm standard",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset test fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_solution",
+          "description": "Select synthetic solution with probe raised",
+          "params": {
+            "type": "object",
+            "properties": {
+              "solution": {
+                "type": "string",
+                "enum": [
+                  "standard",
+                  "sample"
+                ]
+              }
+            },
+            "required": [
+              "solution"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set synthetic solution temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 5,
+                "maximum": 40
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "conductivity-meter",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "conductivity_meter",
+        "model_id": "opensdl.ec2",
+        "response_s": 2.0,
+        "probe_travel_m": 0.08,
+        "standard_25_us_cm": 1413.0,
+        "sample_25_us_cm": 800.0,
+        "temperature_coefficient": 0.02,
+        "probe_gain": 1.025,
+        "sample_id": "conductivity_vessel",
+        "sample_radius_m": 0.04
+      }
+    }
+  ]
+}
