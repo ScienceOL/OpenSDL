@@ -1,0 +1,138 @@
+{
+  "id": "opensdl.pp56",
+  "name": "PP 56 Peristaltic Pump",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.44,
+    0.26,
+    0.309
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.035
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL generic design. Three-roller head with 56 mL/min nominal maximum, priming and explicit source/receiver/line/removed liquid inventories. No validated tube deformation, pressure curve, occlusion forces or measured flow calibration.",
+  "runtime": {
+    "kind": "peristaltic_pump",
+    "model_id": "opensdl.pp56",
+    "max_rpm": 20.0,
+    "slew_rpm_s": 5.0,
+    "displacement_ml_rev": 2.8,
+    "roller_orbit_m": 0.045,
+    "roller_radius_m": 0.015,
+    "source_ml": 100.0,
+    "receiver_capacity_ml": 100.0,
+    "dead_volume_ml": 7.0,
+    "opening_rad": 1.8,
+    "sample_id": "peristaltic_tubing",
+    "sample_radius_m": 0.24
+  },
+  "samples": [
+    {
+      "id": "peristaltic_tubing",
+      "mass_kg": 0.025,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.22
+    }
+  ],
+  "role": "pump",
+  "actions": [
+    {
+      "name": "lid",
+      "description": "Lid",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_tubing",
+      "description": "Load tubing",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unload_tubing",
+      "description": "Unload tubing",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "prime",
+      "description": "Prime",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Start",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Stop",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_flow",
+      "description": "Set nominal liquid flow",
+      "params": {
+        "type": "object",
+        "properties": {
+          "flow_ml_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 56
+          }
+        },
+        "required": [
+          "flow_ml_min"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "peristaltic-pump",
+  "device_id": "peristaltic-pump-1",
+  "head_height_m": 0.178,
+  "tube_outer_radius_m": 0.003
+}

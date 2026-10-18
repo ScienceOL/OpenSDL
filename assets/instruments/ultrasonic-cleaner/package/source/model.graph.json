@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.uc33",
+  "dimensions_m": [
+    0.38,
+    0.215,
+    0.2723
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "lid",
+      "label": "Lid",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "lid",
+        "params": {}
+      }
+    },
+    {
+      "id": "sample",
+      "label": "Sample",
+      "parent": "instrument"
+    },
+    {
+      "id": "water",
+      "label": "Water",
+      "parent": "instrument",
+      "scale": {
+        "axis": "y",
+        "state": "fill_fraction",
+        "min": 0,
+        "max": 1
+      }
+    },
+    {
+      "id": "drain",
+      "label": "Drain",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "drain",
+        "params": {}
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "timer_screen",
+      "label": "Timer Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "temperature_dial",
+      "label": "Temperature Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_temperature",
+        "params": {},
+        "parameter": "temperature_c",
+        "state": "target_c",
+        "min": 22.0,
+        "max": 60.0,
+        "step": 5
+      }
+    },
+    {
+      "id": "duration_dial",
+      "label": "Duration Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_duration",
+        "params": {},
+        "parameter": "seconds",
+        "state": "duration_s",
+        "min": 1,
+        "max": 900.0,
+        "step": 10
+      }
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    },
+    {
+      "id": "sonic_led",
+      "label": "Sonic Led",
+      "parent": "instrument"
+    }
+  ],
+  "joints": [
+    {
+      "id": "lid_joint",
+      "component": "lid",
+      "kind": "revolute",
+      "axis": [
+        -1,
+        0,
+        0
+      ],
+      "min": 0,
+      "max": 1.8,
+      "state": "lid_rad"
+    },
+    {
+      "id": "drain_joint",
+      "component": "drain",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 1.5707963267948966,
+      "state": "drain_rad"
+    },
+    {
+      "id": "temperature_dial_joint",
+      "component": "temperature_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "temperature_dial_rad"
+    },
+    {
+      "id": "duration_dial_joint",
+      "component": "duration_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "duration_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "temperature_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "timer_screen",
+      "state": "remaining_s",
+      "digits": 0,
+      "unit": "s"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "sample",
+      "state": "sample_visible"
+    },
+    {
+      "component": "water",
+      "state": "water_visible"
+    },
+    {
+      "component": "sonic_led",
+      "state": "running"
+    }
+  ],
+  "placements": []
+}

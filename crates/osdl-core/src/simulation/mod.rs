@@ -5,12 +5,14 @@ pub mod chamber;
 mod motor;
 pub mod orbital;
 pub mod overhead;
+pub mod peristaltic;
 pub mod ph;
 pub mod pipette;
 pub mod roller;
 pub mod stirrer;
 pub mod syringe;
 pub mod thermal;
+pub mod ultrasonic;
 pub mod vacuum;
 pub mod vortex;
 pub mod world;
@@ -31,6 +33,8 @@ pub enum InstrumentConfig {
     OrbitalShaker(orbital::OrbitalConfig),
     TubeRoller(roller::RollerConfig),
     OverheadStirrer(overhead::OverheadConfig),
+    UltrasonicCleaner(ultrasonic::UltrasonicConfig),
+    PeristalticPump(peristaltic::PeristalticConfig),
     Pipette(pipette::PipetteConfig),
     SyringePump(syringe::SyringeConfig),
     VacuumPump(vacuum::VacuumConfig),
@@ -56,6 +60,8 @@ impl InstrumentConfig {
             Self::OrbitalShaker(c) => c.validate(),
             Self::TubeRoller(c) => c.validate(),
             Self::OverheadStirrer(c) => c.validate(),
+            Self::UltrasonicCleaner(c) => c.validate(),
+            Self::PeristalticPump(c) => c.validate(),
             Self::Pipette(c) => c.validate(),
             Self::SyringePump(c) => c.validate(),
             Self::VacuumPump(c) => c.validate(),
@@ -74,6 +80,8 @@ impl InstrumentConfig {
             Self::OrbitalShaker(c) => &c.model_id,
             Self::TubeRoller(c) => &c.model_id,
             Self::OverheadStirrer(c) => &c.model_id,
+            Self::UltrasonicCleaner(c) => &c.model_id,
+            Self::PeristalticPump(c) => &c.model_id,
             Self::Pipette(c) => &c.model_id,
             Self::SyringePump(c) => &c.model_id,
             Self::VacuumPump(c) => &c.model_id,
@@ -178,6 +186,8 @@ pub enum InstrumentState {
     Orbital(orbital::OrbitalState),
     Roller(roller::RollerState),
     Overhead(overhead::OverheadState),
+    Ultrasonic(ultrasonic::UltrasonicState),
+    Peristaltic(peristaltic::PeristalticState),
     Pipette(pipette::PipetteState),
     Syringe(syringe::SyringeState),
     Vacuum(vacuum::VacuumState),
@@ -208,6 +218,12 @@ impl InstrumentState {
             InstrumentConfig::OverheadStirrer(c) => {
                 Self::Overhead(overhead::OverheadState::new(c.clone()))
             }
+            InstrumentConfig::UltrasonicCleaner(c) => {
+                Self::Ultrasonic(ultrasonic::UltrasonicState::new(c.clone()))
+            }
+            InstrumentConfig::PeristalticPump(c) => {
+                Self::Peristaltic(peristaltic::PeristalticState::new(c.clone()))
+            }
             InstrumentConfig::Pipette(c) => Self::Pipette(pipette::PipetteState::new(c.clone())),
             InstrumentConfig::SyringePump(c) => {
                 Self::Syringe(syringe::SyringeState::new(c.clone()))
@@ -232,6 +248,8 @@ impl InstrumentState {
             Self::Orbital(s) => s.apply(device, action, params, samples),
             Self::Roller(s) => s.apply(device, action, params, samples),
             Self::Overhead(s) => s.apply(device, action, params, samples),
+            Self::Ultrasonic(s) => s.apply(device, action, params, samples),
+            Self::Peristaltic(s) => s.apply(device, action, params, samples),
             Self::Pipette(s) => s.apply(device, action, params, samples),
             Self::Syringe(s) => s.apply(device, action, params, samples),
             Self::Vacuum(s) => s.apply(device, action, params, samples),
@@ -248,6 +266,8 @@ impl InstrumentState {
             Self::Orbital(s) => s.advance(dt),
             Self::Roller(s) => s.advance(dt),
             Self::Overhead(s) => s.advance(dt),
+            Self::Ultrasonic(s) => s.advance(dt),
+            Self::Peristaltic(s) => s.advance(dt),
             Self::Pipette(s) => s.advance(dt),
             Self::Syringe(s) => s.advance(dt),
             Self::Vacuum(s) => s.advance(dt),
@@ -271,6 +291,8 @@ impl InstrumentState {
             Self::Orbital(s) => (&s.config.model_id, s.values()),
             Self::Roller(s) => (&s.config.model_id, s.values()),
             Self::Overhead(s) => (&s.config.model_id, s.values()),
+            Self::Ultrasonic(s) => (&s.config.model_id, s.values()),
+            Self::Peristaltic(s) => (&s.config.model_id, s.values()),
             Self::Pipette(s) => (&s.config.model_id, s.values()),
             Self::Syringe(s) => (&s.config.model_id, s.values()),
             Self::Vacuum(s) => (&s.config.model_id, s.values()),
