@@ -776,6 +776,7 @@ impl OsdlEngine {
                     description,
                     online: true,
                     properties,
+                    properties_timestamp_ms: now_millis(),
                     actions,
                     role: device_config.role.clone(),
                 })
@@ -968,6 +969,7 @@ impl OsdlEngine {
                     .unwrap_or_else(|| format!("ONVIF camera {}", cam.id)),
                 online: true,
                 properties: HashMap::new(),
+                properties_timestamp_ms: now_millis(),
                 actions: crate::adapter::onvif::OnvifAdapter::combined_actions(),
                 role: Some("camera".into()),
             };
@@ -1063,6 +1065,7 @@ impl OsdlEngine {
                 description: device_match.description,
                 online: true,
                 properties: HashMap::new(),
+                properties_timestamp_ms: now_millis(),
                 actions: device_match.actions,
                 role: None,
             };
@@ -1171,6 +1174,7 @@ impl OsdlEngine {
                     };
                     let mut devices_w = self.handle.devices.write().await;
                     if let Some(dev) = devices_w.get_mut(device_id) {
+                        dev.properties_timestamp_ms = status.timestamp;
                         for (k, v) in &status.properties {
                             dev.properties.insert(k.clone(), v.clone());
                         }
@@ -1367,6 +1371,7 @@ impl OsdlEngine {
                 description: device_match.description,
                 online: true,
                 properties: HashMap::new(),
+                properties_timestamp_ms: now_millis(),
                 actions: device_match.actions,
                 role: None,
             };
@@ -1455,6 +1460,7 @@ impl OsdlEngine {
                 description,
                 online: true,
                 properties: HashMap::new(),
+                properties_timestamp_ms: now_millis(),
                 actions: device_match.actions,
                 role: entry.role.clone(),
             };
