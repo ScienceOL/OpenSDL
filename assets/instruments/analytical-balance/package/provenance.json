@@ -6,11 +6,11 @@
   "blender": "4.5.3 LTS",
   "build_hash": "67807e1800cc",
   "inputs": {
-    "assets/instruments/analytical-balance/model.yaml": "796777aa3daa666bf721ed544275a31a883be9f36c6779eb4442bd1635926b41",
+    "assets/instruments/analytical-balance/model.yaml": "9fd893c73679c8ba8b83823b8bf67ada616abe9243e5259d752f8f867e088221",
     "assets/instruments/analytical-balance/SOURCE.md": "2e4e7646a33d30ebfeabef14d2ca1c88917e1e282d5cc5c10ae9b06c4be7b9b3",
     "tools/instrument-models/build_balance.py": "47eb4511da6fd8ad76d002ed2c2773dd1b14bf1c5c7fe6fd359c89960670d23d",
-    "tools/instrument-models/author.py": "43bbc7cd433142fb8855ebdb1a8b9f95e2adcd1fa34c1b3644dd7eb861a27238",
-    "tools/instrument-models/geometry.py": "7b81514d0ef7e2bb1ffa6ef11c3fa3106329da7249d93f30528440b142432c12",
+    "tools/instrument-models/author.py": "3b439e95fe0c6f2ce5065f2fedfb2194721eac22fac175eb152ad33cca633f34",
+    "tools/instrument-models/geometry.py": "cf20d74322069da94b99c6e86b9e871dfd8d9efeac9b71e4ff1294a0540e4691",
     "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
     "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
   }

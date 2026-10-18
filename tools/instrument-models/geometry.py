@@ -69,6 +69,25 @@ def cylinder(
     )
 
 
+def bore_world(obj, position, radius, depth, axis="Z", vertices=32):
+    """Subtract a cylindrical working bore at an explicit world-space position."""
+    bpy.context.view_layer.update()
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=vertices, radius=radius, depth=depth, location=position
+    )
+    cutter = bpy.context.object
+    if axis == "X":
+        cutter.rotation_euler.y = math.pi / 2
+    elif axis == "Y":
+        cutter.rotation_euler.x = math.pi / 2
+    modifier = obj.modifiers.new("Working bore", "BOOLEAN")
+    modifier.operation = "DIFFERENCE"
+    modifier.object = cutter
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    bpy.data.objects.remove(cutter, do_unlink=True)
+
+
 def label(parent, text, position, size, surface, rotation=(math.pi / 2, 0, 0)):
     curve = bpy.data.curves.new("Etched legend", "FONT")
     curve.body = text

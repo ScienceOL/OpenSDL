@@ -134,5 +134,6 @@
   "world_id": "peristaltic-pump",
   "device_id": "peristaltic-pump-1",
   "head_height_m": 0.178,
-  "tube_outer_radius_m": 0.003
+  "tube_outer_radius_m": 0.003,
+  "minimum_runtime_version": "0.5.0"
 }

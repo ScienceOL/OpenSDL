@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "model_id": "opensdl.re500",
+  "dimensions_m": [
+    0.44,
+    0.6,
+    0.3413
+  ],
+  "components": [
+    {
+      "id": "body",
+      "label": "Body",
+      "parent": "instrument"
+    },
+    {
+      "id": "carriage",
+      "label": "Carriage",
+      "parent": "instrument"
+    },
+    {
+      "id": "drive",
+      "label": "Drive",
+      "parent": "carriage"
+    },
+    {
+      "id": "flask",
+      "label": "Flask",
+      "parent": "carriage"
+    },
+    {
+      "id": "liquid",
+      "label": "Liquid",
+      "parent": "carriage"
+    },
+    {
+      "id": "condenser",
+      "label": "Condenser",
+      "parent": "carriage"
+    },
+    {
+      "id": "receiver",
+      "label": "Receiver",
+      "parent": "carriage"
+    },
+    {
+      "id": "clamp",
+      "label": "Clamp",
+      "parent": "drive",
+      "control": {
+        "kind": "command",
+        "action": "clamp",
+        "params": {}
+      }
+    },
+    {
+      "id": "vent",
+      "label": "Vent",
+      "parent": "carriage",
+      "control": {
+        "kind": "command",
+        "action": "vent",
+        "params": {}
+      }
+    },
+    {
+      "id": "speed_dial",
+      "label": "Speed Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_speed",
+        "params": {},
+        "parameter": "rpm",
+        "state": "target_rpm",
+        "min": 0,
+        "max": 200.0,
+        "step": 10
+      }
+    },
+    {
+      "id": "temperature_dial",
+      "label": "Temperature Dial",
+      "parent": "instrument",
+      "control": {
+        "kind": "dial",
+        "action": "set_temperature",
+        "params": {},
+        "parameter": "temperature_c",
+        "state": "target_c",
+        "min": 22.0,
+        "max": 80.0,
+        "step": 5
+      }
+    },
+    {
+      "id": "screen",
+      "label": "Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "sample_screen",
+      "label": "Sample Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "pressure_screen",
+      "label": "Pressure Screen",
+      "parent": "instrument"
+    },
+    {
+      "id": "start_key",
+      "label": "Start Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start",
+        "params": {}
+      }
+    },
+    {
+      "id": "stop_key",
+      "label": "Stop Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "stop",
+        "params": {}
+      }
+    },
+    {
+      "id": "heat_key",
+      "label": "Heat Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "heat",
+        "params": {}
+      }
+    },
+    {
+      "id": "vacuum_key",
+      "label": "Vacuum Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "start_vacuum",
+        "params": {}
+      }
+    },
+    {
+      "id": "lift_key",
+      "label": "Lift Key",
+      "parent": "instrument",
+      "control": {
+        "kind": "command",
+        "action": "lift",
+        "params": {}
+      }
+    }
+  ],
+  "joints": [
+    {
+      "id": "carriage_joint",
+      "component": "carriage",
+      "kind": "prismatic",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 0.14,
+      "state": "carriage_m"
+    },
+    {
+      "id": "flask_joint",
+      "component": "flask",
+      "kind": "continuous",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 6.283185307179586,
+      "state": "flask_rad",
+      "velocity_state": "flask_rad_s"
+    },
+    {
+      "id": "clamp_joint",
+      "component": "clamp",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 0.6,
+      "state": "clamp_rad"
+    },
+    {
+      "id": "vent_joint",
+      "component": "vent",
+      "kind": "revolute",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "min": 0,
+      "max": 1.5707963267948966,
+      "state": "vent_rad"
+    },
+    {
+      "id": "speed_dial_joint",
+      "component": "speed_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "speed_dial_rad"
+    },
+    {
+      "id": "temperature_dial_joint",
+      "component": "temperature_dial",
+      "kind": "revolute",
+      "axis": [
+        0,
+        0,
+        -1
+      ],
+      "min": 0,
+      "max": 4.71238898038469,
+      "state": "temperature_dial_rad"
+    }
+  ],
+  "readouts": [
+    {
+      "component": "screen",
+      "state": "temperature_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "sample_screen",
+      "state": "sample_c",
+      "digits": 1,
+      "unit": "C"
+    },
+    {
+      "component": "pressure_screen",
+      "state": "pressure_kpa",
+      "digits": 1,
+      "unit": "kPa"
+    }
+  ],
+  "visibility": [
+    {
+      "component": "flask",
+      "state": "flask_visible"
+    },
+    {
+      "component": "liquid",
+      "state": "liquid_visible"
+    }
+  ],
+  "placements": []
+}

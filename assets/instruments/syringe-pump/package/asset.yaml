@@ -4,7 +4,7 @@
   "metadata": {
     "name": "syringe-pump",
     "displayName": "SP 10 Syringe Pump",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design; Original 10 mL syringe fixture with 14 mm bore and 65 mm travel. Area-based displacement conserves source, syringe and receiver volume. No backpressure, compliance or delivery accuracy claim.",
     "tags": [
       "original",

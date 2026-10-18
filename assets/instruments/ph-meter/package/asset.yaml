@@ -4,7 +4,7 @@
   "metadata": {
     "name": "ph-meter",
     "displayName": "PH 14 Bench Meter",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design; Original electrode arm and synthetic pH 4/7/10 fixtures. First-order 2 s response and a neutral-buffer teaching calibration. No electrochemical accuracy, temperature compensation or real electrode ageing model.",
     "tags": [
       "original",

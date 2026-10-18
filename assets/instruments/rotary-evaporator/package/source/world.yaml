@@ -1,0 +1,224 @@
+{
+  "world_id": "rotary-evaporator",
+  "engine": "kinematic",
+  "tick_hz": 10,
+  "seed": 0,
+  "samples": [
+    {
+      "id": "rotavap_flask",
+      "mass_kg": 0.2,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.05
+    }
+  ],
+  "devices": [
+    {
+      "id": "rotary-evaporator-1",
+      "device_type": "simulation.rotary_evaporator",
+      "role": "rotary-evaporator",
+      "description": "RE 500 Rotary Evaporator",
+      "actions": [
+        {
+          "name": "load_flask",
+          "description": "Mount synthetic flask with lift fully raised",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unload_flask",
+          "description": "Remove stopped, cool and vented flask",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "clamp",
+          "description": "Lock or release flask coupling",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "lift",
+          "description": "Raise or lower glassware assembly",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start",
+          "description": "Start flask rotation",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "heat",
+          "description": "Enable or disable bath heater",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "start_vacuum",
+          "description": "Enable attached vacuum source",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop_vacuum",
+          "description": "Disable vacuum source",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stop",
+          "description": "Stop drive, bath heater and vacuum source",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "vent",
+          "description": "Open or close vacuum vent",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "reset",
+          "description": "Reset ambient, vented test fixture",
+          "params": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_speed",
+          "description": "Set flask rotation speed",
+          "params": {
+            "type": "object",
+            "properties": {
+              "rpm": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 200
+              }
+            },
+            "required": [
+              "rpm"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_height",
+          "description": "Set lift height",
+          "params": {
+            "type": "object",
+            "properties": {
+              "height_m": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 0.14
+              }
+            },
+            "required": [
+              "height_m"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "set_temperature",
+          "description": "Set bath target temperature",
+          "params": {
+            "type": "object",
+            "properties": {
+              "temperature_c": {
+                "type": "number",
+                "minimum": 22,
+                "maximum": 80
+              }
+            },
+            "required": [
+              "temperature_c"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "asset_ref": {
+        "namespace": "opensdl",
+        "name": "rotary-evaporator",
+        "version": "1.0.0"
+      },
+      "model": {
+        "kind": "rotary_evaporator",
+        "model_id": "opensdl.re500",
+        "max_rpm": 200.0,
+        "slew_rpm_s": 50.0,
+        "lift_m": 0.14,
+        "immersion_max_m": 0.01,
+        "ambient_c": 22.0,
+        "max_c": 80.0,
+        "heater_w": 350.0,
+        "bath_capacity_j_k": 9000.0,
+        "sample_capacity_j_k": 840.0,
+        "exchange_w_k": 15.0,
+        "loss_w_k": 2.0,
+        "ambient_kpa": 101.325,
+        "ultimate_kpa": 10.0,
+        "chamber_l": 1.0,
+        "pumping_l_s": 0.15,
+        "leak_l_s": 0.0001,
+        "sample_ml": 200.0,
+        "sample_id": "rotavap_flask",
+        "sample_radius_m": 0.06
+      }
+    }
+  ]
+}

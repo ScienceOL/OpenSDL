@@ -116,5 +116,6 @@
     }
   ],
   "world_id": "orbital-shaker",
-  "device_id": "orbital-shaker-1"
+  "device_id": "orbital-shaker-1",
+  "minimum_runtime_version": "0.5.0"
 }

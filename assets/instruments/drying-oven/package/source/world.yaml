@@ -108,7 +108,7 @@
       "asset_ref": {
         "namespace": "opensdl",
         "name": "drying-oven",
-        "version": "1.0.1"
+        "version": "1.0.2"
       },
       "model": {
         "kind": "drying_oven",

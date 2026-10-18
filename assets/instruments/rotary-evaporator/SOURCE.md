@@ -1,0 +1,9 @@
+# RE 500 rotary evaporator: original design
+
+Independent generic design continuing OpenSDL 33912808a56d7064c016cf8f0ac36ce7c82a8a30. No external CAD, meshes, textures, generator, dimensions, process recipe or manufacturer parameter table is used. A hollow round-bottom flask rotates around its inclined neck axis while its synthetic liquid stays horizontal. The whole glassware/drive assembly follows a supported 140 mm lift. A real open bath, hollow condenser jacket, internal hollow cooling coil, vapor connection and receiving flask complete the geometry.
+
+The 200 mL inert liquid, motor ramp, 350 W bath heater and thermal capacities are original simulation assumptions. Bath and sample temperatures lag independently. The extraction boundary is the declared vacuum port; an external vacuum pump is not represented geometrically. The pressure circuit uses the canonical isothermal pump/leak solution with a declared nominal gas volume; it is independent of the thermal state. Rotation/vacuum require a mounted, clamped and immersed flask. Lift/removal require a stopped and vented assembly; hot samples cannot be removed. Stop preserves heat and residual vacuum.
+
+Evaporation, boiling onset, condensation, solvent identity, vapor-pressure coupling, mass transfer and recovered volume remain unavailable. The receiving flask stays empty; no invented yield or recovery is displayed. The coil depicts a cooling-water passage; coolant flow and condenser thermal performance are not simulated. No real process calibration or pressure-vessel qualification is claimed.
+
+Models, parameters and model-specific geometry/assets use CC BY-NC 4.0, attribution OpenSDL / LiyanLabs. Generic runtime/exporter/tubing software retains its repository license. Inert geometry identifiers perform no network reporting. Build with pinned Blender 4.5.3 and tools/instrument-models/build_catalog.py. Release compatibility, Hub publication and actual Dev/mobile acceptance remain open.

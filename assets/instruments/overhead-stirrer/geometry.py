@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: CC-BY-NC-4.0
 """Original OH1000 stand, sliding motor carriage and immersed impeller."""
 import math
-from geometry import box, cylinder, label, vessel
+from geometry import box, cylinder, label, vessel, bore_world
 from bench_helpers import assembly, knob, front_screen, graph
 from author import joint, command, dial
 
@@ -48,7 +48,7 @@ def create_model(p):
         m["shell"],
         0.008,
     )
-    box(
+    collar = box(
         parts["carriage"],
         "Sliding stand collar",
         (0, 0.035, 0),
@@ -56,7 +56,8 @@ def create_model(p):
         m["trim"],
         0.004,
     )
-    box(
+    bore_world(collar, (0, 0.095, 0.300), 0.0105, 0.060)
+    arm = box(
         parts["carriage"],
         "Support arm",
         (0, 0.0, 0.012),
@@ -64,6 +65,7 @@ def create_model(p):
         m["steel"],
         0.003,
     )
+    bore_world(arm, (0, 0.095, 0.312), 0.0105, 0.040)
     for i in range(4):
         box(
             parts["carriage"],

@@ -1,0 +1,7 @@
+# VF 100 vacuum filtration assembly: original design
+
+Independent generic design continuing OpenSDL 33912808a56d7064c016cf8f0ac36ce7c82a8a30. No external CAD, mesh, texture, generator or manufacturer parameter table is an input. The hollow thick-wall receiver has an open sidearm, removable hollow funnel stem, perforated support disc, separate filter paper, seal collet and vent. The vacuum hose has an actual continuous lumen.
+
+A declared 100 mL synthetic liquid fixture transfers with nominal conductance 0.04 mL/(s kPa) under pressure difference. The receiver starts with nominal 0.75 L gas space; liquid displacement compresses that space while the canonical isothermal vacuum balance pumps/leaks gas. Bounded substeps couple pressure and volume without replaying prior history. Source, receiver and removed quantities conserve introduced liquid. Stop retains residual vacuum; vent before opening, removal or emptying. No real slurry separation, capture efficiency, clogging, pressure-vessel certification or validated filter permeability is modeled.
+
+Models, parameters and model-specific geometry/assets: CC BY-NC 4.0, attribution OpenSDL / LiyanLabs. Generic runtime, exporter and tubing primitives retain their repository license. Internal geometry identifiers are inert. Rebuild with pinned Blender 4.5.3 and tools/instrument-models/build_catalog.py. Release compatibility, Hub publication and actual Dev/mobile acceptance remain open.

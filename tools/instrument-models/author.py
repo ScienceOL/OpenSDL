@@ -214,7 +214,11 @@ def build(source, create_model, model_graph, runtime, slug, role, *, preview=Non
             "bindings": {"deviceTypes": ["simulation." + model["kind"]]},
             "compatibility": {
                 "runtimes": [
-                    {"name": "opensdl", "versions": [">=0.4.0"], "status": "expected"}
+                    {
+                        "name": "opensdl",
+                        "versions": [">=" + p["minimum_runtime_version"]],
+                        "status": "expected",
+                    }
                 ]
             },
             "runtime": {"engine": "kinematic", "config": "source/world.yaml"},

@@ -1,0 +1,20 @@
+{
+  "model": "opensdl.re500",
+  "license": "CC-BY-NC-4.0",
+  "creator": "OpenSDL / LiyanLabs",
+  "evidence": "Original OpenSDL inclined rotating hollow flask, supported 140 mm lift, heated open bath, hollow condenser coil and receiving flask. Prescribed drive, separate bath/sample temperatures and isothermal vacuum response. Evaporation and recovery quantities are unavailable; no solvent or yield prediction.",
+  "blender": "4.5.3 LTS",
+  "build_hash": "67807e1800cc",
+  "inputs": {
+    "assets/instruments/rotary-evaporator/model.yaml": "a47e1f461ac55d45e624ad56c305240a65f82a5a113f1cc3e4c6464b9ea3d9af",
+    "assets/instruments/rotary-evaporator/SOURCE.md": "efa2fae21325d13d1496ed777f9ab6530dc7ac3b7c69fb1269c898a2faa199ba",
+    "assets/instruments/rotary-evaporator/geometry.py": "9074b10c06e2fe0ea6ab541534a9afbfc2f3d7bfd37b11d885052137f18ec052",
+    "tools/instrument-models/author.py": "3b439e95fe0c6f2ce5065f2fedfb2194721eac22fac175eb152ad33cca633f34",
+    "tools/instrument-models/geometry.py": "cf20d74322069da94b99c6e86b9e871dfd8d9efeac9b71e4ff1294a0540e4691",
+    "tools/instrument-models/origin.py": "c06271ec0c4ad1b173af5e5f5da0a00dc38ee48e32ec1a29a92570eed0e54e76",
+    "tools/instrument-models/build_catalog.py": "422ea1221f1c85007cec46ec087e9ad9265e3e81f3d499db3abe9b46d560509b",
+    "tools/instrument-models/bench_helpers.py": "1cd3a5cfc33a5788cd5b538c5dacee199a56805373f8b830047c82d2643add67",
+    "tools/instrument-models/tubing.py": "d06591e322768e0dc4950a34f23b4f5ff44886a32095a31dc3cb15aeed86ff1d",
+    "tools/instrument-models/optimize.py": "16756670d8c95339063d589ca1c7705911950851cb92c69cc9885e2116afa139"
+  }
+}

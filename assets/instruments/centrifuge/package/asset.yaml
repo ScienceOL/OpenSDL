@@ -4,7 +4,7 @@
   "metadata": {
     "name": "centrifuge",
     "displayName": "CF 4 Benchtop Centrifuge",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Original OpenSDL generic design; Four orthogonal 55 mm rotor slots, 4000 rpm maximum and 500 rpm/s slew are authored teaching parameters. Static imbalance limit 0.5 g; RCF is calculated at the tube centre. No separation prediction or hardware safety certification.",
     "tags": [
       "original",

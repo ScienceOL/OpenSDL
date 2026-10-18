@@ -1,0 +1,158 @@
+{
+  "id": "opensdl.vf100",
+  "name": "VF 100 Vacuum Filtration Assembly",
+  "version": "1.0.0",
+  "dimensions_m": [
+    0.36,
+    0.28,
+    0.294
+  ],
+  "origin_anchor_m": [
+    0,
+    0,
+    0.004
+  ],
+  "license": "CC-BY-NC-4.0",
+  "evidence": "Original OpenSDL filtration bench with hollow receiver and sidearm, open funnel drain, perforated support, filter disc, collet seal, vent and continuous hollow vacuum hose. Declared synthetic liquid conductance and gas headspace balance. No real separation efficiency, particle capture or pressure certification.",
+  "runtime": {
+    "kind": "vacuum_filtration",
+    "model_id": "opensdl.vf100",
+    "ambient_kpa": 101.325,
+    "ultimate_kpa": 20.0,
+    "chamber_l": 0.75,
+    "pumping_l_s": 0.2,
+    "leak_l_s": 0.0001,
+    "filter_ml_s_kpa": 0.04,
+    "source_ml": 100.0,
+    "receiver_capacity_ml": 250.0,
+    "sample_id": "filtration_slurry",
+    "sample_radius_m": 0.04
+  },
+  "samples": [
+    {
+      "id": "filtration_slurry",
+      "mass_kg": 0.1,
+      "position_m": [
+        0,
+        0
+      ],
+      "radius_m": 0.035
+    }
+  ],
+  "role": "filtration",
+  "actions": [
+    {
+      "name": "assemble",
+      "description": "Place or remove funnel",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "seal",
+      "description": "Close or release collet seal",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "install_filter",
+      "description": "Install synthetic filter disc",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remove_filter",
+      "description": "Remove filter disc",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load_slurry",
+      "description": "Load 100 mL synthetic liquid fixture",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clear_slurry",
+      "description": "Account for and remove remaining source liquid",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "empty_receiver",
+      "description": "Account for and empty receiver",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start",
+      "description": "Enable attached vacuum source",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop",
+      "description": "Disable vacuum source",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vent",
+      "description": "Open or close vent",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset",
+      "description": "Reset vented test fixture",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "world_id": "vacuum-filtration",
+  "device_id": "vacuum-filtration-1",
+  "minimum_runtime_version": "0.5.0"
+}
