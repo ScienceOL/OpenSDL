@@ -153,10 +153,7 @@ async fn publish_process(
             }
             .map_err(|_| Status::unavailable("camera publisher failed"))?
             .ok_or_else(|| Status::unavailable("camera publisher failed"))?;
-            if line
-                .strip_prefix("frame=")
-                .is_some_and(|value| value.trim().parse::<u64>().is_ok_and(|frames| frames > 0))
-            {
+            if media_has_progress(&line) {
                 return Ok::<(), Status>(());
             }
         }
@@ -185,6 +182,16 @@ async fn publish_process(
             if ended? { break; }
         }
     }))
+}
+
+// Stream-copy progress omits frame counts on some FFmpeg builds. Positive
+// media time proves packets advanced; bytes alone could be just FLV headers.
+fn media_has_progress(line: &str) -> bool {
+    let Some((key, value)) = line.split_once('=') else {
+        return false;
+    };
+    matches!(key, "frame" | "out_time_us")
+        && value.trim().parse::<i64>().is_ok_and(|value| value > 0)
 }
 
 async fn log_diagnostics(mut stderr: tokio::process::ChildStderr) {
@@ -216,6 +223,23 @@ async fn log_diagnostics(mut stderr: tokio::process::ChildStderr) {
 mod tests {
     use super::*;
     use tokio_stream::StreamExt;
+
+    #[test]
+    fn publishing_accepts_stream_copy_and_encoded_progress() {
+        for line in ["frame=1", "out_time_us=1200000"] {
+            assert!(media_has_progress(line), "{line}");
+        }
+        for line in [
+            "frame=0",
+            "out_time_us=0",
+            "out_time_us=-1",
+            "out_time_us=N/A",
+            "total_size=4096",
+            "progress=continue",
+        ] {
+            assert!(!media_has_progress(line), "{line}");
+        }
+    }
 
     #[test]
     fn publisher_fixture() {
