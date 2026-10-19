@@ -10,6 +10,9 @@
 //! stream available to consumers (browsers, AI pipelines, recorders) at
 //! stable URLs.
 
+/// Maximum JPEG snapshot size accepted from cameras and served to clients.
+pub const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
+
 pub mod mediamtx;
 pub mod onvif_camera;
 

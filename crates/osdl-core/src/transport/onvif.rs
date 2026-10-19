@@ -330,14 +330,7 @@ impl OnvifTransport {
             req
         };
         let resp = req.send().await.map_err(|e| format!("snapshot GET: {e}"))?;
-        let status = resp.status();
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("snapshot read: {e}"))?;
-        if !status.is_success() {
-            return Err(format!("snapshot HTTP {status}"));
-        }
+        let bytes = read_snapshot_response(resp).await?;
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -659,9 +652,81 @@ fn first_chars(s: &str, n: usize) -> &str {
     }
 }
 
+async fn read_snapshot_response(mut response: reqwest::Response) -> Result<Vec<u8>, String> {
+    use crate::media::MAX_SNAPSHOT_BYTES;
+    if !response.status().is_success() {
+        return Err(format!("snapshot HTTP {}", response.status()));
+    }
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_SNAPSHOT_BYTES as u64)
+    {
+        return Err("snapshot exceeds size limit".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("snapshot read: {e}"))?
+    {
+        if chunk.len() > MAX_SNAPSHOT_BYTES - bytes.len() {
+            return Err("snapshot exceeds size limit".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    if !bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Err("snapshot is not a JPEG".into());
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn snapshot_download_bounds_declared_and_chunked_bodies() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for (length, size, accepted) in [
+            (true, 600 * 1024, true),
+            (false, 600 * 1024, true),
+            (true, crate::media::MAX_SNAPSHOT_BYTES + 1, false),
+            (false, crate::media::MAX_SNAPSHOT_BYTES + 1, false),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0; 1024];
+                socket.read(&mut request).await.unwrap();
+                let header = if length {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nConnection: close\r\n\r\n"
+                    )
+                } else {
+                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                        .into()
+                };
+                socket.write_all(header.as_bytes()).await.unwrap();
+                let mut body = vec![0; size];
+                body[..3].copy_from_slice(&[0xff, 0xd8, 0xff]);
+                if !length {
+                    let _ = socket.write_all(format!("{size:x}\r\n").as_bytes()).await;
+                }
+                let _ = socket.write_all(&body).await;
+                if !length {
+                    let _ = socket.write_all(b"\r\n0\r\n\r\n").await;
+                }
+            });
+            let response = reqwest::get(format!("http://{addr}")).await.unwrap();
+            let result = read_snapshot_response(response).await;
+            assert_eq!(result.is_ok(), accepted);
+            if accepted {
+                assert_eq!(result.unwrap().len(), size);
+            }
+            server.await.unwrap();
+        }
+    }
 
     #[test]
     fn extracts_xaddr_picks_correct_service_amid_lookalikes() {
