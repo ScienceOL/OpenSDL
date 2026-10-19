@@ -15,7 +15,7 @@
 //! ```
 
 pub mod direct_serial;
-#[cfg_attr(not(feature = "espnow"), allow(dead_code))]
+#[cfg(feature = "espnow")]
 pub mod espnow_dongle;
 pub mod mqtt_serial;
 pub mod onvif;
