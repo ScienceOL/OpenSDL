@@ -90,9 +90,9 @@ pub struct ServeArgs {
     /// devices, so local development does not require hardware.
     #[arg(long, env = "OSDL_SIMULATION")]
     pub simulation: bool,
-    /// Run a digest-pinned OpenSDL asset in this supervised foreground process.
+    /// Add a digest-pinned package to this world. Repeat for multiple instruments.
     #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
-    pub asset: Option<String>,
+    pub asset: Vec<String>,
 }
 
 /// Synchronous entrypoint called from `main`. Handles `--detach` *before*
@@ -349,26 +349,55 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 
     let mut config = build_config(&args)?;
     let _asset_directory;
-    if let Some(reference) = &args.asset {
+    if !args.asset.is_empty() {
         use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
-        let parsed = AssetReference::parse(reference)?;
-        let digest = parsed
-            .digest()
-            .context("--asset requires a sha256 digest-pinned reference")?;
         let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
         std::fs::create_dir_all(data)?;
         let cache = AssetCache::open(data.join("assets"))?;
-        // A cached immutable digest needs no registry round trip; integrity is checked on materialization.
-        if cache.package(digest).is_err() {
-            RegistryClient::for_reference(&parsed)
-                .pull(&parsed, &cache, &RegistryCredentials::Anonymous, false)
-                .await?;
+        if args.asset.len() > 64 {
+            anyhow::bail!("select at most 64 simulation packages");
+        }
+        let references = args
+            .asset
+            .iter()
+            .map(|reference| {
+                let parsed = AssetReference::parse(reference)?;
+                parsed
+                    .digest()
+                    .context("--asset requires a sha256 digest-pinned reference")?;
+                Ok(parsed)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let mut pulls = tokio::task::JoinSet::new();
+        let mut requested = std::collections::HashSet::new();
+        for reference in references {
+            let digest = reference.digest().expect("validated pinned reference");
+            // A verified immutable cache hit needs no registry round trip.
+            if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
+                continue;
+            }
+            let cache = cache.clone();
+            pulls.spawn(async move {
+                RegistryClient::for_reference(&reference)
+                    .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
+                    .await
+            });
+            if pulls.len() == 4 {
+                pulls
+                    .join_next()
+                    .await
+                    .context("asset download task missing")???;
+            }
+        }
+        while let Some(result) = pulls.join_next().await {
+            result??;
         }
         _asset_directory = tempfile::tempdir_in(data)?;
-        config.simulation = Some(osdl_server::simulation_asset::prepare(
+        config.simulation = Some(osdl_server::simulation_asset::compose(
             &cache,
-            digest,
-            &_asset_directory.path().join("package"),
+            &args.asset,
+            _asset_directory.path(),
+            &args.instance,
         )?);
     }
     // Propagate the resolved data_dir into the engine config so the
@@ -610,7 +639,7 @@ mod tests {
             log_file: None,
             auth_token: None,
             simulation,
-            asset: None,
+            asset: Vec::new(),
         }
     }
 

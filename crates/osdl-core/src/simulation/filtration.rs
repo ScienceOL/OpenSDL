@@ -253,7 +253,7 @@ impl FiltrationState {
             "funnel_visible":self.assembly!=Assembly::Detached,
             "filter_visible":self.filter,
             "sealed":self.assembly==Assembly::Sealed,
-            "seal_rad":if self.assembly==Assembly::Sealed{0.0}else{std::f64::consts::FRAC_PI_3},
+            "seal_rad":if self.assembly==Assembly::Sealed{0.0}else{std::f64::consts::PI / 3.0},
             "vent_rad":if self.vent{std::f64::consts::FRAC_PI_2}else{0.0},
             "running":self.running,
             "status":if self.vent{"venting"}else if self.running{"filtering"}else if self.config.ambient_kpa-self.pressure>0.5{"vacuum"}else{"idle"}

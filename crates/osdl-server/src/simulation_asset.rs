@@ -120,6 +120,62 @@ pub fn prepare(
     }
     Ok(simulation)
 }
+
+/// Build one world from independently admitted Hub packages. Only declarative
+/// kinematic configurations are combined; no source code or hardware is loaded.
+pub fn compose(
+    cache: &AssetCache,
+    references: &[String],
+    destination: &Path,
+    world_id: &str,
+) -> anyhow::Result<SimulationConfig> {
+    if references.is_empty() || references.len() > 64 {
+        bail!("select between 1 and 64 simulation packages");
+    }
+    let mut world = SimulationConfig {
+        world_id: world_id.to_owned(),
+        devices: Vec::new(),
+        samples: Vec::new(),
+        ..Default::default()
+    };
+    for (index, reference) in references.iter().enumerate() {
+        let parsed = opensdl_assets::AssetReference::parse(reference)?;
+        let digest = parsed
+            .digest()
+            .context("simulation requires digest-pinned packages")?;
+        let package = prepare(cache, digest, &destination.join(index.to_string()))
+            .with_context(|| format!("cannot prepare simulation package {reference}"))?;
+        if index == 0 {
+            world.tick_hz = package.tick_hz;
+            world.seed = package.seed;
+        } else {
+            world.tick_hz = world.tick_hz.max(package.tick_hz);
+        }
+        for sample in package.samples {
+            if let Some(existing) = world.samples.iter().find(|item| item.id == sample.id) {
+                if serde_json::to_value(existing)? != serde_json::to_value(&sample)? {
+                    bail!(
+                        "packages declare conflicting sample fixture '{}'",
+                        sample.id
+                    );
+                }
+            } else {
+                world.samples.push(sample);
+            }
+        }
+        for mut device in package.devices {
+            device.id = format!("{}-{}", index + 1, device.id);
+            // A deterministic table layout, in metres, keeps selected instruments
+            // separated. Instrument-relative geometry and sample poses stay intact.
+            device.position[0] += (index % 4) as f64 * 1.2 - 1.8;
+            device.position[2] += (index / 4) as f64 * 1.2;
+            world.devices.push(device);
+        }
+    }
+    world.validate().map_err(anyhow::Error::msg)?;
+    Ok(world)
+}
+
 fn validate_balance(
     model: &ModelDefinition,
     balance: &osdl_core::simulation::balance::BalanceConfig,
