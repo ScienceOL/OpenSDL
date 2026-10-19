@@ -20,6 +20,7 @@ mod media_publish;
 pub mod paths;
 pub mod service;
 pub mod simulation_asset;
+mod snapshot;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;

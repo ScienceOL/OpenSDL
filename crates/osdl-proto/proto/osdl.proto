@@ -14,6 +14,9 @@ import "google/protobuf/timestamp.proto";
 // ===== Service =====
 
 service Osdl {
+  // Read a bounded snapshot under this server's private snapshot root.
+  rpc ReadSnapshot(ReadSnapshotRequest) returns (ReadSnapshotResponse);
+
   // Server identity + connection counts. Cheap to call; clients can poll.
   rpc Status(StatusRequest) returns (StatusResponse);
 
@@ -273,3 +276,6 @@ message ShutdownRequest {
 }
 
 message ShutdownResponse {}
+
+message ReadSnapshotRequest { string path = 1; }
+message ReadSnapshotResponse { bytes jpeg = 1; }

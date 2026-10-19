@@ -72,6 +72,25 @@ impl pb::osdl_server::Osdl for OsdlService {
             .await
             .map(Response::new)
     }
+    async fn read_snapshot(
+        &self,
+        request: Request<pb::ReadSnapshotRequest>,
+    ) -> Result<Response<pb::ReadSnapshotResponse>, Status> {
+        let root = self
+            .engine
+            .snapshot_root()
+            .ok_or_else(|| Status::failed_precondition("snapshot unavailable"))?;
+        let path = request.into_inner().path;
+        if path.len() > 4096 {
+            return Err(Status::invalid_argument("snapshot path rejected"));
+        }
+        let jpeg =
+            tokio::task::spawn_blocking(move || crate::snapshot::snapshot_bytes(&root, &path))
+                .await
+                .map_err(|_| Status::internal("snapshot unavailable"))??;
+        Ok(Response::new(pb::ReadSnapshotResponse { jpeg }))
+    }
+
     async fn status(
         &self,
         _req: Request<pb::StatusRequest>,

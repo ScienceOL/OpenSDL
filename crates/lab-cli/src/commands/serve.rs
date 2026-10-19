@@ -414,7 +414,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 
     // Engine runs in a dedicated task. We stop it explicitly after the
     // gRPC server returns so the shutdown order is: client → server → engine.
-    let engine_task = tokio::spawn(async move { engine.run().await });
+    let mut engine_task = tokio::spawn(async move { engine.run().await });
 
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
@@ -433,16 +433,23 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         paths.lock_dir().display()
     );
 
-    let serve_result = osdl_server::serve(handle.clone(), serve_cfg).await;
-
-    // Always tell the engine to stop on the way out — `serve` returning
-    // doesn't currently propagate to the engine.
-    handle.request_stop();
-    if let Err(e) = engine_task.await {
-        log::warn!("engine task failed to join: {e}");
+    // A dead engine must never leave an apparently healthy control service.
+    let server = osdl_server::serve(handle.clone(), serve_cfg);
+    tokio::pin!(server);
+    tokio::select! {
+        result = &mut server => {
+            handle.request_stop();
+            engine_task.await.context("engine task failed")?;
+            result.context("serve")
+        }
+        result = &mut engine_task => {
+            handle.request_stop();
+            // Release listeners, event streams and the instance lockfile.
+            server.await.context("serve shutdown")?;
+            result.context("engine task failed")?;
+            anyhow::bail!("engine stopped before the control service")
+        }
     }
-
-    serve_result.map_err(|e| anyhow!("serve: {e}"))
 }
 
 fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
