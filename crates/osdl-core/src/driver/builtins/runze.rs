@@ -160,34 +160,26 @@ pub fn encode(config: &RunzeConfig, cmd: &DeviceCommand) -> Result<Vec<u8>, Stri
 /// Status byte: `` ` `` (0x60) = Idle, `@` (0x40) = Busy/error.
 /// Leading noise bytes (e.g., 0xFF on RS-485/TCP) are skipped.
 pub fn decode(config: &RunzeConfig, bytes: &[u8]) -> Option<HashMap<String, serde_json::Value>> {
-    // Skip leading non-ASCII noise bytes (e.g., 0xFF from bus),
-    // then find '/' delimiter for the framed format.
-    let slash_pos = bytes.iter().position(|&b| b == b'/');
-
-    // Parse from '/' if found, otherwise from the first valid byte
-    let start = slash_pos.unwrap_or(0);
-    let text = std::str::from_utf8(&bytes[start..]).ok()?;
-    let text = text.trim_end_matches(['\r', '\n']);
-
-    let (status_byte, data) = if slash_pos.is_some() {
-        // Framed format: /<address><status>[data...][\x03]
-        if text.len() < 3 {
-            return None;
+    // Serial framing is byte-oriented. Never slice a UTF-8 string at protocol
+    // offsets: bus noise can form a valid multi-byte character.
+    let slash = bytes.iter().position(|&byte| byte == b'/');
+    let (status_byte, payload) = match slash {
+        Some(offset) => {
+            let frame = &bytes[offset..];
+            (*frame.get(2)?, frame.get(3..)?)
         }
-        let status = text.as_bytes()[2]; // skip '/' + address
-        let data_end = text.find('\x03').unwrap_or(text.len());
-        let data = if data_end > 3 { &text[3..data_end] } else { "" };
-        (status, data)
-    } else {
-        // Legacy format (no '/'): <status>[data...]
-        if text.is_empty() {
-            return None;
-        }
-        let status = text.as_bytes()[0];
-        let rest = &text[1..];
-        let data = rest.split('\x03').next().unwrap_or("");
-        (status, data)
+        None => (*bytes.first()?, &bytes[1..]),
     };
+    if status_byte & 0xc0 != 0x40 {
+        return None;
+    }
+    let end = payload
+        .iter()
+        .position(|&byte| byte == 3)
+        .unwrap_or(payload.len());
+    let data = std::str::from_utf8(&payload[..end])
+        .ok()?
+        .trim_end_matches(['\r', '\n']);
 
     let mut props = HashMap::new();
 
@@ -290,6 +282,22 @@ mod tests {
             action: action.into(),
             params,
         }
+    }
+
+    #[test]
+    fn binary_noise_cannot_panic_or_fabricate_pump_status() {
+        let config = RunzeConfig::default();
+        for noise in ["ˈ".as_bytes(), "/ˈ".as_bytes(), b"/1\xc2\x88", b"\xff"] {
+            assert!(decode(&config, noise).is_none());
+        }
+        for byte in 0..=255 {
+            let _ = decode(&config, &[byte]);
+            let _ = decode(&config, &[b'/', byte, 0xc2, 0x88]);
+        }
+        assert_eq!(
+            decode(&config, b"\xff/1`42\x03\r\n").unwrap()["raw_value"],
+            42.0
+        );
     }
 
     #[test]
