@@ -1,3 +1,4 @@
+use osdl_core::media::MAX_SNAPSHOT_BYTES;
 use std::path::{Path, PathBuf};
 use tonic::Status;
 
@@ -19,7 +20,7 @@ pub(super) fn snapshot_bytes(root: &Path, requested: &str) -> Result<Vec<u8>, St
     }
     let metadata = std::fs::symlink_metadata(&candidate)
         .map_err(|_| Status::failed_precondition("snapshot unavailable"))?;
-    if !metadata.is_file() || metadata.len() > 256 * 1024 {
+    if !metadata.is_file() || metadata.len() > MAX_SNAPSHOT_BYTES as u64 {
         return Err(Status::failed_precondition("snapshot image rejected"));
     }
     let mut options = std::fs::OpenOptions::new();
@@ -34,10 +35,10 @@ pub(super) fn snapshot_bytes(root: &Path, requested: &str) -> Result<Vec<u8>, St
         .map_err(|_| Status::failed_precondition("snapshot unavailable"))?;
     use std::io::Read;
     let mut bytes = Vec::new();
-    file.take(256 * 1024 + 1)
+    file.take(MAX_SNAPSHOT_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| Status::failed_precondition("snapshot unavailable"))?;
-    if bytes.len() > 256 * 1024 || !bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+    if bytes.len() > MAX_SNAPSHOT_BYTES || !bytes.starts_with(&[0xff, 0xd8, 0xff]) {
         return Err(Status::failed_precondition("snapshot image rejected"));
     }
     Ok(bytes)
@@ -89,8 +90,12 @@ mod tests {
         assert!(snapshot_bytes(&root, ".").is_err());
         std::fs::write(root.join("text.jpg"), b"secret text").unwrap();
         assert!(snapshot_bytes(&root, "text.jpg").is_err());
+        let mut large = vec![0; 600 * 1024];
+        large[..3].copy_from_slice(&[0xff, 0xd8, 0xff]);
+        std::fs::write(root.join("large.jpg"), &large).unwrap();
+        assert_eq!(snapshot_bytes(&root, "large.jpg").unwrap(), large);
         let oversized = std::fs::File::create(root.join("oversized.jpg")).unwrap();
-        oversized.set_len(10 * 1024 * 1024 + 1).unwrap();
+        oversized.set_len(MAX_SNAPSHOT_BYTES as u64 + 1).unwrap();
         assert!(snapshot_bytes(&root, "oversized.jpg").is_err());
     }
 
