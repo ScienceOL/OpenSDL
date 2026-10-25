@@ -10,6 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
+        .skip_debug([
+            ".osdl.v1.PairRequest",
+            ".osdl.v1.DescribeInvitationRequest",
+            ".osdl.v1.InviteResponse",
+        ])
         .compile_protos(&["proto/osdl.proto"], &["proto"])?;
     Ok(())
 }

@@ -11,6 +11,8 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "lab", version, about = "OpenSDL command-line interface")]
 struct Cli {
+    #[arg(long, global=true, conflicts_with_all=["endpoint","auth_token"])]
+    connection: Option<String>,
     /// Connect to this endpoint instead of auto-discovering. Examples:
     /// `unix:/run/osdl/default.sock`, `http://lab-pi.local:50051`.
     #[arg(long, env = "OSDL_ENDPOINT", global = true)]
@@ -37,6 +39,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Pair(commands::pair::PairArgs),
+    Auth {
+        #[command(subcommand)]
+        cmd: commands::pair::AuthCommand,
+    },
     /// Bind a laboratory instance through browser account approval.
     Login(commands::login::LoginArgs),
     /// Manage local digest-pinned runtime instances.
@@ -120,7 +127,9 @@ enum Command {
         tail: usize,
     },
     /// Remove a stopped managed instance.
-    Rm { name: String },
+    Rm {
+        name: String,
+    },
     /// List cached asset packages (the short form of `lab asset list`).
     Images {
         #[arg(long)]
@@ -172,12 +181,15 @@ fn main() {
             };
             let opts = client::ClientOpts {
                 endpoint: cli.endpoint,
+                connection: cli.connection,
                 instance: cli.instance,
                 auth_token: cli.auth_token,
             };
             rt.block_on(async move {
                 match other {
                     Command::Serve(_) => unreachable!(),
+                    Command::Pair(args) => commands::pair::pair(args).await,
+                    Command::Auth {cmd} => commands::pair::admin(cmd, opts.instance).await,
                     Command::Login(args) => commands::login::run(args, opts.instance).await,
                     Command::Asset { cmd } => commands::asset::run(cmd, cache_dir).await,
                     Command::Daemon { cmd } => commands::daemon::run(cmd, cache_dir).await,

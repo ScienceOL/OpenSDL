@@ -1,18 +1,4 @@
-//! Bearer-token auth interceptor for the TCP gRPC listener.
-//!
-//! Threat model: a routable lab-network endpoint where anyone who can
-//! reach the port could otherwise drive lab hardware (`SendCommand`)
-//! and shut the server down (`Shutdown`). A shared bearer token closes
-//! the obvious hole. mTLS is the longer-term answer; this is the
-//! minimum we ship today.
-//!
-//! UDS clients skip this check — filesystem perms (0600 in `serve()`)
-//! are the auth there.
-//!
-//! Wire format: gRPC clients pass `authorization: Bearer <TOKEN>` in
-//! request metadata. We compare in constant time so a server log
-//! showing a single byte mismatch can't be used to leak the token.
-
+//! Explicit local, static bearer, account, and public-key listener policies.
 use tonic::{metadata::MetadataValue, service::Interceptor, Request, Status};
 
 /// Build a tonic interceptor that requires `authorization: Bearer
@@ -82,6 +68,7 @@ pub enum ListenerAuth {
     Local,
     Bearer(String),
     Account(crate::account::AccountAuth),
+    PublicKey(crate::public_key::PublicKeyAuth),
 }
 impl ListenerAuth {
     pub fn validate_listener(
@@ -90,6 +77,22 @@ impl ListenerAuth {
         address: Option<std::net::SocketAddr>,
     ) -> Result<(), String> {
         match self {
+            Self::PublicKey(key) => {
+                if key.instance() != instance
+                    || address.is_none_or(|a| match a.ip() {
+                        std::net::IpAddr::V4(ip) => {
+                            !ip.is_loopback()
+                                && !(ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1]))
+                        }
+                        _ => true,
+                    })
+                {
+                    return Err(
+                        "public-key requires its bound instance and explicit Tailnet IPv4 listener"
+                            .into(),
+                    );
+                }
+            }
             Self::Account(account) => {
                 if account.verifier.binding().instance != instance {
                     return Err("account binding instance mismatch".into());
@@ -123,6 +126,7 @@ impl ListenerAuth {
             Self::Local => "local",
             Self::Bearer(_) => "bearer",
             Self::Account(_) => "account",
+            Self::PublicKey(_) => "public_key",
         }
     }
 }

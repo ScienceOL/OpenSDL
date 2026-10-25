@@ -295,3 +295,44 @@ message AuthenticationInfoResponse {
 }
 message AuthenticationRenewRequest {}
 message AuthenticationRenewResponse { int64 expires_at = 1; }
+
+service Pairing {
+  rpc DescribeInvitation(DescribeInvitationRequest) returns (DescribeInvitationResponse);
+  rpc Pair(PairRequest) returns (PairResponse);
+}
+// Registered only on the owner-authorized local listener.
+service GrantAdministration {
+  rpc Invite(InviteRequest) returns (InviteResponse);
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse);
+  rpc Revoke(RevokeGrantRequest) returns (RevokeGrantResponse);
+}
+enum GrantAccess { GRANT_ACCESS_UNSPECIFIED = 0; READ = 1; OPERATE = 2; }
+message PairRequest {
+  string invitation_id = 1;
+  string capability = 2;
+  bytes csr_der = 3;
+  string label = 4;
+}
+message Grant {
+  string id = 1;
+  string label = 2;
+  GrantAccess access = 3;
+  optional int64 expires_at = 4;
+  int64 certificate_expires_at = 5;
+  bool revoked = 6;
+}
+message PairResponse {
+  Grant grant = 1;
+  string certificate_pem = 2;
+  string lab_id = 3;
+  string channel = 4;
+}
+message InviteRequest { GrantAccess access = 1; optional int64 expires_at = 2; }
+message InviteResponse { string invitation = 1; }
+message ListGrantsRequest { string after_id = 1; uint32 limit = 2; }
+message ListGrantsResponse { repeated Grant grants = 1; string next_id = 2; }
+message RevokeGrantRequest { string id = 1; }
+message RevokeGrantResponse {}
+
+message DescribeInvitationRequest { string invitation_id = 1; string capability = 2; }
+message DescribeInvitationResponse { string lab_id = 1; string instance = 2; string channel = 3; GrantAccess access = 4; optional int64 grant_expires_at = 5; int64 invitation_expires_at = 6; }

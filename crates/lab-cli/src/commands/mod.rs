@@ -8,6 +8,7 @@ pub mod inspect;
 pub mod instance;
 pub mod login;
 pub mod pack;
+pub mod pair;
 pub mod pull;
 pub mod push;
 pub mod registry_auth;

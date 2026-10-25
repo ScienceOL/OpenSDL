@@ -5,6 +5,10 @@ asset, cache an immutable package, and run the supported local simulation.
 Public Hub browsing and pulls do not require Docker, a Hub account, lab
 hardware, or a running `lab serve` process.
 
+For laboratory service authority and named remote pairing, see
+[paired/local authentication](paired-authentication.md) and
+[account authentication](account-authentication.md).
+
 ## Install a runnable release
 
 Install the pre-built release. It contains the `lab` binary, the local asset

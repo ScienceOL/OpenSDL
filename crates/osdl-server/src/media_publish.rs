@@ -336,7 +336,7 @@ mod tests {
             .env("LAB_MEDIA_TEST_SECONDS", "6");
         let publishers = Publishers::default();
         let slot = publishers.acquire("camera".into()).unwrap();
-        let registry = crate::account::lease::Leases::default();
+        let registry = crate::authorization::lease::Leases::default();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -350,11 +350,11 @@ mod tests {
             scope: crate::account::Scope::Read,
             expires_at: now + 2,
         };
-        let lease = registry.acquire(&identity);
+        let lease = registry.acquire(&identity).resource().unwrap();
         let stream = publish_process(command, Arc::new(Notify::new()), slot)
             .await
             .unwrap();
-        let mut stream = crate::account::stream::guard_stream(stream, Some(lease));
+        let mut stream = crate::authorization::stream::guard_stream(stream, Some(lease));
         assert!(stream.next().await.unwrap().unwrap().running);
         let pid = std::fs::read_to_string(&pid_file).unwrap();
         identity.expires_at = now + 4;
@@ -399,7 +399,7 @@ mod tests {
             .env("LAB_MEDIA_TEST_SECONDS", "3");
         let publishers = Publishers::default();
         let slot = publishers.acquire("camera".into()).unwrap();
-        let registry = crate::account::lease::Leases::default();
+        let registry = crate::authorization::lease::Leases::default();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -413,11 +413,11 @@ mod tests {
             scope: crate::account::Scope::Read,
             expires_at: now + 2,
         };
-        let lease = registry.acquire(&identity);
+        let lease = registry.acquire(&identity).resource().unwrap();
         let stream = publish_process(command, Arc::new(Notify::new()), slot)
             .await
             .unwrap();
-        let mut stream = crate::account::stream::guard_stream(stream, Some(lease));
+        let mut stream = crate::authorization::stream::guard_stream(stream, Some(lease));
         // Deliberately never poll or drop the response body until after expiry.
         tokio::time::sleep(std::time::Duration::from_millis(3200)).await;
         assert!(

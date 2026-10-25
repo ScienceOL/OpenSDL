@@ -8,6 +8,11 @@ repository.workspace = true
 description = "gRPC server library wrapping the OpenSDL engine"
 
 [dependencies]
+x509-parser = { version = "0.18", features = ["verify"] }
+osdl-auth = { path = "../osdl-auth" }
+sha2.workspace = true
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem", "x509-parser"] }
+time = "0.3"
 base64.workspace = true
 ring = "0.17"
 tempfile.workspace = true

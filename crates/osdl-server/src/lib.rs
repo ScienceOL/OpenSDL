@@ -28,7 +28,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use osdl_core::EngineHandle;
-use osdl_proto::v1 as pb;
+mod listeners;
+pub mod local_access;
 use tokio::sync::Notify;
 
 pub use lockfile::{InstanceRecord, LockfileGuard};
@@ -107,6 +108,16 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         .validate_listener(&cfg.instance, cfg.listen.tcp_addr)
         .map_err(ServeError::Auth)?;
 
+    #[cfg(unix)]
+    if matches!(
+        cfg.auth,
+        auth::ListenerAuth::Account(_) | auth::ListenerAuth::PublicKey(_)
+    ) && cfg.listen.socket_path.is_none()
+    {
+        return Err(ServeError::Auth(
+            "remote authentication requires a protected local administrator socket".into(),
+        ));
+    }
     let pid = std::process::id();
     let started_at = convert::now_ts();
 
@@ -158,6 +169,11 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     // naturally; the lockfile guard will clean up on drop.
     #[cfg(unix)]
     let unix_listener = if let Some(ref socket_path) = effective_socket_path {
+        let parent = socket_path
+            .parent()
+            .ok_or_else(|| ServeError::Auth("invalid_socket_path".into()))?;
+        osdl_auth::ProfileStore::open(parent.to_path_buf())
+            .map_err(|e| ServeError::Auth(e.to_string()))?;
         match std::fs::remove_file(socket_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -193,80 +209,59 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     let mut joins: Vec<tokio::task::JoinHandle<Result<(), tonic::transport::Error>>> = Vec::new();
 
     if let Some(listener) = tcp_listener {
-        let bound = bound_tcp_addr.expect("listener implies addr");
-        let shutdown = shutdown.clone();
-        let account = match &cfg.auth {
-            auth::ListenerAuth::Account(account) => Some(account.clone()),
-            _ => None,
-        };
-        let tcp_service = match &account {
-            Some(account) => service.clone().with_account(account.clone()),
-            None => service.clone(),
-        };
-        let tcp_service = pb::osdl_server::OsdlServer::new(tcp_service);
-        let info =
-            pb::authentication_server::AuthenticationServer::new(account::AuthenticationService {
-                account,
-                mode: cfg.auth.mode().into(),
-                instance: cfg.instance.clone(),
-            })
-            .max_decoding_message_size(1024)
-            .max_encoding_message_size(2048);
-        let policy = cfg.auth.clone();
-        joins.push(tokio::spawn(async move {
-            let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
-            let mut builder = tonic::transport::Server::builder();
-            match policy {
-                auth::ListenerAuth::Bearer(t) => {
-                    let intercepted = tonic::service::interceptor::InterceptedService::new(
-                        tcp_service,
-                        auth::bearer_interceptor(t),
-                    );
-                    builder
-                        .add_service(info)
-                        .add_service(intercepted)
-                        .serve_with_incoming_shutdown(incoming, async move {
-                            shutdown.notified().await;
-                        })
-                        .await
-                }
-                _ => {
-                    builder
-                        .add_service(info)
-                        .add_service(tcp_service)
-                        .serve_with_incoming_shutdown(incoming, async move {
-                            shutdown.notified().await;
-                        })
-                        .await
-                }
+        let access = match &cfg.auth {
+            auth::ListenerAuth::Local => {
+                let access = local_access::LocalAccess::generate(format!(
+                    "http://{}",
+                    bound_tcp_addr.unwrap()
+                ))
+                .map_err(|e| ServeError::Auth(e.to_string()))?;
+                access
+                    .save(&cfg.lock_dir, &cfg.instance)
+                    .map_err(|e| ServeError::Auth(e.to_string()))?;
+                listeners::TcpAccess::LocalCapability(access.token)
             }
-        }));
-        log::info!("gRPC TCP listening on {bound} (auth: {})", cfg.auth.mode());
+            _ => listeners::TcpAccess::Remote,
+        };
+        joins.push(tokio::spawn(listeners::tcp(
+            listener,
+            service.clone(),
+            cfg.auth.clone(),
+            cfg.instance.clone(),
+            access,
+            shutdown.clone(),
+        )));
     }
-
+    #[cfg(windows)]
+    if matches!(
+        cfg.auth,
+        auth::ListenerAuth::Account(_) | auth::ListenerAuth::PublicKey(_)
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let access =
+            local_access::LocalAccess::generate(format!("http://{}", listener.local_addr()?))
+                .map_err(|e| ServeError::Auth(e.to_string()))?;
+        access
+            .save(&cfg.lock_dir, &cfg.instance)
+            .map_err(|e| ServeError::Auth(e.to_string()))?;
+        joins.push(tokio::spawn(listeners::tcp(
+            listener,
+            service.clone(),
+            cfg.auth.clone(),
+            cfg.instance.clone(),
+            listeners::TcpAccess::LocalCapability(access.token),
+            shutdown.clone(),
+        )));
+    }
     #[cfg(unix)]
     if let Some(listener) = unix_listener {
-        let socket_path = effective_socket_path
-            .clone()
-            .expect("listener implies path");
-        let shutdown = shutdown.clone();
-        let uds_service = pb::osdl_server::OsdlServer::new(service);
-        joins.push(tokio::spawn(async move {
-            let incoming = tokio_stream::wrappers::UnixListenerStream::new(listener);
-            tonic::transport::Server::builder()
-                .add_service(uds_service)
-                .serve_with_incoming_shutdown(incoming, async move {
-                    shutdown.notified().await;
-                })
-                .await
-        }));
-        log::info!("gRPC UDS listening at {}", socket_path.display());
+        joins.push(tokio::spawn(listeners::unix(
+            listener,
+            service.clone(),
+            cfg.auth.clone(),
+            shutdown.clone(),
+        )));
     }
-    // On non-Unix the original `service` was cloned into the TCP branch
-    // and the original is now unused — silence the warning.
-    #[cfg(not(unix))]
-    let _ = service;
-
     // Wait for stop signal — engine stop OR Ctrl-C.
     let mut stop = engine.stop_handle().subscribe();
     tokio::select! {
@@ -343,3 +338,5 @@ mod shutdown_signal_tests {
         .is_ok());
     }
 }
+pub mod authorization;
+pub mod public_key;

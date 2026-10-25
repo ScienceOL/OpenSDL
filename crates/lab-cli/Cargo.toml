@@ -43,6 +43,7 @@ default = ["espnow"]
 espnow = ["osdl-core/espnow"]
 
 [dependencies]
+osdl-auth = { path = "../osdl-auth" }
 osdl-core = { path = "../osdl-core" }
 osdl-proto = { path = "../osdl-proto" }
 osdl-server = { path = "../osdl-server" }

@@ -23,12 +23,13 @@ installed Dev CA. Account TCP listeners accept only loopback or an explicit
 Tailscale IPv4 address. The tailnet provides network encryption and access control.
 
 `--auth account` rejects `--auth-token` and `OSDL_AUTH_TOKEN`. The default
-`--auth static` retains explicit static bearer support for standalone/supervised
-services. An unauthenticated static listener is restricted to loopback. Unix
-sockets keep their filesystem administrator authority, including Shutdown.
+`--auth local` uses protected local authority. Explicit `--auth static` requires
+a bearer for standalone/supervised services. Unix sockets retain administrator
+authority; Windows uses a distinct owner-authenticated loopback admin listener.
+See [paired and local authentication](paired-authentication.md).
 
 The separate `osdl.v1.Authentication.Info` RPC exposes only mode, lab UUID,
-instance, issuer and channel. Mode is `account`, `bearer`, or `local`. All TCP
+instance, issuer and channel. Mode is `account`, `public_key`, `bearer`, or `local`. All TCP
 operational account requests carry `authorization: Bearer <assertion>`. OpenSDL
 verifies the pinned Ed25519 key, exact issuer/account/lab/channel, device UUID,
 positive generation, installation UUID, issuance/expiry and a maximum 300-second
@@ -48,7 +49,8 @@ A one-item handoff bounds buffering; queued data is discarded after expiry.
 Static streams keep their direct path. New operations always verify their own
 presented assertion.
 
-Public-key pairing is not implemented by this authentication mode.
+Independent public-key pairing is a separate explicit mode, described in
+[paired authentication](paired-authentication.md).
 
 Authentication failures use gRPC UNAUTHENTICATED and metadata
 `opensdl-auth-error`: `account_mismatch`, `authorization_expired`, or
