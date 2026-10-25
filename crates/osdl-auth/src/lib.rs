@@ -22,7 +22,9 @@ pub fn crypto_provider() {
 }
 
 mod client;
+mod client_error;
 pub use client::{inspect_invitation, Laboratory, PendingProfile, ProfileMetadata, ProfileState};
+pub use client_error::ClientError;
 
 #[cfg(test)]
 mod instance_tests {
