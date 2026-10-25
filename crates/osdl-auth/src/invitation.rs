@@ -68,7 +68,7 @@ impl Invitation {
             );
         }
         ensure!(
-            !self.instance.is_empty() && self.instance.len() <= 128,
+            crate::valid_instance_name(&self.instance),
             "invalid_instance"
         );
         ensure!(

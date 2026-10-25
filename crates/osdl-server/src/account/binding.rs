@@ -44,10 +44,7 @@ impl Binding {
         );
         uuid(&self.lab_id)?;
         ensure!(
-            !self.instance.is_empty()
-                && self.instance.len() <= 128
-                && self.instance.trim() == self.instance
-                && !self.instance.chars().any(char::is_control),
+            osdl_auth::valid_instance_name(&self.instance),
             "invalid instance"
         );
         ensure!(
@@ -68,11 +65,7 @@ impl Binding {
 impl Binding {
     pub fn path(config: &Path, instance: &str) -> anyhow::Result<PathBuf> {
         ensure!(
-            !instance.is_empty()
-                && instance.len() <= 128
-                && instance
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')),
+            osdl_auth::valid_instance_name(instance),
             "instance must contain only letters, digits, '-' or '_'"
         );
         Ok(config.join("instances").join(instance).join("account.json"))

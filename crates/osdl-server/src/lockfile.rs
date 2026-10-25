@@ -89,10 +89,13 @@ impl Drop for LockfileGuard {
 pub fn write(lock_dir: &Path, record: &InstanceRecord) -> Result<LockfileGuard, String> {
     use std::io::Write;
 
+    if !osdl_auth::valid_instance_name(&record.instance) {
+        return Err("invalid instance name".into());
+    }
     std::fs::create_dir_all(lock_dir)
         .map_err(|e| format!("create lock dir {}: {}", lock_dir.display(), e))?;
 
-    let final_path = lock_dir.join(format!("{}.json", sanitize(&record.instance)));
+    let final_path = lock_dir.join(format!("{}.json", record.instance));
     let json = serde_json::to_vec_pretty(record).map_err(|e| format!("serialize record: {e}"))?;
 
     for attempt in 0..2 {
@@ -176,7 +179,10 @@ pub fn list(lock_dir: &Path) -> Vec<InstanceRecord> {
 
 /// Look up a single instance by name. Returns `None` for missing or stale.
 pub fn find(lock_dir: &Path, instance: &str) -> Option<InstanceRecord> {
-    let path = lock_dir.join(format!("{}.json", sanitize(instance)));
+    if !osdl_auth::valid_instance_name(instance) {
+        return None;
+    }
+    let path = lock_dir.join(format!("{}.json", instance));
     let rec = read_record(&path)?;
     if pid_alive(rec.pid) {
         Some(rec)
@@ -189,21 +195,6 @@ pub fn find(lock_dir: &Path, instance: &str) -> Option<InstanceRecord> {
 fn read_record(path: &Path) -> Option<InstanceRecord> {
     let bytes = std::fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
-}
-
-/// Strip path separators and other meta-chars from an instance name so it
-/// can be safely used as a filename component. Matches what we accept on
-/// the CLI: `[A-Za-z0-9._-]+`.
-fn sanitize(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 #[cfg(unix)]
@@ -314,8 +305,13 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_strips_path_traversal() {
-        assert_eq!(sanitize("../etc/passwd"), ".._etc_passwd");
-        assert_eq!(sanitize("normal-name_1"), "normal-name_1");
+    fn invalid_instance_names_never_create_or_alias_lockfiles() {
+        let dir = tempdir().unwrap();
+        for name in ["../etc/passwd", "lab.d", "lab name", ""] {
+            let record = InstanceRecord::new(name, std::process::id(), "test", None, None);
+            assert!(write(dir.path(), &record).is_err());
+            assert!(find(dir.path(), name).is_none());
+        }
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }

@@ -308,6 +308,10 @@ fn resolve_log_path(args: &ServeArgs, paths: &Paths) -> anyhow::Result<PathBuf> 
 }
 
 pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        osdl_auth::valid_instance_name(&args.instance),
+        "instance must be 1–128 letters, digits, '-' or '_'"
+    );
     let paths = Paths::discover().map_err(|e| anyhow!("paths: {e}"))?;
 
     // UDS is Unix-only. On Windows we can't bind one even if the user

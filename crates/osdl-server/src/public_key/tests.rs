@@ -1,5 +1,71 @@
 use super::*;
 use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
+
+#[tokio::test(flavor = "current_thread")]
+async fn store_rpc_waits_do_not_block_the_async_executor() {
+    use pb::{grant_administration_server::GrantAdministration, pairing_server::Pairing};
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+    let auth = PublicKeyAuth::open(
+        &temp.path().join("auth"),
+        "test",
+        Channel::Stable,
+        "https://100.64.0.9:50051",
+    )
+    .unwrap();
+    let inv = auth.invite(Access::Read, None).unwrap();
+    for operation in 0..4 {
+        let writer = auth.clone();
+        let (ready, waiting) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _locked = writer.0.db.lock().unwrap();
+            ready.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        });
+        waiting.recv().unwrap();
+        let request = async {
+            match operation {
+                0 => Pairing::describe_invitation(
+                    &auth,
+                    tonic::Request::new(pb::DescribeInvitationRequest {
+                        invitation_id: inv.invitation_id.clone(),
+                        capability: inv.capability.clone(),
+                    }),
+                )
+                .await
+                .map(|_| ()),
+                1 => GrantAdministration::invite(
+                    &auth,
+                    tonic::Request::new(pb::InviteRequest {
+                        access: 1,
+                        expires_at: None,
+                    }),
+                )
+                .await
+                .map(|_| ()),
+                2 => GrantAdministration::list_grants(
+                    &auth,
+                    tonic::Request::new(pb::ListGrantsRequest::default()),
+                )
+                .await
+                .map(|_| ()),
+                _ => GrantAdministration::revoke(
+                    &auth,
+                    tonic::Request::new(pb::RevokeGrantRequest {
+                        id: uuid::Uuid::new_v4().to_string(),
+                    }),
+                )
+                .await
+                .map(|_| ()),
+            }
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), request).await;
+        holder.join().unwrap();
+        assert!(
+            result.is_err(),
+            "store wait blocked the reactor for operation {operation}"
+        );
+    }
+}
 async fn channel(
     address: std::net::SocketAddr,
     auth: &PublicKeyAuth,
