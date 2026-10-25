@@ -147,3 +147,112 @@ fn mismatched_persisted_ca_key_is_a_recovery_error() {
         PublicKeyAuth::open(&path, "test", Channel::Stable, "https://100.64.0.9:50051").is_err()
     );
 }
+
+#[tokio::test]
+async fn replacement_retry_after_lost_pair_response_keeps_the_redeemed_identity() {
+    use osdl_proto::v1::{
+        pairing_client::PairingClient,
+        pairing_server::{Pairing, PairingServer},
+        DescribeInvitationRequest, DescribeInvitationResponse, PairRequest, PairResponse,
+    };
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use tonic::{Request, Response, Status};
+    #[derive(Clone)]
+    struct LoseFirstResponse {
+        auth: PublicKeyAuth,
+        lose: Arc<AtomicBool>,
+    }
+    #[tonic::async_trait]
+    impl Pairing for LoseFirstResponse {
+        async fn describe_invitation(
+            &self,
+            request: Request<DescribeInvitationRequest>,
+        ) -> Result<Response<DescribeInvitationResponse>, Status> {
+            Pairing::describe_invitation(&self.auth, request).await
+        }
+        async fn pair(
+            &self,
+            request: Request<PairRequest>,
+        ) -> Result<Response<PairResponse>, Status> {
+            let response = Pairing::pair(&self.auth, request).await?;
+            if self.lose.swap(false, Ordering::SeqCst) {
+                return Err(Status::unavailable("response_lost"));
+            }
+            Ok(response)
+        }
+    }
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+    let auth = PublicKeyAuth::open(
+        &temp.path().join("auth"),
+        "test",
+        Channel::Stable,
+        "https://100.64.0.9:50051",
+    )
+    .unwrap();
+    let invitation = auth.invite(Access::Read, None).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let service = LoseFirstResponse {
+        auth: auth.clone(),
+        lose: Arc::new(AtomicBool::new(true)),
+    };
+    let server = tokio::spawn(
+        tonic::transport::Server::builder()
+            .tls_config(auth.tls())
+            .unwrap()
+            .add_service(PairingServer::new(service))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)),
+    );
+    let channel = tonic::transport::Endpoint::from_shared(format!("https://{address}"))
+        .unwrap()
+        .tls_config(
+            tonic::transport::ClientTlsConfig::new()
+                .ca_certificate(tonic::transport::Certificate::from_pem(&invitation.ca_pem))
+                .domain_name(invitation.server_name()),
+        )
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut client = PairingClient::new(channel);
+    let store = osdl_auth::ProfileStore::open(temp.path().join("client")).unwrap();
+    let pending = store.prepare_pair("lab", &invitation, true).unwrap();
+    let request = |csr: &[u8]| PairRequest {
+        invitation_id: invitation.invitation_id.clone(),
+        capability: invitation.capability.clone(),
+        csr_der: csr.into(),
+        label: "client".into(),
+    };
+    assert_eq!(
+        client
+            .pair(request(pending.csr_der()))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unavailable
+    );
+    let original = auth.list("", 100).unwrap().grants[0].id.clone();
+    drop(store);
+    let store = osdl_auth::ProfileStore::open(temp.path().join("client")).unwrap();
+    let retry = store.prepare_pair("lab", &invitation, true).unwrap();
+    let retry_started = std::time::Instant::now();
+    let resumed = client
+        .pair(request(retry.csr_der()))
+        .await
+        .unwrap()
+        .into_inner()
+        .grant
+        .unwrap();
+    println!(
+        "PERF lost_response_pair_retry_ms={} csr_bytes={}",
+        retry_started.elapsed().as_millis(),
+        retry.csr_der().len()
+    );
+    assert_eq!(resumed.id, original);
+    assert_eq!(pending.csr_der(), retry.csr_der());
+    assert_eq!(auth.list("", 100).unwrap().grants.len(), 1);
+    server.abort();
+}

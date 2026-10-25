@@ -1,11 +1,11 @@
-use crate::{Channel, Invitation, ProfileStore};
-use anyhow::{ensure, Result};
+use crate::{Channel, ClientError as Error, Invitation, ProfileStore};
 use osdl_proto::v1 as pb;
 use rcgen::PublicKeyData;
 use serde::{Deserialize, Serialize};
 use tonic::transport::{
     Certificate, Channel as TransportChannel, ClientTlsConfig, Endpoint, Identity,
 };
+type Result<T> = std::result::Result<T, Error>;
 #[cfg(all(test, windows))]
 tokio::task_local! {
     static CONNECTION_ATTEMPTS: std::cell::Cell<usize>;
@@ -77,12 +77,15 @@ fn tls(lab: &str, ca: &str) -> ClientTlsConfig {
 async fn connect(endpoint: &str, config: ClientTlsConfig) -> Result<TransportChannel> {
     #[cfg(all(test, windows))]
     let _ = CONNECTION_ATTEMPTS.try_with(|counter| counter.set(counter.get() + 1));
-    Ok(Endpoint::from_shared(endpoint.to_string())?
+    Endpoint::from_shared(endpoint.to_string())
+        .map_err(|_| Error::Trust)?
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(15))
-        .tls_config(config)?
+        .tls_config(config)
+        .map_err(|_| Error::Trust)?
         .connect()
-        .await?)
+        .await
+        .map_err(Error::transport)
 }
 async fn info(
     channel: TransportChannel,
@@ -92,15 +95,16 @@ async fn info(
 ) -> Result<Laboratory> {
     let info = pb::authentication_client::AuthenticationClient::new(channel)
         .info(pb::AuthenticationInfoRequest {})
-        .await?
+        .await
+        .map_err(Error::discovery)?
         .into_inner();
-    ensure!(
-        info.mode == "public_key"
-            && info.lab_id == lab
-            && info.instance == instance
-            && info.channel == expected.as_str(),
-        "laboratory_identity_changed"
-    );
+    if info.mode != "public_key"
+        || info.lab_id != lab
+        || info.instance != instance
+        || info.channel != expected.as_str()
+    {
+        return Err(Error::Trust);
+    }
     Ok(Laboratory {
         lab_id: info.lab_id,
         instance: info.instance,
@@ -109,7 +113,7 @@ async fn info(
 }
 /// Authenticate the invitation's server-owned details before private confirmation, without mutation.
 pub async fn inspect_invitation(inv: &Invitation) -> Result<pb::DescribeInvitationResponse> {
-    inv.validate()?;
+    inv.validate().map_err(|_| Error::Invitation)?;
     let channel = connect(&inv.endpoint, tls(&inv.lab_id, &inv.ca_pem)).await?;
     info(channel.clone(), &inv.lab_id, &inv.instance, inv.channel).await?;
     let public = pb::pairing_client::PairingClient::new(channel)
@@ -117,27 +121,29 @@ pub async fn inspect_invitation(inv: &Invitation) -> Result<pb::DescribeInvitati
             invitation_id: inv.invitation_id.clone(),
             capability: inv.capability.clone(),
         })
-        .await?
+        .await
+        .map_err(Error::enrollment)?
         .into_inner();
-    ensure!(
-        public.lab_id == inv.lab_id
-            && public.instance == inv.instance
-            && public.channel == inv.channel.as_str()
-            && public.invitation_expires_at == inv.expires_at as i64
-            && public.grant_expires_at == inv.grant_expires_at.map(|v| v as i64)
-            && public.access
-                == match inv.access {
-                    crate::Access::Read => 1,
-                    crate::Access::Operate => 2,
-                },
-        "invitation_binding_mismatch"
-    );
+    if !(public.lab_id == inv.lab_id
+        && public.instance == inv.instance
+        && public.channel == inv.channel.as_str()
+        && public.invitation_expires_at == inv.expires_at as i64
+        && public.grant_expires_at == inv.grant_expires_at.map(|v| v as i64)
+        && public.access
+            == match inv.access {
+                crate::Access::Read => 1,
+                crate::Access::Operate => 2,
+            })
+    {
+        return Err(Error::Trust);
+    }
     Ok(public)
 }
 impl ProfileStore {
     pub fn metadata(&self, name: &str) -> Result<ProfileMetadata> {
-        let record: Record = serde_json::from_slice(&self.read_secret(name)?)
-            .map_err(|_| anyhow::anyhow!("invalid_private_profile"))?;
+        let record: Record =
+            serde_json::from_slice(&self.read_secret(name).map_err(|_| Error::Persistence)?)
+                .map_err(|_| Error::Persistence)?;
         Ok(ProfileMetadata {
             lab_id: record.lab_id,
             instance: record.instance,
@@ -164,24 +170,39 @@ impl ProfileStore {
         inv: &Invitation,
         replace: bool,
     ) -> Result<PendingProfile> {
-        inv.validate()?;
-        if self.contains(name)? && !replace {
-            let record: Record = serde_json::from_slice(&self.read_secret(name)?)
-                .map_err(|_| anyhow::anyhow!("invalid_private_profile"))?;
-            ensure!(
-                record.lab_id == inv.lab_id
+        inv.validate().map_err(|_| Error::Invitation)?;
+        if self.contains(name).map_err(|_| Error::Persistence)? {
+            let record = serde_json::from_slice::<Record>(
+                &self.read_secret(name).map_err(|_| Error::Persistence)?,
+            );
+            // A repeated replacement is still the same enrollment. Only a new
+            // invitation authorizes a new key; never destroy an exact retry.
+            if !replace
+                || record
+                    .as_ref()
+                    .is_ok_and(|r| r.invitation_id == inv.invitation_id)
+            {
+                let record = record.map_err(|_| Error::Persistence)?;
+                if !(record.lab_id == inv.lab_id
                     && record.channel == inv.channel
                     && record.ca_pem == inv.ca_pem
                     && record.endpoint == inv.endpoint
-                    && record.instance == inv.instance,
-                "laboratory_identity_changed"
-            );
-            ensure!(record.invitation_id == inv.invitation_id, "profile_exists");
-            return Ok(PendingProfile { record });
+                    && record.instance == inv.instance
+                    && record.access == inv.access
+                    && record.grant_expires_at == inv.grant_expires_at)
+                {
+                    return Err(Error::Trust);
+                }
+                if record.invitation_id != inv.invitation_id {
+                    return Err(Error::ProfileExists);
+                }
+                return Ok(PendingProfile { record });
+            }
         }
-        let key = rcgen::KeyPair::generate()?;
+        let key = rcgen::KeyPair::generate().map_err(|_| Error::Persistence)?;
         let csr = rcgen::CertificateParams::default()
-            .serialize_request(&key)?
+            .serialize_request(&key)
+            .map_err(|_| Error::Persistence)?
             .der()
             .to_vec();
         let record = Record {
@@ -197,7 +218,12 @@ impl ProfileStore {
             grant_expires_at: inv.grant_expires_at,
             credential: Credential::Pending,
         };
-        self.write_secret(name, &serde_json::to_vec(&record)?, replace)?;
+        self.write_secret(
+            name,
+            &serde_json::to_vec(&record).map_err(|_| Error::Persistence)?,
+            replace,
+        )
+        .map_err(|_| Error::Persistence)?;
         Ok(PendingProfile { record })
     }
     /// The pending key is durable before this method sends the Pair request. Call only after confirmation.
@@ -208,9 +234,12 @@ impl ProfileStore {
         label: &str,
         replace: bool,
     ) -> Result<pb::Grant> {
-        ensure!(!label.is_empty() && label.len() <= 128, "invalid_label");
-        let locks = ProfileStore::open(self.root().join(".locks"))?;
-        let _writer = locks.lock(name)?;
+        if label.is_empty() || label.len() > 128 {
+            return Err(Error::InvalidInput);
+        }
+        let locks =
+            ProfileStore::open(self.root().join(".locks")).map_err(|_| Error::Persistence)?;
+        let _writer = locks.lock(name).map_err(|_| Error::Persistence)?;
         let mut pending = self.prepare_pair(name, inv, replace)?;
         let channel = connect(&inv.endpoint, tls(&inv.lab_id, &inv.ca_pem)).await?;
         info(channel.clone(), &inv.lab_id, &inv.instance, inv.channel).await?;
@@ -221,49 +250,52 @@ impl ProfileStore {
                 csr_der: pending.record.csr.clone(),
                 label: label.into(),
             })
-            .await?
+            .await
+            .map_err(Error::enrollment)?
             .into_inner();
-        ensure!(
-            response.lab_id == inv.lab_id && response.channel == inv.channel.as_str(),
-            "laboratory_identity_changed"
-        );
-        let grant = response
-            .grant
-            .ok_or_else(|| anyhow::anyhow!("invalid_pair_response"))?;
-        ensure!(
-            grant.access
-                == match inv.access {
-                    crate::Access::Read => 1,
-                    crate::Access::Operate => 2,
-                }
-                && grant.expires_at == inv.grant_expires_at.map(|v| v as i64)
-                && !grant.revoked,
-            "invalid_pair_response"
-        );
+        if response.lab_id != inv.lab_id || response.channel != inv.channel.as_str() {
+            return Err(Error::Trust);
+        }
+        let grant = response.grant.ok_or(Error::Trust)?;
+        if !(grant.access
+            == match inv.access {
+                crate::Access::Read => 1,
+                crate::Access::Operate => 2,
+            }
+            && grant.expires_at == inv.grant_expires_at.map(|v| v as i64)
+            && !grant.revoked)
+        {
+            return Err(Error::Trust);
+        }
         let certificate_expiry =
             validate_certificate(&pending.record, &response.certificate_pem, &grant.id)?;
-        ensure!(
-            certificate_expiry == grant.certificate_expires_at,
-            "invalid_pair_response"
-        );
+        if certificate_expiry != grant.certificate_expires_at {
+            return Err(Error::Trust);
+        }
         pending.record.credential = Credential::Paired {
             certificate: response.certificate_pem,
             grant: grant.id.clone(),
             certificate_expires_at: grant.certificate_expires_at as u64,
         };
-        self.write_secret(name, &serde_json::to_vec(&pending.record)?, true)?;
+        self.write_secret(
+            name,
+            &serde_json::to_vec(&pending.record).map_err(|_| Error::Persistence)?,
+            true,
+        )
+        .map_err(|_| Error::Persistence)?;
         Ok(grant)
     }
     pub async fn connect(&self, name: &str) -> Result<TransportChannel> {
-        let record: Record = serde_json::from_slice(&self.read_secret(name)?)
-            .map_err(|_| anyhow::anyhow!("invalid_private_profile"))?;
+        let record: Record =
+            serde_json::from_slice(&self.read_secret(name).map_err(|_| Error::Persistence)?)
+                .map_err(|_| Error::Persistence)?;
         let Credential::Paired {
             certificate: cert,
             grant,
             ..
         } = &record.credential
         else {
-            anyhow::bail!("pairing_required");
+            return Err(Error::PairingRequired);
         };
         validate_certificate(&record, cert, grant)?;
         let channel = connect(
@@ -282,36 +314,37 @@ impl ProfileStore {
     }
 }
 fn validate_certificate(record: &Record, pem: &str, grant: &str) -> Result<i64> {
-    let (_, leaf) = x509_parser::pem::parse_x509_pem(pem.as_bytes())
-        .map_err(|_| anyhow::anyhow!("invalid_certificate"))?;
-    let (_, cert) = x509_parser::parse_x509_certificate(&leaf.contents)
-        .map_err(|_| anyhow::anyhow!("invalid_certificate"))?;
-    let key = rcgen::KeyPair::from_pem(&record.key_pem)?;
-    ensure!(
-        cert.public_key().raw == key.subject_public_key_info()
-            && cert.validity().is_valid()
-            && !cert.is_ca()
-            && cert
-                .subject()
-                .iter_common_name()
-                .next()
-                .and_then(|name| name.as_str().ok())
-                == Some(grant),
-        "invalid_certificate"
-    );
+    let (_, leaf) = x509_parser::pem::parse_x509_pem(pem.as_bytes()).map_err(|_| Error::Trust)?;
+    let (_, cert) =
+        x509_parser::parse_x509_certificate(&leaf.contents).map_err(|_| Error::Trust)?;
+    let key = rcgen::KeyPair::from_pem(&record.key_pem).map_err(|_| Error::Trust)?;
+    if cert.validity().not_after.timestamp() <= crate::now() as i64 {
+        return Err(Error::CertificateExpired);
+    }
+    if !(cert.public_key().raw == key.subject_public_key_info()
+        && cert.validity().is_valid()
+        && !cert.is_ca()
+        && cert
+            .subject()
+            .iter_common_name()
+            .next()
+            .and_then(|name| name.as_str().ok())
+            == Some(grant))
+    {
+        return Err(Error::Trust);
+    }
     let eku = cert
-        .extended_key_usage()?
-        .ok_or_else(|| anyhow::anyhow!("invalid_certificate"))?;
-    ensure!(
-        eku.value.client_auth && !eku.value.server_auth && !eku.value.any,
-        "invalid_certificate"
-    );
-    let (_, ca) = x509_parser::pem::parse_x509_pem(record.ca_pem.as_bytes())
-        .map_err(|_| anyhow::anyhow!("invalid_ca"))?;
-    let (_, ca) = x509_parser::parse_x509_certificate(&ca.contents)
-        .map_err(|_| anyhow::anyhow!("invalid_ca"))?;
+        .extended_key_usage()
+        .map_err(|_| Error::Trust)?
+        .ok_or(Error::Trust)?;
+    if !eku.value.client_auth || eku.value.server_auth || eku.value.any {
+        return Err(Error::Trust);
+    }
+    let (_, ca) =
+        x509_parser::pem::parse_x509_pem(record.ca_pem.as_bytes()).map_err(|_| Error::Trust)?;
+    let (_, ca) = x509_parser::parse_x509_certificate(&ca.contents).map_err(|_| Error::Trust)?;
     cert.verify_signature(Some(ca.public_key()))
-        .map_err(|_| anyhow::anyhow!("invalid_certificate"))?;
+        .map_err(|_| Error::Trust)?;
     Ok(cert.validity().not_after.timestamp())
 }
 
@@ -402,12 +435,7 @@ mod tests {
                     .pair("blocked", &invitation, "test", true)
                     .await
                     .unwrap_err();
-                assert!(
-                    error
-                        .to_string()
-                        .starts_with("private_store_native_failure"),
-                    "{error}"
-                );
+                assert_eq!(error, Error::Persistence);
                 assert_eq!(CONNECTION_ATTEMPTS.with(std::cell::Cell::get), 0);
             })
             .await;
@@ -418,3 +446,7 @@ mod tests {
         drop(locked);
     }
 }
+
+#[cfg(test)]
+#[path = "client_connection_tests.rs"]
+mod connection_tests;
