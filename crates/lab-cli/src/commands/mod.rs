@@ -6,6 +6,7 @@ pub mod device;
 pub mod events;
 pub mod inspect;
 pub mod instance;
+pub mod login;
 pub mod pack;
 pub mod pull;
 pub mod push;

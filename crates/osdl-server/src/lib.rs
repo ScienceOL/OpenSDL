@@ -11,6 +11,7 @@
 //! access without going through gRPC. Decoupling `run-the-engine` from
 //! `expose-it-via-gRPC` keeps that mode simple.
 
+pub mod account;
 pub mod auth;
 pub mod background;
 pub mod convert;
@@ -77,25 +78,15 @@ pub struct ServeConfig {
     pub listen: ListenConfig,
     /// Where to write the instance lockfile (typically `paths.lock_dir()`).
     pub lock_dir: PathBuf,
-    /// Bearer token required for *TCP* RPCs. UDS clients skip this check
-    /// — filesystem perms (mode 0600) are the auth there. `None` means
-    /// "no auth", which we only accept when the TCP listener is bound
-    /// to a loopback address; binding `0.0.0.0`/non-loopback without a
-    /// token fails fast.
-    pub auth_token: Option<String>,
+    pub auth: auth::ListenerAuth,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
     #[error("listener config empty: must set at least one of socket_path or tcp_addr")]
     NoListener,
-    #[error(
-        "TCP listener {addr} is non-loopback but no --auth-token is configured. \
-         Set OSDL_AUTH_TOKEN/--auth-token, or bind 127.0.0.1 / ::1 / Unix domain \
-         socket only. Hardware control without auth on a routable address is \
-         refused."
-    )]
-    AuthRequired { addr: SocketAddr },
+    #[error("authentication configuration: {0}")]
+    Auth(String),
     #[error("lockfile error: {0}")]
     Lock(String),
     #[error("io error: {0}")]
@@ -112,16 +103,9 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         return Err(ServeError::NoListener);
     }
 
-    // Hardware control without auth on a routable address is unsafe —
-    // anyone on the lab network could drive devices or shut us down.
-    // Loopback (127.0.0.0/8 + ::1) is the only address we accept
-    // without a token. Refuse the misconfiguration up-front so the
-    // lockfile/UDS path never even gets touched.
-    if let Some(addr) = cfg.listen.tcp_addr {
-        if cfg.auth_token.is_none() && !addr.ip().is_loopback() {
-            return Err(ServeError::AuthRequired { addr });
-        }
-    }
+    cfg.auth
+        .validate_listener(&cfg.instance, cfg.listen.tcp_addr)
+        .map_err(ServeError::Auth)?;
 
     let pid = std::process::id();
     let started_at = convert::now_ts();
@@ -211,30 +195,44 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     if let Some(listener) = tcp_listener {
         let bound = bound_tcp_addr.expect("listener implies addr");
         let shutdown = shutdown.clone();
-        // TCP gets the bearer-token interceptor when a token is set.
-        // (The loopback-without-token case is allowed; the unauth check
-        // at the top of `serve()` already refuses non-loopback without a
-        // token.) UDS skips this — filesystem perms are the auth there.
-        let tcp_service = pb::osdl_server::OsdlServer::new(service.clone());
-        let token = cfg.auth_token.clone();
+        let account = match &cfg.auth {
+            auth::ListenerAuth::Account(account) => Some(account.clone()),
+            _ => None,
+        };
+        let tcp_service = match &account {
+            Some(account) => service.clone().with_account(account.clone()),
+            None => service.clone(),
+        };
+        let tcp_service = pb::osdl_server::OsdlServer::new(tcp_service);
+        let info =
+            pb::authentication_server::AuthenticationServer::new(account::AuthenticationService {
+                account,
+                mode: cfg.auth.mode().into(),
+                instance: cfg.instance.clone(),
+            })
+            .max_decoding_message_size(1024)
+            .max_encoding_message_size(2048);
+        let policy = cfg.auth.clone();
         joins.push(tokio::spawn(async move {
             let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
             let mut builder = tonic::transport::Server::builder();
-            match token {
-                Some(t) => {
+            match policy {
+                auth::ListenerAuth::Bearer(t) => {
                     let intercepted = tonic::service::interceptor::InterceptedService::new(
                         tcp_service,
                         auth::bearer_interceptor(t),
                     );
                     builder
+                        .add_service(info)
                         .add_service(intercepted)
                         .serve_with_incoming_shutdown(incoming, async move {
                             shutdown.notified().await;
                         })
                         .await
                 }
-                None => {
+                _ => {
                     builder
+                        .add_service(info)
                         .add_service(tcp_service)
                         .serve_with_incoming_shutdown(incoming, async move {
                             shutdown.notified().await;
@@ -243,14 +241,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
                 }
             }
         }));
-        log::info!(
-            "gRPC TCP listening on {bound}{}",
-            if cfg.auth_token.is_some() {
-                " (auth: bearer)"
-            } else {
-                " (no auth — loopback only)"
-            }
-        );
+        log::info!("gRPC TCP listening on {bound} (auth: {})", cfg.auth.mode());
     }
 
     #[cfg(unix)]

@@ -122,7 +122,7 @@ async fn serve(
                 tcp_addr: Some("127.0.0.1:0".parse()?),
             },
             lock_dir: lock_dir.clone(),
-            auth_token: Some(record.token.clone()),
+            auth: crate::auth::ListenerAuth::Bearer(record.token.clone()),
         },
     );
     tokio::pin!(serving);

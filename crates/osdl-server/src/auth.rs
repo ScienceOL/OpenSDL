@@ -76,6 +76,62 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+/// TCP authentication policy. UDS remains protected by filesystem authority.
+#[derive(Clone)]
+pub enum ListenerAuth {
+    Local,
+    Bearer(String),
+    Account(crate::account::AccountAuth),
+}
+impl ListenerAuth {
+    pub fn validate_listener(
+        &self,
+        instance: &str,
+        address: Option<std::net::SocketAddr>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Account(account) => {
+                if account.verifier.binding().instance != instance {
+                    return Err("account binding instance mismatch".into());
+                }
+                let private_address = address.is_none_or(|address| {
+                    let tailnet = match address.ip() {
+                        // Tailscale's IPv4 allocation is 100.64.0.0/10.
+                        std::net::IpAddr::V4(ip) => {
+                            ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1])
+                        }
+                        std::net::IpAddr::V6(_) => false,
+                    };
+                    address.ip().is_loopback() || tailnet
+                });
+                if !private_address {
+                    return Err("account TCP listener requires loopback or an explicit Tailscale IPv4 address".into());
+                }
+            }
+            Self::Local if address.is_some_and(|address| !address.ip().is_loopback()) => {
+                return Err("non-loopback TCP listener requires authentication".into())
+            }
+            Self::Bearer(token) if token.is_empty() => {
+                return Err("static bearer must not be empty".into())
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    pub fn mode(&self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Bearer(_) => "bearer",
+            Self::Account(_) => "account",
+        }
+    }
+}
+impl std::fmt::Debug for ListenerAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.mode())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -37,6 +37,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Bind a laboratory instance through browser account approval.
+    Login(commands::login::LoginArgs),
     /// Manage local digest-pinned runtime instances.
     Instance {
         #[command(subcommand)]
@@ -176,6 +178,7 @@ fn main() {
             rt.block_on(async move {
                 match other {
                     Command::Serve(_) => unreachable!(),
+                    Command::Login(args) => commands::login::run(args, opts.instance).await,
                     Command::Asset { cmd } => commands::asset::run(cmd, cache_dir).await,
                     Command::Daemon { cmd } => commands::daemon::run(cmd, cache_dir).await,
                     Command::Inspect(args) => commands::inspect::run(args, cache_dir).await,

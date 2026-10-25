@@ -62,7 +62,7 @@ prost-types.workspace = true
 hyper-util.workspace = true
 tower.workspace = true
 anyhow = "1"
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["json", "rustls-tls-native-roots"] }
 rpassword = "7"
 tempfile.workspace = true
 
