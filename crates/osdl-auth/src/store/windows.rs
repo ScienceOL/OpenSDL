@@ -229,3 +229,71 @@ pub fn open_lock(path: &Path) -> Result<std::fs::File> {
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?)
 }
+
+pub fn publish(mut temp: tempfile::NamedTempFile, path: &Path, replace: bool) -> Result<()> {
+    ensure!(
+        temp.path().parent() == path.parent(),
+        "private_publication_requires_same_directory"
+    );
+    // tempfile 3.27 persist omits WRITE_THROUGH. Clear its temporary attribute before
+    // flushing bytes, then publish the same-volume name durably without a copy fallback.
+    let source = wide(temp.path());
+    unsafe {
+        check(SetFileAttributesW(source.as_ptr(), FILE_ATTRIBUTE_NORMAL))?;
+    }
+    temp.as_file().sync_all()?;
+    let flags = MOVEFILE_WRITE_THROUGH
+        | if replace {
+            MOVEFILE_REPLACE_EXISTING
+        } else {
+            0
+        };
+    unsafe {
+        check(MoveFileExW(source.as_ptr(), wide(path).as_ptr(), flags))?;
+    }
+    temp.disable_cleanup(true);
+    Ok(())
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+    use std::io::Write;
+    fn candidate(root: &Path, bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut temp = tempfile::NamedTempFile::new_in(root).unwrap();
+        protect(temp.path()).unwrap();
+        temp.write_all(bytes).unwrap();
+        temp
+    }
+    #[test]
+    fn native_publication_creates_replaces_and_preserves_destination_on_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let store = crate::ProfileStore::open(root.path().join("private")).unwrap();
+        let destination = store.root().join("record");
+        publish(candidate(store.root(), b"initial"), &destination, false).unwrap();
+        verify(&destination, false).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"initial");
+        assert_eq!(
+            std::fs::metadata(&destination).unwrap().file_attributes() & FILE_ATTRIBUTE_TEMPORARY,
+            0
+        );
+        assert!(publish(candidate(store.root(), b"no clobber"), &destination, false).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"initial");
+        publish(candidate(store.root(), b"replacement"), &destination, true).unwrap();
+        verify(&destination, false).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"replacement");
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&destination)
+            .unwrap();
+        assert!(publish(candidate(store.root(), b"blocked"), &destination, true).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"replacement");
+        assert_eq!(
+            std::fs::read_dir(store.root()).unwrap().count(),
+            1,
+            "failed publication must clean its private temporary file"
+        );
+        drop(locked);
+    }
+}

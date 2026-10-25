@@ -1,11 +1,11 @@
 //! tonic service implementation backed by an `EngineHandle`.
 
+mod wait_for_device;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use osdl_core::protocol::DeviceCommand;
-use osdl_core::{EngineHandle, OsdlEvent};
+use osdl_core::EngineHandle;
 use osdl_proto::v1 as pb;
 use tokio::sync::{broadcast, Notify};
 use tokio_stream::Stream;
@@ -182,87 +182,15 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::WaitForDeviceRequest>,
     ) -> Result<Response<pb::Device>, Status> {
-        self.authorizer.authorize(&req, Permission::Read)?;
-        let req = req.into_inner();
-        let timeout = if req.timeout_ms == 0 {
-            Duration::from_secs(30)
-        } else {
-            Duration::from_millis(req.timeout_ms as u64)
-        };
-
-        // Subscribe BEFORE checking state — otherwise the device could come
-        // online between our snapshot and the subscribe and we'd miss it.
-        let mut events = self.engine.subscribe_events();
-
-        // Snapshot match.
-        let matcher: Box<dyn Fn(&osdl_core::Device) -> bool + Send + Sync> = match req.selector {
-            Some(pb::wait_for_device_request::Selector::DeviceId(id)) => {
-                Box::new(move |d| d.id == id)
-            }
-            Some(pb::wait_for_device_request::Selector::DeviceType(t)) => {
-                Box::new(move |d| d.device_type == t)
-            }
-            Some(pb::wait_for_device_request::Selector::Role(r)) => {
-                Box::new(move |d| d.role.as_deref() == Some(r.as_str()))
-            }
-            None => {
-                return Err(Status::invalid_argument(
-                    "wait_for_device requires a selector (device_id, device_type, or role)",
-                ));
-            }
-        };
-
-        if let Some(d) = self
-            .engine
-            .list_devices()
-            .await
-            .into_iter()
-            .find(|d| matcher(d))
-        {
-            return Ok(Response::new(device_to_pb(&d)));
-        }
-
-        // Block on DeviceOnline events until match or deadline.
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return Err(Status::deadline_exceeded(
-                    "no matching device appeared in time",
-                ));
-            }
-            let recv = tokio::time::timeout(remaining, events.recv()).await;
-            match recv {
-                Ok(Ok(OsdlEvent::DeviceOnline(d))) if matcher(&d) => {
-                    return Ok(Response::new(device_to_pb(&d)));
-                }
-                Ok(Ok(_)) => continue,
-                Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
-                    // The matching DeviceOnline event might have been in
-                    // the dropped window. Re-snapshot before resuming —
-                    // otherwise we'd block until timeout despite the
-                    // device already being registered.
-                    if let Some(d) = self
-                        .engine
-                        .list_devices()
-                        .await
-                        .into_iter()
-                        .find(|d| matcher(d))
-                    {
-                        return Ok(Response::new(device_to_pb(&d)));
-                    }
-                    continue;
-                }
-                Ok(Err(broadcast::error::RecvError::Closed)) => {
-                    return Err(Status::aborted("event stream closed"));
-                }
-                Err(_) => {
-                    return Err(Status::deadline_exceeded(
-                        "no matching device appeared in time",
-                    ));
-                }
-            }
-        }
+        let lease = self.authorizer.authorize(&req, Permission::Read)?;
+        // Subscribe before snapshot lookup so an arriving device cannot be missed.
+        wait_for_device::wait(
+            &self.engine,
+            req.into_inner(),
+            self.engine.subscribe_events(),
+            lease,
+        )
+        .await
     }
 
     async fn send_command(
