@@ -64,15 +64,8 @@ impl ProfileStore {
         let mut temp = tempfile::NamedTempFile::new_in(&self.root)?;
         native::protect(temp.path())?;
         temp.write_all(&native::encrypt(bytes)?)?;
-        temp.as_file().sync_all()?;
-        if replace {
-            temp.persist(&path)?;
-        } else {
-            temp.persist_noclobber(&path)?;
-        }
+        native::publish(temp, &path, replace)?;
         native::verify(&path, false)?;
-        #[cfg(unix)]
-        std::fs::File::open(&self.root)?.sync_all()?;
         Ok(())
     }
     /// Cross-process single writer ownership for a selected laboratory or profile.

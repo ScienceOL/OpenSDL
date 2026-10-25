@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 use tonic::transport::{
     Certificate, Channel as TransportChannel, ClientTlsConfig, Endpoint, Identity,
 };
+#[cfg(all(test, windows))]
+tokio::task_local! {
+    static CONNECTION_ATTEMPTS: std::cell::Cell<usize>;
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Record {
@@ -71,6 +75,8 @@ fn tls(lab: &str, ca: &str) -> ClientTlsConfig {
         .domain_name(format!("lab-{lab}.opensdl.invalid"))
 }
 async fn connect(endpoint: &str, config: ClientTlsConfig) -> Result<TransportChannel> {
+    #[cfg(all(test, windows))]
+    let _ = CONNECTION_ATTEMPTS.try_with(|counter| counter.set(counter.get() + 1));
     Ok(Endpoint::from_shared(endpoint.to_string())?
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(15))
@@ -358,5 +364,57 @@ mod tests {
         );
         record.key_pem = rcgen::KeyPair::generate().unwrap().serialize_pem();
         assert!(validate_certificate(&record, &certificate, "grant-id").is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn failed_pending_publication_prevents_any_pair_connection() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+        let root = tempfile::tempdir().unwrap();
+        let store = ProfileStore::open(root.path().join("profiles")).unwrap();
+        store
+            .write_secret("blocked", b"previous-private-record", false)
+            .unwrap();
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(store.root().join("blocked"))
+            .unwrap();
+        let ca_key = rcgen::KeyPair::generate().unwrap();
+        let mut ca = rcgen::CertificateParams::default();
+        ca.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Constrained(0));
+        let invitation = Invitation {
+            lab_id: uuid::Uuid::new_v4().to_string(),
+            instance: "test".into(),
+            channel: Channel::Stable,
+            endpoint: "https://100.64.0.9:50051".into(),
+            ca_pem: ca.self_signed(&ca_key).unwrap().pem(),
+            invitation_id: uuid::Uuid::new_v4().to_string(),
+            capability: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            expires_at: crate::now() + 600,
+            access: crate::Access::Read,
+            grant_expires_at: None,
+        };
+        CONNECTION_ATTEMPTS
+            .scope(std::cell::Cell::new(0), async {
+                let error = store
+                    .pair("blocked", &invitation, "test", true)
+                    .await
+                    .unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .starts_with("private_store_native_failure"),
+                    "{error}"
+                );
+                assert_eq!(CONNECTION_ATTEMPTS.with(std::cell::Cell::get), 0);
+            })
+            .await;
+        assert_eq!(
+            store.read_secret("blocked").unwrap(),
+            b"previous-private-record"
+        );
+        drop(locked);
     }
 }

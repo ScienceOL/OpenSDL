@@ -21,6 +21,8 @@ fn native_store_preserves_pending_key_and_refuses_replacement() {
         .unwrap()
         .windows(18)
         .any(|v| v == b"private-key-canary"));
+    store.write_secret("pending", b"replacement", true).unwrap();
+    assert_eq!(store.read_secret("pending").unwrap(), b"replacement");
 }
 
 #[test]

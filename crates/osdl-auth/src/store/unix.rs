@@ -56,3 +56,22 @@ pub fn open_lock(path: &Path) -> Result<std::fs::File> {
         .custom_flags(libc::O_NOFOLLOW)
         .open(path)?)
 }
+
+pub fn publish(temp: tempfile::NamedTempFile, path: &Path, replace: bool) -> Result<()> {
+    ensure!(
+        temp.path().parent() == path.parent(),
+        "private_publication_requires_same_directory"
+    );
+    temp.as_file().sync_all()?;
+    if replace {
+        temp.persist(path)?;
+    } else {
+        temp.persist_noclobber(path)?;
+    }
+    File::open(
+        path.parent()
+            .ok_or_else(|| anyhow::anyhow!("invalid_private_path"))?,
+    )?
+    .sync_all()?;
+    Ok(())
+}

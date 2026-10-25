@@ -120,6 +120,35 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
             .code(),
         tonic::Code::PermissionDenied
     );
+    let grant_lease = auth
+        .0
+        .grants
+        .read()
+        .unwrap()
+        .entries
+        .values()
+        .next()
+        .unwrap()
+        .lease
+        .clone();
+    let mut waiter_client = client.clone();
+    let waiter = tokio::spawn(async move {
+        waiter_client
+            .wait_for_device(pb::WaitForDeviceRequest {
+                selector: Some(pb::wait_for_device_request::Selector::DeviceId(
+                    "absent".into(),
+                )),
+                timeout_ms: u32::MAX,
+            })
+            .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while grant_lease.is_drained() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("WaitForDevice must retain its authorization owner");
     let mut stream = client
         .stream_events(pb::StreamEventsRequest::default())
         .await
@@ -128,6 +157,16 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
     let start = std::time::Instant::now();
     auth.revoke(&response.grant.unwrap().id).await.unwrap();
     let revoke_ms = start.elapsed().as_millis();
+    let error = tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(
+        error.metadata().get("opensdl-auth-error").unwrap(),
+        "grant_revoked"
+    );
+    assert!(grant_lease.is_drained());
     assert!(
         tokio::time::timeout(std::time::Duration::from_secs(2), stream.message())
             .await
@@ -242,6 +281,17 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
     let identity = Identity::from_pem(&cert, key.serialize_pem());
     let authenticated = channel(address, &auth, Some(identity.clone())).await;
     let mut expiring = pb::osdl_client::OsdlClient::new(authenticated);
+    let mut waiter_client = expiring.clone();
+    let waiter = tokio::spawn(async move {
+        waiter_client
+            .wait_for_device(pb::WaitForDeviceRequest {
+                selector: Some(pb::wait_for_device_request::Selector::DeviceId(
+                    "absent".into(),
+                )),
+                timeout_ms: u32::MAX,
+            })
+            .await
+    });
     let mut stream = expiring
         .stream_events(pb::StreamEventsRequest::default())
         .await
@@ -260,6 +310,15 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
         tonic::Code::Unauthenticated
     );
     assert!(stream.message().await.is_err());
+    let error = tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(
+        error.metadata().get("opensdl-auth-error").unwrap(),
+        "grant_expired"
+    );
     let expired_connect = Endpoint::from_shared(format!("https://{address}"))
         .unwrap()
         .tls_config(
