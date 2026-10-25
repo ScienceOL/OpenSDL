@@ -173,7 +173,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
             .parent()
             .ok_or_else(|| ServeError::Auth("invalid_socket_path".into()))?;
         osdl_auth::ProfileStore::open(parent.to_path_buf())
-            .map_err(|e| ServeError::Auth(e.to_string()))?;
+            .map_err(|e| ServeError::Auth(format!("Unix socket directory {} must be a real directory owned by the service user with mode 0700; choose a canonical path and create it as that user: {e}", parent.display())))?;
         match std::fs::remove_file(socket_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

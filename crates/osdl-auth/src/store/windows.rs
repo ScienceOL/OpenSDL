@@ -110,11 +110,19 @@ pub fn protect(path: &Path) -> Result<()> {
             &mut acl,
             &mut defaulted,
         ))?;
+        let mut owner = null_mut();
+        check(GetSecurityDescriptorOwner(
+            desc.0,
+            &mut owner,
+            &mut defaulted,
+        ))?;
         let code = SetNamedSecurityInfoW(
             wide(path).as_ptr(),
             SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            null_mut(),
+            OWNER_SECURITY_INFORMATION
+                | DACL_SECURITY_INFORMATION
+                | PROTECTED_DACL_SECURITY_INFORMATION,
+            owner,
             null_mut(),
             acl,
             null(),

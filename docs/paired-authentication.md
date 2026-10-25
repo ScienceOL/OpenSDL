@@ -4,6 +4,20 @@
 Account HTTP and public-key HTTPS never share one listener. The independent
 public-key mode works without Casdoor or a LiyanLabs account.
 
+Instance names contain 1–128 ASCII letters, digits, `-` or `_`. The same name
+is used for account bindings, private discovery and lockfiles; names are never
+silently rewritten into another name.
+
+On Unix, a custom `--socket` requires a canonical parent directory owned by the
+service user with mode `0700`; the socket itself is `0600`. Default runtime
+directories are created privately. Existing systemd services with a custom
+runtime directory should set both `User=` and `RuntimeDirectoryMode=0700`.
+Alternatively create a dedicated directory as the service user with
+`install -d -m 700 /path/to/private-run` and put the socket there. Do not use a
+shared `0755` parent or change another service's directory permissions. A
+private leaf that is a symlink is rejected; resolve system parent aliases
+before specifying an explicit path.
+
 ## Independent laboratory
 
 ```sh

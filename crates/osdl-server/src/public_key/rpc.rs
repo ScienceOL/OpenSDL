@@ -13,6 +13,28 @@ fn error(e: anyhow::Error) -> Status {
         _ => Status::invalid_argument("invalid_enrollment_request"),
     }
 }
+async fn store_work<T: Send + 'static>(
+    work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> Result<T, Status> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| Status::internal("authorization_store_failed"))?
+        .map_err(error)
+}
+async fn enrollment<T: Send + 'static>(
+    work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> Result<T, Status> {
+    static SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+    let permit = SLOTS
+        .try_acquire()
+        .map_err(|_| Status::resource_exhausted("pairing_busy"))?;
+    store_work(move || {
+        // Cancelled callers still own capacity until their blocking work exits.
+        let _permit = permit;
+        work()
+    })
+    .await
+}
 #[tonic::async_trait]
 impl pb::pairing_server::Pairing for PublicKeyAuth {
     async fn describe_invitation(
@@ -20,30 +42,20 @@ impl pb::pairing_server::Pairing for PublicKeyAuth {
         request: Request<pb::DescribeInvitationRequest>,
     ) -> Result<Response<pb::DescribeInvitationResponse>, Status> {
         let r = request.into_inner();
-        self.describe(&r.invitation_id, &r.capability)
+        let auth = self.clone();
+        enrollment(move || auth.describe(&r.invitation_id, &r.capability))
+            .await
             .map(Response::new)
-            .map_err(error)
     }
     async fn pair(
         &self,
         request: Request<pb::PairRequest>,
     ) -> Result<Response<pb::PairResponse>, Status> {
-        // CPU and SQLite work stays off the async executor; bounded admission rejects overload.
-        static SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
-        let permit = SLOTS
-            .try_acquire()
-            .map_err(|_| Status::resource_exhausted("pairing_busy"))?;
         let auth = self.clone();
         let request = request.into_inner();
-        tokio::task::spawn_blocking(move || {
-            // Cancellation of the RPC must not release capacity while its signer still runs.
-            let _permit = permit;
-            auth.pair(&request)
-        })
-        .await
-        .map_err(|_| Status::internal("pairing_failed"))?
-        .map(Response::new)
-        .map_err(error)
+        enrollment(move || auth.pair(&request))
+            .await
+            .map(Response::new)
     }
 }
 #[tonic::async_trait]
@@ -63,10 +75,9 @@ impl pb::grant_administration_server::GrantAdministration for PublicKeyAuth {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| Status::invalid_argument("invalid_expiry"))?;
-        let invitation = self
-            .invite(access, expiry)
-            .and_then(|i| i.encode())
-            .map_err(error)?;
+        let auth = self.clone();
+        let invitation =
+            store_work(move || auth.invite(access, expiry).and_then(|i| i.encode())).await?;
         Ok(Response::new(pb::InviteResponse { invitation }))
     }
     async fn list_grants(
@@ -74,9 +85,10 @@ impl pb::grant_administration_server::GrantAdministration for PublicKeyAuth {
         request: Request<pb::ListGrantsRequest>,
     ) -> Result<Response<pb::ListGrantsResponse>, Status> {
         let r = request.into_inner();
-        self.list(&r.after_id, r.limit)
+        let auth = self.clone();
+        store_work(move || auth.list(&r.after_id, r.limit))
+            .await
             .map(Response::new)
-            .map_err(error)
     }
     async fn revoke(
         &self,

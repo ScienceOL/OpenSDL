@@ -11,14 +11,7 @@ pub struct LocalAccess {
 }
 impl LocalAccess {
     pub fn store(lock_dir: &Path, instance: &str) -> Result<ProfileStore> {
-        ensure!(
-            !instance.is_empty()
-                && instance.len() <= 80
-                && instance
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-            "invalid_instance"
-        );
+        ensure!(osdl_auth::valid_instance_name(instance), "invalid_instance");
         ProfileStore::open(lock_dir.join(format!("private-{instance}")))
     }
     pub fn load(lock_dir: &Path, instance: &str) -> Result<Self> {

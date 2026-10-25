@@ -71,6 +71,7 @@ struct State {
 pub struct PublicKeyAuth(Arc<State>);
 impl PublicKeyAuth {
     pub fn open(path: &Path, instance: &str, channel: Channel, endpoint: &str) -> Result<Self> {
+        ensure!(osdl_auth::valid_instance_name(instance), "invalid_instance");
         ensure!(
             osdl_auth::normalize_endpoint(endpoint)? == endpoint,
             "invalid_endpoint"
@@ -261,6 +262,15 @@ impl PublicKeyAuth {
         Ok(pb::ListGrantsResponse { grants, next_id })
     }
     pub async fn revoke(&self, id: &str) -> Result<()> {
+        let auth = self.clone();
+        let id = id.to_owned();
+        let lease = tokio::task::spawn_blocking(move || auth.revoke_authority(&id)).await??;
+        if let Some(lease) = lease {
+            lease.drained().await;
+        }
+        Ok(())
+    }
+    fn revoke_authority(&self, id: &str) -> Result<Option<Arc<Lease>>> {
         let lease = {
             let db = self.0.db.lock().unwrap_or_else(|e| e.into_inner());
             let leaf: Vec<u8> =
@@ -290,10 +300,7 @@ impl PublicKeyAuth {
             }
             lease
         };
-        if let Some(lease) = lease {
-            lease.drained().await;
-        }
-        Ok(())
+        Ok(lease)
     }
     pub(crate) fn authorize<T>(
         &self,

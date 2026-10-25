@@ -76,6 +76,9 @@ impl ListenerAuth {
         instance: &str,
         address: Option<std::net::SocketAddr>,
     ) -> Result<(), String> {
+        if !osdl_auth::valid_instance_name(instance) {
+            return Err("instance must be 1–128 letters, digits, '-' or '_'".into());
+        }
         match self {
             Self::PublicKey(key) => {
                 if key.instance() != instance
