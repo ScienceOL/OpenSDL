@@ -2,7 +2,7 @@ use osdl_auth::{Access, Channel};
 use osdl_server::public_key::PublicKeyAuth;
 #[tokio::test]
 async fn durable_identity_one_use_exact_retry_and_revoke() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let path = root.path().join("auth");
     let auth =
         PublicKeyAuth::open(&path, "test", Channel::Stable, "https://100.64.0.9:50051").unwrap();
@@ -42,7 +42,7 @@ async fn durable_identity_one_use_exact_retry_and_revoke() {
 
 #[test]
 fn csr_der_with_unsigned_trailing_data_is_rejected() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &root.path().join("auth"),
         "test",
@@ -68,7 +68,7 @@ fn csr_der_with_unsigned_trailing_data_is_rejected() {
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_exact_retry_creates_one_grant() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &root.path().join("auth"),
         "test",
@@ -111,7 +111,7 @@ async fn concurrent_exact_retry_creates_one_grant() {
 
 #[test]
 fn missing_identity_or_auth_database_is_a_recovery_error() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let path = root.path().join("auth");
     let auth =
         PublicKeyAuth::open(&path, "test", Channel::Stable, "https://100.64.0.9:50051").unwrap();
@@ -132,7 +132,7 @@ fn missing_identity_or_auth_database_is_a_recovery_error() {
 
 #[test]
 fn mismatched_persisted_ca_key_is_a_recovery_error() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let path = temp.path().join("auth");
     drop(PublicKeyAuth::open(&path, "test", Channel::Stable, "https://100.64.0.9:50051").unwrap());
     let store = osdl_auth::ProfileStore::open(path.clone()).unwrap();

@@ -347,7 +347,7 @@ mod tests {
         };
         assert!(validate_certificate(&record, &certificate, "grant-id").is_ok());
         assert!(validate_certificate(&record, &certificate, "another-grant").is_err());
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let store = ProfileStore::open(temp.path().join("profiles")).unwrap();
         let expiry = validate_certificate(&record, &certificate, "grant-id").unwrap() as u64;
         record.credential = Credential::Paired {
@@ -371,7 +371,7 @@ mod tests {
     async fn failed_pending_publication_prevents_any_pair_connection() {
         use std::os::windows::fs::OpenOptionsExt;
         use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let store = ProfileStore::open(root.path().join("profiles")).unwrap();
         store
             .write_secret("blocked", b"previous-private-record", false)

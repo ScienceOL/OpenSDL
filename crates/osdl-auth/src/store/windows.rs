@@ -267,7 +267,7 @@ mod publication_tests {
     }
     #[test]
     fn native_publication_creates_replaces_and_preserves_destination_on_failure() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let store = crate::ProfileStore::open(root.path().join("private")).unwrap();
         let destination = store.root().join("record");
         publish(candidate(store.root(), b"initial"), &destination, false).unwrap();
