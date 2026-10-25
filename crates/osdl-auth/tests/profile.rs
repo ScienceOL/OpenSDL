@@ -6,7 +6,7 @@ fn rejects_untrusted_and_oversized_invitation() {
 }
 #[test]
 fn native_store_preserves_pending_key_and_refuses_replacement() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let store = ProfileStore::open(temp.path().join("profiles")).unwrap();
     store
         .write_secret("pending", b"private-key-canary", false)
@@ -27,7 +27,7 @@ fn native_store_preserves_pending_key_and_refuses_replacement() {
 
 #[test]
 fn native_store_rejects_unprotected_directory_and_tampering() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let path = temp.path().join("unsafe");
     std::fs::create_dir(&path).unwrap();
     assert!(ProfileStore::open(path).is_err());
@@ -47,7 +47,7 @@ fn native_store_rejects_unprotected_directory_and_tampering() {
 #[test]
 fn unix_store_rejects_symlinks_and_changed_permissions() {
     use std::os::unix::fs::{symlink, PermissionsExt};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let store = ProfileStore::open(temp.path().join("profiles")).unwrap();
     store.write_secret("record", b"secret", false).unwrap();
     std::fs::set_permissions(

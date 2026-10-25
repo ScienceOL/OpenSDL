@@ -18,7 +18,7 @@ fn invitation() -> Invitation {
 }
 #[test]
 fn exact_pending_csr_survives_restart_and_trust_cannot_be_replaced() {
-    let t = tempfile::tempdir().unwrap();
+    let t = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let s = ProfileStore::open(t.path().join("profiles")).unwrap();
     let inv = invitation();
     let first = s.prepare_pair("test", &inv, false).unwrap();

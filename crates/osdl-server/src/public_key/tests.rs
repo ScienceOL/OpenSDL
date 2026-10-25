@@ -21,7 +21,7 @@ async fn channel(
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &temp.path().join("auth"),
         "test",
@@ -340,7 +340,7 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
 }
 #[tokio::test]
 async fn real_tls_wrong_ca_and_wrong_hostname_fail() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &temp.path().join("auth"),
         "test",
@@ -383,7 +383,7 @@ async fn real_tls_wrong_ca_and_wrong_hostname_fail() {
 
 #[test]
 fn invitation_expiry_and_bounded_records_and_corrupt_csr_fail_closed() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &temp.path().join("auth"),
         "test",
@@ -446,7 +446,7 @@ async fn unpolled_grant_stream_revocation_releases_upstream_before_ack() {
 
 #[test]
 fn measured_grant_admission_scales_with_active_index_not_history() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &temp.path().join("auth"),
         "test",
@@ -494,7 +494,7 @@ fn measured_grant_admission_scales_with_active_index_not_history() {
 
 #[tokio::test]
 async fn concurrent_revoke_acknowledgments_both_wait_for_resource_cleanup() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let auth = PublicKeyAuth::open(
         &temp.path().join("auth"),
         "test",

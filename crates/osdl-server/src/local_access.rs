@@ -44,7 +44,7 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn explicit_local_loopback_requires_private_discovery_capability() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let locks = temp.path().join("locks");
         let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);
         let handle = engine.handle();
@@ -108,7 +108,7 @@ mod tests {
 mod unix_tests {
     #[tokio::test]
     async fn protected_unix_socket_is_local_authority() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let run = osdl_auth::ProfileStore::open(temp.path().join("run")).unwrap();
         let path = run.root().join("lab.sock");
         let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);

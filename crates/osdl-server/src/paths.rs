@@ -56,15 +56,16 @@ impl Paths {
             Some(p) => p.to_path_buf(),
             None => fallback_runtime_dir(),
         };
+        #[cfg(unix)]
+        let runtime_dir = prepare_runtime_dir(runtime_dir)?;
 
-        for d in [&config_dir, &state_dir, &cache_dir, &runtime_dir] {
+        for d in [&config_dir, &state_dir, &cache_dir] {
             std::fs::create_dir_all(d).map_err(|e| format!("create {}: {}", d.display(), e))?;
         }
 
-        // Tighten runtime dir perms (Unix only). The XDG-supplied dir is
-        // already 0700; the fallback dir we just created might be 0755.
-        #[cfg(unix)]
-        tighten_perms(&runtime_dir, 0o700)?;
+        #[cfg(not(unix))]
+        std::fs::create_dir_all(&runtime_dir)
+            .map_err(|e| format!("create {}: {}", runtime_dir.display(), e))?;
 
         Ok(Self {
             config_dir,
@@ -130,10 +131,20 @@ fn current_uid() -> u32 {
 }
 
 #[cfg(unix)]
-fn tighten_perms(path: &std::path::Path, mode: u32) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(path, perms).map_err(|e| format!("chmod {}: {}", path.display(), e))
+fn prepare_runtime_dir(path: PathBuf) -> Result<PathBuf, String> {
+    let parent = path.parent().ok_or("runtime directory requires a parent")?;
+    let name = path
+        .file_name()
+        .ok_or("runtime directory requires a name")?;
+    // Resolve platform-owned aliases such as macOS /var before appending the
+    // private leaf. The leaf itself must never be followed or chmodded through.
+    let runtime = parent
+        .canonicalize()
+        .map_err(|e| format!("resolve runtime parent {}: {e}", parent.display()))?
+        .join(name);
+    osdl_auth::ProfileStore::open(runtime.clone())
+        .map_err(|e| format!("prepare private runtime: {e}"))?;
+    Ok(runtime)
 }
 
 #[cfg(test)]
@@ -147,5 +158,39 @@ mod tests {
         assert!(p.state_dir.exists());
         assert!(p.cache_dir.exists());
         assert!(p.runtime_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_resolves_system_temp_alias_before_creating_private_directory() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let real = root.join("real");
+        std::fs::create_dir(&real).unwrap();
+        symlink(&real, root.join("alias")).unwrap();
+        let runtime = prepare_runtime_dir(root.join("alias/run")).unwrap();
+        assert_eq!(runtime, real.join("run"));
+        assert_eq!(
+            std::fs::metadata(runtime).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_rejects_private_leaf_symlink_without_changing_target_permissions() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let target = root.join("unrelated");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        symlink(&target, root.join("run")).unwrap();
+        assert!(prepare_runtime_dir(root.join("run")).is_err());
+        assert_eq!(
+            std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
     }
 }
