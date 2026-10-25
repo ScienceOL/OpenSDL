@@ -46,3 +46,8 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_
 [features]
 default = []
 espnow = ["osdl-core/espnow"]
+
+[dev-dependencies]
+h2 = "0.4"
+bytes = "1"
+http.workspace = true

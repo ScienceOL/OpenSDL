@@ -3,6 +3,7 @@ mod binding;
 mod identity;
 pub(crate) mod lease;
 pub(crate) mod service;
+pub(crate) mod stream;
 
 pub use binding::{channel_for_origin, Binding};
 pub(crate) use identity::AuthError;
@@ -12,3 +13,6 @@ pub(crate) use service::AuthenticationService;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod stream_tests;

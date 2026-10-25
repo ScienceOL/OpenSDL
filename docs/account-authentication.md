@@ -42,7 +42,11 @@ bearer. Existing event streams and camera publisher processes remain in place.
 Expired leases cannot be revived: the stream ends with UNAUTHENTICATED and the
 local publisher is dropped. Hardware stop/replay commands are never sent by
 lease expiry. Only active streams own leases; closing the final stream removes
-its registry entry. New operations always verify their own presented assertion.
+its registry entry. One lifecycle task per authorized stream owns its upstream
+and watches expiry and consumer cancellation independently of HTTP/2 flow control.
+A one-item handoff bounds buffering; queued data is discarded after expiry.
+Static streams keep their direct path. New operations always verify their own
+presented assertion.
 
 Public-key pairing is not implemented by this authentication mode.
 
