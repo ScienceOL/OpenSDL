@@ -11,6 +11,7 @@ use tokio::sync::{broadcast, Notify};
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 
+use crate::account::service::{authorize, expires, guard_stream, Permission};
 use crate::convert::{
     command_result_to_pb, device_to_pb, event_to_pb, hashmap_to_struct, json_to_struct,
     lagged_event, node_to_pb, now_ts, status_to_pb, struct_to_json_map,
@@ -29,6 +30,7 @@ pub struct ServerIdentity {
 
 #[derive(Clone)]
 pub struct OsdlService {
+    account: Option<crate::account::AccountAuth>,
     engine: EngineHandle,
     identity: ServerIdentity,
     /// Fires when the server is shutting down. `StreamEvents` watches
@@ -41,6 +43,10 @@ pub struct OsdlService {
 }
 
 impl OsdlService {
+    pub fn with_account(mut self, account: crate::account::AccountAuth) -> Self {
+        self.account = Some(account);
+        self
+    }
     pub fn new(engine: EngineHandle, identity: ServerIdentity) -> Self {
         Self::with_shutdown(engine, identity, Arc::new(Notify::new()))
     }
@@ -51,6 +57,7 @@ impl OsdlService {
         shutdown: Arc<Notify>,
     ) -> Self {
         Self {
+            account: None,
             engine,
             identity,
             shutdown,
@@ -67,15 +74,24 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         request: Request<pb::PublishMediaRequest>,
     ) -> Result<Response<Self::PublishMediaStream>, Status> {
-        self.media_publishers
-            .start(&self.engine, request.into_inner(), self.shutdown.clone())
-            .await
-            .map(Response::new)
+        let identity = authorize(self.account.as_ref(), &request, Permission::Read)?;
+        let lease = self
+            .account
+            .as_ref()
+            .zip(identity.as_ref())
+            .map(|(account, identity)| account.leases.acquire(identity));
+        let stream = tokio::select! {
+            biased;
+            _ = expires(lease.as_ref()) => return Err(crate::account::AuthError::Expired.status()),
+            result = self.media_publishers.start(&self.engine, request.into_inner(), self.shutdown.clone()) => result?,
+        };
+        Ok(Response::new(guard_stream(stream, lease)))
     }
     async fn read_snapshot(
         &self,
         request: Request<pb::ReadSnapshotRequest>,
     ) -> Result<Response<pb::ReadSnapshotResponse>, Status> {
+        authorize(self.account.as_ref(), &request, Permission::Read)?;
         let root = self
             .engine
             .snapshot_root()
@@ -93,8 +109,9 @@ impl pb::osdl_server::Osdl for OsdlService {
 
     async fn status(
         &self,
-        _req: Request<pb::StatusRequest>,
+        req: Request<pb::StatusRequest>,
     ) -> Result<Response<pb::StatusResponse>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Read)?;
         let engine = status_to_pb(&self.engine.status());
         Ok(Response::new(pb::StatusResponse {
             version: self.identity.version.clone(),
@@ -109,8 +126,9 @@ impl pb::osdl_server::Osdl for OsdlService {
 
     async fn list_nodes(
         &self,
-        _req: Request<pb::ListNodesRequest>,
+        req: Request<pb::ListNodesRequest>,
     ) -> Result<Response<pb::ListNodesResponse>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Read)?;
         let nodes = self
             .engine
             .list_nodes()
@@ -125,6 +143,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::ListDevicesRequest>,
     ) -> Result<Response<pb::ListDevicesResponse>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Read)?;
         let filter = req.into_inner();
         let devices = self
             .engine
@@ -151,6 +170,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::GetDeviceRequest>,
     ) -> Result<Response<pb::Device>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Read)?;
         let device_id = req.into_inner().device_id;
         match self.engine.get_device(&device_id).await {
             Some(d) => Ok(Response::new(device_to_pb(&d))),
@@ -162,6 +182,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::WaitForDeviceRequest>,
     ) -> Result<Response<pb::Device>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Read)?;
         let req = req.into_inner();
         let timeout = if req.timeout_ms == 0 {
             Duration::from_secs(30)
@@ -248,6 +269,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::SendCommandRequest>,
     ) -> Result<Response<pb::CommandResult>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Operate)?;
         let r = req.into_inner();
         let command_id = if r.command_id.is_empty() {
             // Cheap monotonic-ish id. The server reflects it back so the
@@ -286,6 +308,12 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
+        let identity = authorize(self.account.as_ref(), &req, Permission::Read)?;
+        let lease = self
+            .account
+            .as_ref()
+            .zip(identity.as_ref())
+            .map(|(account, identity)| account.leases.acquire(identity));
         let kinds = req.into_inner().kinds;
         // Subscribe BEFORE reading the snapshot so we don't lose any
         // event fired between the snapshot read and the loop start.
@@ -350,13 +378,14 @@ impl pb::osdl_server::Osdl for OsdlService {
             }
         };
 
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(guard_stream(Box::pin(stream), lease)))
     }
 
     async fn shutdown(
         &self,
-        _req: Request<pb::ShutdownRequest>,
+        req: Request<pb::ShutdownRequest>,
     ) -> Result<Response<pb::ShutdownResponse>, Status> {
+        authorize(self.account.as_ref(), &req, Permission::Shutdown)?;
         self.engine.request_stop();
         Ok(Response::new(pb::ShutdownResponse {}))
     }

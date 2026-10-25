@@ -245,6 +245,9 @@ mod tests {
     fn publisher_fixture() {
         if let Some(marker) = std::env::var_os("LAB_MEDIA_TEST_MARKER") {
             std::fs::write(&marker, b"started").unwrap();
+            if let Some(pid_file) = std::env::var_os("LAB_MEDIA_TEST_PID") {
+                std::fs::write(pid_file, std::process::id().to_string()).unwrap();
+            }
             println!("frame=1");
             use std::io::Write;
             std::io::stdout().flush().unwrap();
@@ -254,7 +257,11 @@ mod tests {
                     libc::close(libc::STDOUT_FILENO);
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            let seconds = std::env::var("LAB_MEDIA_TEST_SECONDS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(2);
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
             std::fs::write(marker, b"finished").unwrap();
         }
     }
@@ -310,6 +317,71 @@ mod tests {
         assert!(
             ended.unwrap().unwrap().is_err(),
             "EOF must end the stream without awaiting a wedged child"
+        );
+    }
+    #[tokio::test]
+    async fn authorization_renewal_preserves_publisher_pid_until_expiry() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("publisher");
+        let pid_file = directory.path().join("pid");
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "media_publish::tests::publisher_fixture",
+                "--nocapture",
+            ])
+            .env("LAB_MEDIA_TEST_MARKER", &marker)
+            .env("LAB_MEDIA_TEST_PID", &pid_file)
+            .env("LAB_MEDIA_TEST_SECONDS", "6");
+        let publishers = Publishers::default();
+        let slot = publishers.acquire("camera".into()).unwrap();
+        let registry = crate::account::lease::Leases::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut identity = crate::account::Identity {
+            principal: crate::account::Principal {
+                device_id: uuid::Uuid::new_v4(),
+                device_generation: 1,
+                installation_id: uuid::Uuid::new_v4(),
+            },
+            scope: crate::account::Scope::Read,
+            expires_at: now + 2,
+        };
+        let lease = registry.acquire(&identity);
+        let stream = publish_process(command, Arc::new(Notify::new()), slot)
+            .await
+            .unwrap();
+        let mut stream = crate::account::service::guard_stream(stream, Some(lease));
+        assert!(stream.next().await.unwrap().unwrap().running);
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        identity.expires_at = now + 4;
+        registry.renew(&identity);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(2100), stream.next())
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&pid_file).unwrap(), pid);
+        assert!(publishers.acquire("camera".into()).is_err());
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
+        );
+        drop(stream);
+        assert!(publishers.acquire("camera".into()).is_ok());
+        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        assert_eq!(
+            std::fs::read(marker).unwrap(),
+            b"started",
+            "expired publisher must be killed before its completion marker"
         );
     }
 }

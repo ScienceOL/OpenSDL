@@ -22,7 +22,13 @@ use osdl_core::path_expand;
 use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 use osdl_server::{paths::Paths, ListenConfig, ServeConfig};
 
-#[derive(Debug, Args)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum AuthMode {
+    Static,
+    Account,
+}
+
+#[derive(Args)]
 pub struct ServeArgs {
     /// YAML config file. Falls back to a sensible default config if omitted.
     #[arg(long, env = "OSDL_CONFIG")]
@@ -84,6 +90,10 @@ pub struct ServeArgs {
     /// non-loopback address; optional on loopback.
     #[arg(long, env = "OSDL_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
+
+    /// Account uses the binding saved by `lab login` for this instance.
+    #[arg(long, value_enum, default_value = "static")]
+    pub auth: AuthMode,
 
     /// Start a deterministic local simulation world with virtual devices.
     /// The world uses the same Lab Action Model and gRPC surface as physical
@@ -334,18 +344,25 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         ));
     }
 
-    // Refuse non-loopback TCP without an auth token *before* we boot the
-    // broker / engine / event store — failing fast on a misconfiguration
-    // is the whole point of this guard. (osdl_server::serve also rejects
-    // it, but only after we've already started the heavy machinery.)
-    if let Some(addr) = listen_addr {
-        if args.auth_token.is_none() && !addr.ip().is_loopback() {
-            return Err(anyhow!(
-                "TCP listener {addr} is non-loopback but no --auth-token is configured. \
-                 Set --auth-token / OSDL_AUTH_TOKEN, or bind to 127.0.0.1 / ::1 / UDS only."
-            ));
+    // Resolve and validate authentication before starting the broker or hardware.
+    // The server library enforces the same listener policy for non-CLI callers.
+    let auth = match args.auth {
+        AuthMode::Account => {
+            anyhow::ensure!(
+                args.auth_token.is_none(),
+                "--auth account cannot be combined with --auth-token / OSDL_AUTH_TOKEN"
+            );
+            osdl_server::auth::ListenerAuth::Account(osdl_server::account::AccountAuth::new(
+                osdl_server::account::Binding::load(&paths.config_dir, &args.instance)?,
+            )?)
         }
-    }
+        AuthMode::Static => match &args.auth_token {
+            Some(token) => osdl_server::auth::ListenerAuth::Bearer(token.clone()),
+            None => osdl_server::auth::ListenerAuth::Local,
+        },
+    };
+    auth.validate_listener(&args.instance, listen_addr)
+        .map_err(anyhow::Error::msg)?;
 
     let mut config = build_config(&args)?;
     let _asset_directory;
@@ -452,7 +469,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             tcp_addr: listen_addr,
         },
         lock_dir: paths.lock_dir(),
-        auth_token: args.auth_token.clone(),
+        auth,
     };
 
     log::info!(
@@ -638,6 +655,7 @@ mod tests {
             detach: false,
             log_file: None,
             auth_token: None,
+            auth: AuthMode::Static,
             simulation,
             asset: Vec::new(),
         }
