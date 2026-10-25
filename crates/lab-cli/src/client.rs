@@ -27,6 +27,8 @@ pub type Client = OsdlClient<InterceptedService<Channel, AuthInterceptor>>;
 
 #[derive(Debug, Clone)]
 pub enum Resolved {
+    Profile(String),
+    Local(String),
     /// Connect over the given URI (typically `http://host:port`).
     Tcp(Uri),
     /// Connect over the given Unix domain socket path. Unix-only — on
@@ -38,6 +40,7 @@ pub enum Resolved {
 
 #[derive(Debug, Clone, Default)]
 pub struct ClientOpts {
+    pub connection: Option<String>,
     pub endpoint: Option<String>,
     pub instance: Option<String>,
     /// Bearer token attached to TCP requests when the server has auth
@@ -74,6 +77,9 @@ impl Interceptor for AuthInterceptor {
 }
 
 pub fn resolve(opts: &ClientOpts, paths: &Paths) -> anyhow::Result<Resolved> {
+    if let Some(name) = &opts.connection {
+        return Ok(Resolved::Profile(name.clone()));
+    }
     if let Some(ep) = opts.endpoint.clone() {
         return parse_explicit(&ep);
     }
@@ -130,11 +136,8 @@ fn record_to_resolved(rec: &lockfile::InstanceRecord) -> anyhow::Result<Resolved
     if let Some(p) = &rec.socket_path {
         return Ok(Resolved::Uds(p.clone()));
     }
-    if let Some(addr) = &rec.listen_addr {
-        let uri: Uri = format!("http://{addr}")
-            .parse()
-            .with_context(|| format!("listen_addr {addr} is not a valid URI"))?;
-        return Ok(Resolved::Tcp(uri));
+    if rec.listen_addr.is_some() {
+        return Ok(Resolved::Local(rec.instance.clone()));
     }
     // No TCP advertised. On Windows this is the case where an old UDS-only
     // lockfile from a Unix-built server is sitting around; surface a
@@ -158,9 +161,32 @@ fn record_to_resolved(rec: &lockfile::InstanceRecord) -> anyhow::Result<Resolved
 /// `Endpoint::try_from("http://[::]")` + a custom connector — tonic doesn't
 /// have first-class UDS-client support, so we rely on tower service
 /// composition.
-pub async fn connect(resolved: &Resolved, opts: &ClientOpts) -> anyhow::Result<Client> {
-    let interceptor = AuthInterceptor::new(opts.auth_token.as_deref())?;
+pub async fn transport(
+    resolved: &Resolved,
+    opts: &ClientOpts,
+) -> anyhow::Result<(Channel, AuthInterceptor)> {
+    let mut interceptor = AuthInterceptor::new(opts.auth_token.as_deref())?;
     let channel = match resolved {
+        Resolved::Profile(name) => profile_store()?.connect(name).await?,
+        Resolved::Local(name) => {
+            let paths = Paths::discover().map_err(anyhow::Error::msg)?;
+            if opts.auth_token.is_some() {
+                let record = lockfile::find(&paths.lock_dir(), name)
+                    .ok_or_else(|| anyhow!("instance unavailable"))?;
+                let endpoint = record
+                    .listen_addr
+                    .ok_or_else(|| anyhow!("TCP listener unavailable"))?;
+                return Ok((
+                    Endpoint::from_shared(format!("http://{endpoint}"))?
+                        .connect()
+                        .await?,
+                    interceptor,
+                ));
+            }
+            let access = osdl_server::local_access::LocalAccess::load(&paths.lock_dir(), name)?;
+            interceptor = AuthInterceptor::new(Some(&access.token))?;
+            Endpoint::from_shared(access.endpoint)?.connect().await?
+        }
         Resolved::Tcp(uri) => {
             let endpoint = Endpoint::from_shared(uri.to_string())
                 .with_context(|| format!("invalid TCP endpoint: {uri}"))?;
@@ -188,5 +214,23 @@ pub async fn connect(resolved: &Resolved, opts: &ClientOpts) -> anyhow::Result<C
                 .with_context(|| format!("connect to UDS {}", path_for_err.display()))?
         }
     };
+    Ok((channel, interceptor))
+}
+
+pub fn profile_store() -> anyhow::Result<osdl_auth::ProfileStore> {
+    let paths = Paths::discover().map_err(anyhow::Error::msg)?;
+    osdl_auth::ProfileStore::open(paths.state_dir.join("paired-clients"))
+}
+pub async fn connect(resolved: &Resolved, opts: &ClientOpts) -> anyhow::Result<Client> {
+    let (channel, interceptor) = transport(resolved, opts).await?;
     Ok(OsdlClient::with_interceptor(channel, interceptor))
+}
+pub async fn local_admin(instance: Option<String>) -> anyhow::Result<(Channel, AuthInterceptor)> {
+    let paths = Paths::discover().map_err(anyhow::Error::msg)?;
+    let opts = ClientOpts {
+        instance,
+        ..Default::default()
+    };
+    let resolved = resolve(&opts, &paths)?;
+    transport(&resolved, &opts).await
 }

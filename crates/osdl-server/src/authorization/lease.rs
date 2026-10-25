@@ -1,15 +1,28 @@
-use super::identity::now;
-use super::{Identity, Principal};
+use crate::account::{Identity, Principal};
+use osdl_auth::now;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::watch;
 type Registry = Mutex<HashMap<Principal, Weak<Lease>>>;
+pub(super) fn expiry_status(grant: bool, deadline: u64) -> tonic::Status {
+    if grant {
+        crate::public_key::status(if deadline == 0 {
+            "grant_revoked"
+        } else {
+            "grant_expired"
+        })
+    } else {
+        crate::account::AuthError::Expired.status()
+    }
+}
 #[derive(Clone, Default, Debug)]
 pub(crate) struct Leases(Arc<Registry>);
 pub(crate) struct Lease {
-    principal: Principal,
+    principal: Option<Principal>,
     deadline: watch::Sender<u64>,
     registry: Weak<Registry>,
+    active: std::sync::atomic::AtomicUsize,
+    drained: tokio::sync::Notify,
 }
 impl Leases {
     pub fn acquire(&self, identity: &Identity) -> Arc<Lease> {
@@ -22,9 +35,11 @@ impl Leases {
             return existing.expect("live lease");
         }
         let lease = Arc::new(Lease {
-            principal: identity.principal.clone(),
+            principal: Some(identity.principal.clone()),
             deadline: watch::channel(identity.expires_at).0,
             registry: Arc::downgrade(&self.0),
+            active: Default::default(),
+            drained: Default::default(),
         });
         registry.insert(identity.principal.clone(), Arc::downgrade(&lease));
         drop(registry);
@@ -56,18 +71,61 @@ impl Leases {
 }
 impl Drop for Lease {
     fn drop(&mut self) {
-        if let Some(registry) = self.registry.upgrade() {
+        if let (Some(registry), Some(principal)) =
+            (self.registry.upgrade(), self.principal.as_ref())
+        {
             let mut registry = registry.lock().unwrap_or_else(|e| e.into_inner());
             if registry
-                .get(&self.principal)
+                .get(principal)
                 .is_some_and(|entry| std::ptr::eq(entry.as_ptr(), self))
             {
-                registry.remove(&self.principal);
+                registry.remove(principal);
             }
         }
     }
 }
 impl Lease {
+    pub(crate) fn grant(expiry: u64) -> Arc<Self> {
+        Arc::new(Self {
+            principal: None,
+            registry: Weak::new(),
+            deadline: watch::channel(expiry).0,
+            active: Default::default(),
+            drained: Default::default(),
+        })
+    }
+    pub(crate) fn revoke(&self) -> bool {
+        self.deadline.send_replace(0) != 0
+    }
+    pub(crate) fn is_drained(&self) -> bool {
+        self.active.load(std::sync::atomic::Ordering::SeqCst) == 0
+    }
+    pub(crate) fn resource(self: &Arc<Self>) -> Result<Resource, tonic::Status> {
+        self.active
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let resource = Resource(self.clone());
+        if *self.deadline.borrow() <= now() {
+            return Err(self.expiry_status());
+        }
+        Ok(resource)
+    }
+    pub(crate) async fn drained(&self) {
+        loop {
+            let notified = self.drained.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.is_drained() {
+                return;
+            }
+            notified.await;
+        }
+    }
+    pub(crate) fn is_grant(&self) -> bool {
+        self.principal.is_none()
+    }
+    pub(crate) fn expiry_status(&self) -> tonic::Status {
+        expiry_status(self.is_grant(), *self.deadline.borrow())
+    }
     /// A deadline observer does not own the authorization lease or its registry entry.
     pub(crate) fn deadline(&self) -> watch::Receiver<u64> {
         self.deadline.subscribe()
@@ -101,7 +159,7 @@ mod tests {
                 installation_id: uuid::Uuid::new_v4(),
             },
             scope: crate::account::Scope::Read,
-            expires_at: super::super::identity::now() + seconds,
+            expires_at: osdl_auth::now() + seconds,
         }
     }
     #[tokio::test]
@@ -181,5 +239,32 @@ mod tests {
             start.elapsed().as_micros(),
             registry.len()
         );
+    }
+}
+
+pub(crate) struct Resource(Arc<Lease>);
+impl Drop for Resource {
+    fn drop(&mut self) {
+        if self
+            .0
+            .active
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+            == 1
+        {
+            self.0.drained.notify_waiters();
+        }
+    }
+}
+#[tokio::test]
+async fn revoked_lease_refuses_new_resource_owner() {
+    let lease = Lease::grant(osdl_auth::now() + 300);
+    lease.revoke();
+    assert!(lease.resource().is_err());
+}
+
+impl std::ops::Deref for Resource {
+    type Target = Arc<Lease>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

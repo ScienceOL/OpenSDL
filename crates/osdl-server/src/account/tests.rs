@@ -116,9 +116,8 @@ async fn grpc_server() -> (
         listen_addr: None,
     };
     let service = crate::OsdlService::new(engine.handle(), identity).with_account(account.clone());
-    let auth = super::AuthenticationService {
-        account: Some(account.clone()),
-        mode: "account".into(),
+    let auth = crate::authorization::info::AuthenticationService {
+        policy: crate::auth::ListenerAuth::Account(account.clone()),
         instance: "laboratory".into(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -1,0 +1,30 @@
+[package]
+name = "osdl-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+tonic = { workspace = true, features = ["tls-ring"] }
+osdl-proto = { path = "../osdl-proto" }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem", "x509-parser"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+x509-parser = { version = "0.18", features = ["verify"] }
+time = "0.3"
+ring = "0.17"
+tempfile.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_System_Memory", "Win32_System_Threading", "Win32_Storage_FileSystem"] }

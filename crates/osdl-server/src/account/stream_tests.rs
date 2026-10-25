@@ -1,4 +1,5 @@
-use super::{lease::Leases, stream::guard_stream, Identity, Principal, Scope};
+use super::{Identity, Principal, Scope};
+use crate::authorization::{lease::Leases, stream::guard_stream};
 use std::{
     pin::Pin,
     sync::{
@@ -60,7 +61,10 @@ async fn bounded_handoff_and_unpolled_consumer_cancellation_release_all_owners()
             started: Some(started),
             dropped: Some(dropped),
         });
-        bodies.push(guard_stream(inner, Some(registry.acquire(&identity))));
+        bodies.push(guard_stream(
+            inner,
+            Some(registry.acquire(&identity).resource().unwrap()),
+        ));
         completions.push(done);
         tokio::time::timeout(std::time::Duration::from_secs(2), ready)
             .await
@@ -100,7 +104,7 @@ async fn measure_bounded_stream_delivery_for_short_and_long_histories() {
                 scope: Scope::Read,
                 expires_at: now + 300,
             };
-            let lease = account.then(|| registry.acquire(&identity));
+            let lease = account.then(|| registry.acquire(&identity).resource().unwrap());
             let start = std::time::Instant::now();
             let mut stream = guard_stream(Box::pin(tokio_stream::iter((0..count).map(Ok))), lease);
             let mut received = 0;

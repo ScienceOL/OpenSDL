@@ -24,6 +24,8 @@ use osdl_server::{paths::Paths, ListenConfig, ServeConfig};
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum AuthMode {
+    Local,
+    PublicKey,
     Static,
     Account,
 }
@@ -83,17 +85,18 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_LOG_FILE")]
     pub log_file: Option<PathBuf>,
 
-    /// Bearer token required for *TCP* RPCs. Clients pass it via
+    /// Token for explicit --auth static. Prefer the private environment. Clients pass it via
     /// `OSDL_AUTH_TOKEN` (the CLI sets `authorization: Bearer <token>`
     /// on each request). UDS clients skip this — filesystem perms are
-    /// the auth there. Required when the TCP listener binds to a
-    /// non-loopback address; optional on loopback.
+    /// the auth there. Static mode requires a token even on loopback.
     #[arg(long, env = "OSDL_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 
-    /// Account uses the binding saved by `lab login` for this instance.
-    #[arg(long, value_enum, default_value = "static")]
+    /// Explicit listener authority. Account uses the binding saved by `lab login`.
+    #[arg(long, value_enum, default_value = "local")]
     pub auth: AuthMode,
+    #[arg(long, default_value="stable", value_parser=["dev","beta","rc","stable"])]
+    pub channel: String,
 
     /// Start a deterministic local simulation world with virtual devices.
     /// The world uses the same Lab Action Model and gRPC surface as physical
@@ -356,9 +359,38 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
                 osdl_server::account::Binding::load(&paths.config_dir, &args.instance)?,
             )?)
         }
+        AuthMode::Local => {
+            anyhow::ensure!(args.auth_token.is_none(),"local mode generates its own private capability; use --auth static for process-supplied tokens");
+            osdl_server::auth::ListenerAuth::Local
+        }
+        AuthMode::PublicKey => {
+            anyhow::ensure!(
+                args.auth_token.is_none(),
+                "public-key mode cannot use a bearer token"
+            );
+            let address = listen_addr
+                .ok_or_else(|| anyhow!("public-key requires --listen TAILNET_IP:PORT"))?;
+            let endpoint = osdl_auth::normalize_endpoint(&format!("https://{address}"))?;
+            let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
+            std::fs::create_dir_all(data)?;
+            let channel = match args.channel.as_str() {
+                "dev" => osdl_auth::Channel::Dev,
+                "beta" => osdl_auth::Channel::Beta,
+                "rc" => osdl_auth::Channel::Rc,
+                _ => osdl_auth::Channel::Stable,
+            };
+            osdl_server::auth::ListenerAuth::PublicKey(
+                osdl_server::public_key::PublicKeyAuth::open(
+                    &std::path::absolute(data.join(format!("{}-public-key", args.instance)))?,
+                    &args.instance,
+                    channel,
+                    &endpoint,
+                )?,
+            )
+        }
         AuthMode::Static => match &args.auth_token {
             Some(token) => osdl_server::auth::ListenerAuth::Bearer(token.clone()),
-            None => osdl_server::auth::ListenerAuth::Local,
+            None => return Err(anyhow!("--auth static requires OSDL_AUTH_TOKEN")),
         },
     };
     auth.validate_listener(&args.instance, listen_addr)
@@ -435,6 +467,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     let _mdns = config
         .mqtt
         .as_ref()
+        .filter(|_| !matches!(args.auth, AuthMode::Local))
         .map(|c| MdnsAdvertiser::start(c.port).map_err(|e| anyhow!("mdns: {e}")))
         .transpose()?;
 
@@ -655,7 +688,8 @@ mod tests {
             detach: false,
             log_file: None,
             auth_token: None,
-            auth: AuthMode::Static,
+            auth: AuthMode::Local,
+            channel: "stable".into(),
             simulation,
             asset: Vec::new(),
         }
