@@ -83,33 +83,3 @@ pub(crate) fn authorize<T>(
     }
     Ok(Some(identity))
 }
-pub(crate) async fn expires(lease: Option<&std::sync::Arc<super::lease::Lease>>) {
-    match lease {
-        Some(lease) => lease.expired().await,
-        None => std::future::pending::<()>().await,
-    }
-}
-pub(crate) fn guard_stream<T: Send + 'static>(
-    mut stream: std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send>>,
-    lease: Option<std::sync::Arc<super::lease::Lease>>,
-) -> std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send>> {
-    use tokio_stream::StreamExt;
-    let Some(lease) = lease else { return stream };
-    Box::pin(async_stream::stream! {
-        let expired = lease.expired();
-        tokio::pin!(expired);
-        loop {
-            tokio::select! {
-                biased;
-                _ = &mut expired => {
-                    yield Err(super::identity::AuthError::Expired.status());
-                    break;
-                },
-                item = stream.next() => match item {
-                    Some(item) => yield item,
-                    None => break,
-                },
-            }
-        }
-    })
-}

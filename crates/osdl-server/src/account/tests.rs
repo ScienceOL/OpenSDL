@@ -98,11 +98,11 @@ fn foreign_or_expired_claims_never_authorize() {
     assert!(verifier.verify(&token(&other, claims())).is_err());
 }
 
-async fn grpc_fixture() -> (
-    pb::osdl_client::OsdlClient<tonic::transport::Channel>,
-    pb::authentication_client::AuthenticationClient<tonic::transport::Channel>,
+async fn grpc_server() -> (
+    std::net::SocketAddr,
     tokio::task::JoinHandle<()>,
     Ed25519KeyPair,
+    AccountAuth,
 ) {
     let (binding, key) = fixture();
     let account = AccountAuth::new(binding).unwrap();
@@ -117,7 +117,7 @@ async fn grpc_fixture() -> (
     };
     let service = crate::OsdlService::new(engine.handle(), identity).with_account(account.clone());
     let auth = super::AuthenticationService {
-        account: Some(account),
+        account: Some(account.clone()),
         mode: "account".into(),
         instance: "laboratory".into(),
     };
@@ -131,6 +131,15 @@ async fn grpc_fixture() -> (
             .await
             .unwrap();
     });
+    (addr, task, key, account)
+}
+async fn grpc_fixture() -> (
+    pb::osdl_client::OsdlClient<tonic::transport::Channel>,
+    pb::authentication_client::AuthenticationClient<tonic::transport::Channel>,
+    tokio::task::JoinHandle<()>,
+    Ed25519KeyPair,
+) {
+    let (addr, task, key, _) = grpc_server().await;
     let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}"))
         .unwrap()
         .connect()
@@ -451,4 +460,46 @@ fn concurrent_binding_publication_has_exactly_one_winner() {
         Binding::load(directory.path(), "laboratory").unwrap(),
         winners[0].1
     );
+}
+
+#[tokio::test]
+async fn zero_http2_receive_window_cannot_retain_expired_authorization() {
+    let (addr, server, key, account) = grpc_server().await;
+    let socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (mut client, connection) = h2::client::Builder::new()
+        .initial_window_size(0)
+        .handshake::<_, bytes::Bytes>(socket)
+        .await
+        .unwrap();
+    let connection = tokio::spawn(async move {
+        connection.await.unwrap();
+    });
+    let mut c = claims();
+    c["exp"] = json!(c["iat"].as_u64().unwrap() + 2);
+    let request = http::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/osdl.v1.Osdl/StreamEvents"))
+        .header("content-type", "application/grpc")
+        .header("te", "trailers")
+        .header("authorization", format!("Bearer {}", token(&key, c)))
+        .body(())
+        .unwrap();
+    let (response, mut body) = client.send_request(request, false).unwrap();
+    body.send_data(bytes::Bytes::from_static(&[0, 0, 0, 0, 0]), true)
+        .unwrap();
+    let response = tokio::time::timeout(std::time::Duration::from_secs(2), response)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status(), http::StatusCode::OK);
+    assert_eq!(account.leases.len(), 1);
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+    assert_eq!(
+        account.leases.len(),
+        0,
+        "zero-window transport must not retain an expired event subscription"
+    );
+    drop(response);
+    connection.abort();
+    server.abort();
 }

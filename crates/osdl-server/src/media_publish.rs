@@ -354,7 +354,7 @@ mod tests {
         let stream = publish_process(command, Arc::new(Notify::new()), slot)
             .await
             .unwrap();
-        let mut stream = crate::account::service::guard_stream(stream, Some(lease));
+        let mut stream = crate::account::stream::guard_stream(stream, Some(lease));
         assert!(stream.next().await.unwrap().unwrap().running);
         let pid = std::fs::read_to_string(&pid_file).unwrap();
         identity.expires_at = now + 4;
@@ -382,6 +382,66 @@ mod tests {
             std::fs::read(marker).unwrap(),
             b"started",
             "expired publisher must be killed before its completion marker"
+        );
+    }
+    #[tokio::test]
+    async fn unpolled_media_body_releases_publisher_slot_and_lease_at_expiry() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("publisher");
+        let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "media_publish::tests::publisher_fixture",
+                "--nocapture",
+            ])
+            .env("LAB_MEDIA_TEST_MARKER", &marker)
+            .env("LAB_MEDIA_TEST_SECONDS", "3");
+        let publishers = Publishers::default();
+        let slot = publishers.acquire("camera".into()).unwrap();
+        let registry = crate::account::lease::Leases::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let identity = crate::account::Identity {
+            principal: crate::account::Principal {
+                device_id: uuid::Uuid::new_v4(),
+                device_generation: 1,
+                installation_id: uuid::Uuid::new_v4(),
+            },
+            scope: crate::account::Scope::Read,
+            expires_at: now + 2,
+        };
+        let lease = registry.acquire(&identity);
+        let stream = publish_process(command, Arc::new(Notify::new()), slot)
+            .await
+            .unwrap();
+        let mut stream = crate::account::stream::guard_stream(stream, Some(lease));
+        // Deliberately never poll or drop the response body until after expiry.
+        tokio::time::sleep(std::time::Duration::from_millis(3200)).await;
+        assert!(
+            publishers.acquire("camera".into()).is_ok(),
+            "expiry must free the publisher slot without consumer polling"
+        );
+        assert_eq!(
+            registry.len(),
+            0,
+            "response body must not retain an expired lease"
+        );
+        assert_eq!(
+            std::fs::read(marker).unwrap(),
+            b"started",
+            "expired publisher must be killed while its response body is unpolled"
+        );
+        let error = stream.next().await.unwrap().unwrap_err();
+        assert_eq!(
+            error.metadata().get("opensdl-auth-error").unwrap(),
+            "authorization_expired"
+        );
+        assert!(
+            stream.next().await.is_none(),
+            "queued running status must not be delivered after expiry"
         );
     }
 }

@@ -50,7 +50,7 @@ impl Leases {
         }
     }
     #[cfg(test)]
-    fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.lock().unwrap().len()
     }
 }
@@ -68,6 +68,10 @@ impl Drop for Lease {
     }
 }
 impl Lease {
+    /// A deadline observer does not own the authorization lease or its registry entry.
+    pub(crate) fn deadline(&self) -> watch::Receiver<u64> {
+        self.deadline.subscribe()
+    }
     pub async fn expired(&self) {
         let mut deadline = self.deadline.subscribe();
         loop {
