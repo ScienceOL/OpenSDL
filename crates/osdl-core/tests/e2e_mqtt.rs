@@ -10,7 +10,7 @@ use osdl_core::adapter::ProtocolAdapter;
 use osdl_core::config::{AdapterConfig, MqttConfig, OsdlConfig};
 use osdl_core::driver::registry::DriverRegistry;
 use osdl_core::event::OsdlEvent;
-use osdl_core::{EmbeddedBroker, EventStore, OsdlEngine, OsdlStatus};
+use osdl_core::{EmbeddedBroker, EngineHandle, EventStore, OsdlEngine, OsdlStatus};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
@@ -29,8 +29,8 @@ struct TestHarness {
     _broker: EmbeddedBroker,
     event_rx: Option<broadcast::Receiver<OsdlEvent>>,
     status_rx: tokio::sync::watch::Receiver<OsdlStatus>,
-    stop: tokio::sync::watch::Sender<bool>,
-    engine_handle: tokio::task::JoinHandle<()>,
+    handle: EngineHandle,
+    engine_task: tokio::task::JoinHandle<()>,
 }
 
 impl TestHarness {
@@ -67,9 +67,9 @@ impl TestHarness {
 
         let event_rx = Some(engine.subscribe_events());
         let mut status_rx = engine.status_rx();
-        let stop = engine.stop_handle();
+        let handle = engine.handle();
 
-        let engine_handle = tokio::spawn(async move {
+        let engine_task = tokio::spawn(async move {
             engine.run().await;
         });
 
@@ -86,8 +86,8 @@ impl TestHarness {
             _broker: broker,
             event_rx,
             status_rx,
-            stop,
-            engine_handle,
+            handle,
+            engine_task,
         }
     }
 
@@ -115,9 +115,9 @@ impl TestHarness {
 
         let event_rx = Some(engine.subscribe_events());
         let mut status_rx = engine.status_rx();
-        let stop = engine.stop_handle();
+        let handle = engine.handle();
 
-        let engine_handle = tokio::spawn(async move {
+        let engine_task = tokio::spawn(async move {
             engine.run().await;
         });
 
@@ -133,8 +133,8 @@ impl TestHarness {
             _broker: broker,
             event_rx,
             status_rx,
-            stop,
-            engine_handle,
+            handle,
+            engine_task,
         }
     }
 
@@ -213,8 +213,8 @@ impl TestHarness {
     }
 
     async fn shutdown(self) {
-        let _ = self.stop.send(true);
-        let _ = tokio::time::timeout(Duration::from_secs(2), self.engine_handle).await;
+        self.handle.request_stop();
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.engine_task).await;
     }
 }
 

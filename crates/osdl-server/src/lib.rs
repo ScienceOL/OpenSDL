@@ -263,15 +263,8 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         )));
     }
     // Wait for stop signal — engine stop OR Ctrl-C.
-    let mut stop = engine.stop_handle().subscribe();
     tokio::select! {
-        _ = async {
-            // Already requested before we subscribed? Fire immediately.
-            if *stop.borrow() {
-                return;
-            }
-            let _ = stop.changed().await;
-        } => log::info!("engine stop requested, shutting down listeners"),
+        _ = engine.stop_requested() => log::info!("engine stop requested, shutting down listeners"),
         _ = wait_for_console_signal(tokio::signal::ctrl_c()) => log::info!("Ctrl-C received, shutting down"),
     }
 
@@ -336,6 +329,31 @@ mod shutdown_signal_tests {
         )
         .await
         .is_ok());
+    }
+    #[tokio::test]
+    async fn a_stop_requested_before_serving_closes_the_service() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);
+        let handle = engine.handle();
+        // `lab serve` requests a stop when the engine exits during startup,
+        // which can happen before the control service subscribes.
+        handle.request_stop();
+        let config = super::ServeConfig {
+            instance: "stopped".into(),
+            listen: super::ListenConfig {
+                socket_path: None,
+                tcp_addr: Some("127.0.0.1:0".parse().unwrap()),
+            },
+            lock_dir: temp.path().join("locks"),
+            auth: super::auth::ListenerAuth::Bearer("test".into()),
+        };
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            super::serve(handle, config),
+        )
+        .await
+        .expect("serve stops for a request made before it started")
+        .unwrap();
     }
 }
 pub mod authorization;

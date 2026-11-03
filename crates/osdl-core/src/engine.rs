@@ -169,16 +169,20 @@ impl EngineHandle {
         self.transport_rx_tx.clone()
     }
 
-    /// Request the engine's main loop to stop. The loop will drain pending
-    /// work, shut down the media gateway + ESP-NOW dongles, and return from `run()`.
+    /// Request the engine's main loop to stop. `run()` then stops the
+    /// simulation, ESP-NOW dongles, and media gateway, and returns. The
+    /// request is retained, so it also stops an engine that has not reached
+    /// its loop yet and resolves every later `stop_requested` wait.
     pub fn request_stop(&self) {
-        let _ = self.stop_tx.send(true);
+        self.stop_tx.send_replace(true);
     }
 
-    /// Stop signaller (kept for callers that want to retain the watch
-    /// sender directly; most should prefer `request_stop`).
-    pub fn stop_handle(&self) -> watch::Sender<bool> {
-        self.stop_tx.clone()
+    /// Resolve once a stop has been requested, including a request made
+    /// before this call.
+    pub async fn stop_requested(&self) {
+        // `wait_for` checks the current value before waiting, and `self`
+        // keeps the sender alive, so this resolves only on a stop request.
+        let _ = self.stop_tx.subscribe().wait_for(|&stop| stop).await;
     }
 
     // === Mutation ===
@@ -436,10 +440,6 @@ impl OsdlEngine {
         self.handle.status()
     }
 
-    pub fn stop_handle(&self) -> watch::Sender<bool> {
-        self.handle.stop_handle()
-    }
-
     pub async fn list_devices(&self) -> Vec<Device> {
         self.handle.list_devices().await
     }
@@ -533,21 +533,15 @@ impl OsdlEngine {
         let mut media_health = tokio::time::interval(std::time::Duration::from_secs(5));
         media_health.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-        let mut stop_rx = self.handle.stop_tx.subscribe();
-        // `watch::subscribe()` marks the *current* value as already-seen,
-        // so a `request_stop()` issued before we get here would be lost
-        // and run() would block on the first `changed()`. Bail early in
-        // that case.
-        if *stop_rx.borrow() {
-            log::info!("OSDL engine stop already requested before run() entered the loop");
-            self.stop_simulation().await;
-            let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
-            return;
-        }
         let mut transport_rx = self.transport_rx_rx.take();
         let mut cmd_inject_rx = self.cmd_inject_rx.take();
         #[cfg(feature = "espnow")]
         let mut espnow_reg_rx = self.espnow_reg_rx.take();
+        // One wait spans the whole loop. It also resolves for a stop
+        // requested before or during startup, which therefore still runs
+        // the cleanup below.
+        let stop = self.handle.stop_requested();
+        tokio::pin!(stop);
 
         loop {
             // The ESP-NOW REG arm can't be conditionally included inside a
@@ -620,7 +614,7 @@ impl OsdlEngine {
                             }
                         }
                     }
-                    _ = stop_rx.changed() => {
+                    _ = &mut stop => {
                         log::info!("OSDL engine stopping");
                         break;
                     }
@@ -685,7 +679,7 @@ impl OsdlEngine {
                             }
                         }
                     }
-                    _ = stop_rx.changed() => {
+                    _ = &mut stop => {
                         log::info!("OSDL engine stopping");
                         break;
                     }

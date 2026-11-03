@@ -181,6 +181,22 @@ async fn test_simulation_world_uses_the_device_contract() {
     task.await.expect("engine task");
 }
 
+#[tokio::test]
+async fn test_stop_requested_before_run_is_retained() {
+    use osdl_core::config::OsdlConfig;
+    use osdl_core::{OsdlEngine, OsdlStatus};
+
+    let mut engine = OsdlEngine::new(OsdlConfig::default(), vec![]);
+    let handle = engine.handle();
+    // `lab serve` requests a stop when its control service fails to start,
+    // which can happen before the spawned engine subscribes.
+    handle.request_stop();
+    tokio::time::timeout(std::time::Duration::from_secs(2), engine.run())
+        .await
+        .expect("engine stops for a request made before run()");
+    assert_eq!(handle.status(), OsdlStatus::Disconnected);
+}
+
 #[test]
 fn test_event_store_logging() {
     use osdl_core::event::OsdlEvent;
