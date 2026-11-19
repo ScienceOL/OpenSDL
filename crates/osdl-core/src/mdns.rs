@@ -41,6 +41,10 @@ impl MdnsAdvertiser {
             })
             .unwrap_or_else(|_| "osdl-mother".into());
 
+        Self::register(daemon, &hostname, mqtt_port)
+    }
+
+    fn register(daemon: ServiceDaemon, hostname: &str, mqtt_port: u16) -> Result<Self, String> {
         let instance_name = format!("OpenSDL on {}", hostname);
 
         let host_label = hostname.trim_end_matches(".local").trim_end_matches('.');
@@ -83,32 +87,44 @@ impl Drop for MdnsAdvertiser {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
+    use mdns_sd::{IfKind, ServiceEvent};
+
     use super::*;
+
+    fn loopback_daemon() -> ServiceDaemon {
+        let daemon = ServiceDaemon::new().unwrap();
+        daemon.disable_interface(IfKind::All).unwrap();
+        daemon.enable_interface(IfKind::LoopbackV4).unwrap();
+        daemon
+    }
 
     #[test]
     fn test_mdns_advertise_and_discover() {
-        // Start advertising on a random port
+        let browser = loopback_daemon();
+        let receiver = browser.browse(SERVICE_TYPE).unwrap();
+
         let port = 18830;
-        let _adv = MdnsAdvertiser::start(port).expect("should start mDNS advertiser");
+        let hostname = format!("osdl-mdns-test-{}", std::process::id());
+        let advertisement = MdnsAdvertiser::register(loopback_daemon(), &hostname, port).unwrap();
 
-        // Browse for the service
-        let daemon = ServiceDaemon::new().unwrap();
-        let receiver = daemon.browse(SERVICE_TYPE).unwrap();
-
-        // Wait up to 3 seconds for the service to appear
-        let found = loop {
-            match receiver.recv_timeout(std::time::Duration::from_secs(3)) {
-                Ok(mdns_sd::ServiceEvent::ServiceResolved(info)) => {
-                    if info.get_port() == port {
-                        break true;
-                    }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut discovered = false;
+        while let Ok(event) = receiver.recv_deadline(deadline) {
+            if let ServiceEvent::ServiceResolved(info) = event {
+                if info.get_fullname() == advertisement.fullname {
+                    assert_eq!(info.get_port(), port);
+                    assert!(info.get_addresses().iter().any(|ip| ip.is_loopback()));
+                    discovered = true;
+                    break;
                 }
-                Ok(_) => continue, // other events (SearchStarted, etc.)
-                Err(_) => break false,
             }
-        };
-
-        let _ = daemon.shutdown();
-        assert!(found, "Should discover our own mDNS service within 3s");
+        }
+        browser.shutdown().unwrap();
+        assert!(
+            discovered,
+            "mDNS service was not discovered on IPv4 loopback"
+        );
     }
 }
