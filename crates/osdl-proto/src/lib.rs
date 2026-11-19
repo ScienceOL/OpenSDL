@@ -10,6 +10,16 @@ pub mod v1 {
     tonic::include_proto!("osdl.v1");
 }
 
+pub mod cluster {
+    pub mod v1 {
+        tonic::include_proto!("osdl.cluster.v1");
+    }
+}
+
+pub mod etcd {
+    tonic::include_proto!("etcdserverpb");
+}
+
 pub use v1::*;
 
 #[cfg(test)]

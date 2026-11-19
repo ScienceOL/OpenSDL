@@ -15,6 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".osdl.v1.DescribeInvitationRequest",
             ".osdl.v1.InviteResponse",
         ])
-        .compile_protos(&["proto/osdl.proto"], &["proto"])?;
+        .compile_protos(&["proto/osdl.proto", "proto/cluster.proto"], &["proto"])?;
+    tonic_prost_build::configure()
+        .build_server(false)
+        .compile_protos(&["proto/etcd.proto"], &["proto"])?;
     Ok(())
 }

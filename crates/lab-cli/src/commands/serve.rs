@@ -11,15 +11,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use clap::Args;
-use osdl_core::adapter::onvif::OnvifAdapter;
-use osdl_core::adapter::simulation::SimulationAdapter;
-use osdl_core::adapter::unilabos::UniLabOsAdapter;
-use osdl_core::config::{
-    AdapterConfig, EspNowDongleConfig, MqttConfig, OsdlConfig, SimulationConfig,
-};
-use osdl_core::driver::registry::DriverRegistry;
+use lab_cli::runtime::{run_engine, EngineArgs, EngineMode};
 use osdl_core::path_expand;
-use osdl_core::{EmbeddedBroker, EventStore, MdnsAdvertiser, OsdlEngine};
 use osdl_server::{paths::Paths, ListenConfig, ServeConfig};
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -32,9 +25,8 @@ pub enum AuthMode {
 
 #[derive(Args)]
 pub struct ServeArgs {
-    /// YAML config file. Falls back to a sensible default config if omitted.
-    #[arg(long, env = "OSDL_CONFIG")]
-    pub config: Option<PathBuf>,
+    #[command(flatten)]
+    pub engine: EngineArgs,
 
     /// Logical instance name. Determines the lockfile, default socket path,
     /// and default db filename.
@@ -50,23 +42,6 @@ pub struct ServeArgs {
     /// Bind a TCP gRPC listener. Off by default — UDS only.
     #[arg(long, env = "OSDL_LISTEN")]
     pub listen: Option<SocketAddr>,
-
-    /// Override the state dir (where the SQLite db lives).
-    #[arg(long, env = "OSDL_DATA_DIR")]
-    pub data_dir: Option<PathBuf>,
-
-    /// Override the registry directory for the unilabos adapter. Default
-    /// pulls from `OSDL_REGISTRY_PATH` then `registry/unilabos`.
-    #[arg(long, env = "OSDL_REGISTRY_PATH")]
-    pub registry: Option<PathBuf>,
-
-    /// ESP-NOW dongle port (USB-CDC). Optional.
-    #[arg(long, env = "OSDL_DONGLE_PORT")]
-    pub dongle_port: Option<String>,
-
-    /// ESP-NOW dongle baud rate (default 115200).
-    #[arg(long, env = "OSDL_DONGLE_BAUD", default_value_t = 115200)]
-    pub dongle_baud: u32,
 
     /// Run in the background as a Unix daemon. Stdout/stderr are
     /// redirected to `--log-file`. The current process forks twice,
@@ -97,15 +72,6 @@ pub struct ServeArgs {
     pub auth: AuthMode,
     #[arg(long, default_value="stable", value_parser=["dev","beta","rc","stable"])]
     pub channel: String,
-
-    /// Start a deterministic local simulation world with virtual devices.
-    /// The world uses the same Lab Action Model and gRPC surface as physical
-    /// devices, so local development does not require hardware.
-    #[arg(long, env = "OSDL_SIMULATION")]
-    pub simulation: bool,
-    /// Add a digest-pinned package to this world. Repeat for multiple instruments.
-    #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
-    pub asset: Vec<String>,
 }
 
 /// Synchronous entrypoint called from `main`. Handles `--detach` *before*
@@ -132,6 +98,7 @@ pub fn main_entrypoint(mut args: ServeArgs) -> anyhow::Result<()> {
         absolutize_path_args(&mut args)?;
     }
 
+    #[cfg(unix)]
     if should_detach {
         // Resolve paths in the parent so we can show the user the log
         // file location *before* exiting. After the daemonize call the
@@ -139,13 +106,10 @@ pub fn main_entrypoint(mut args: ServeArgs) -> anyhow::Result<()> {
         let paths = Paths::discover().map_err(|e| anyhow!("paths: {e}"))?;
         let log_path = resolve_log_path(&args, &paths)?;
 
-        #[cfg(unix)]
-        run_detached(args, log_path)?;
-        Ok(())
-    } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-        run_foreground(args)
+        return run_detached(args, log_path);
     }
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    run_foreground(args)
 }
 
 /// Expand `~` / `$VAR` / `${VAR}` in every path-shaped CLI arg in place.
@@ -155,15 +119,7 @@ fn expand_env_in_path_args(args: &mut ServeArgs) {
     fn expand_pathbuf(p: &Path) -> PathBuf {
         PathBuf::from(path_expand::expand_vars(&p.to_string_lossy()))
     }
-    if let Some(p) = args.config.as_deref() {
-        args.config = Some(expand_pathbuf(p));
-    }
-    if let Some(p) = args.registry.as_deref() {
-        args.registry = Some(expand_pathbuf(p));
-    }
-    if let Some(p) = args.data_dir.as_deref() {
-        args.data_dir = Some(expand_pathbuf(p));
-    }
+    args.engine.expand_paths();
     if let Some(p) = args.log_file.as_deref() {
         args.log_file = Some(expand_pathbuf(p));
     }
@@ -173,15 +129,6 @@ fn expand_env_in_path_args(args: &mut ServeArgs) {
             if expanded != s {
                 args.socket = Some(expanded);
             }
-        }
-    }
-    if let Some(s) = args.dongle_port.as_deref() {
-        // Dongle port is a path on Unix (`/dev/cu.*`) and a name
-        // (`COM3`) on Windows. Either way passing it through expand_vars
-        // is harmless: the Windows form has no `$` / `~` to substitute.
-        let expanded = path_expand::expand_vars(s);
-        if expanded != s {
-            args.dongle_port = Some(expanded);
         }
     }
 }
@@ -204,14 +151,14 @@ fn absolutize_path_args(args: &mut ServeArgs) -> anyhow::Result<()> {
         }
     }
 
-    if let Some(p) = args.config.as_deref() {
-        args.config = Some(require_existing(p)?);
+    if let Some(p) = args.engine.config.as_deref() {
+        args.engine.config = Some(require_existing(p)?);
     }
-    if let Some(p) = args.registry.as_deref() {
-        args.registry = Some(require_existing(p)?);
+    if let Some(p) = args.engine.registry.as_deref() {
+        args.engine.registry = Some(require_existing(p)?);
     }
-    if let Some(p) = args.data_dir.as_deref() {
-        args.data_dir = Some(make_absolute(p)?);
+    if let Some(p) = args.engine.data_dir.as_deref() {
+        args.engine.data_dir = Some(make_absolute(p)?);
     }
     if let Some(p) = args.log_file.as_deref() {
         args.log_file = Some(make_absolute(p)?);
@@ -296,11 +243,13 @@ fn run_foreground(args: ServeArgs) -> anyhow::Result<()> {
     rt.block_on(run(args))
 }
 
+#[cfg(unix)]
 fn resolve_log_path(args: &ServeArgs, paths: &Paths) -> anyhow::Result<PathBuf> {
     if let Some(p) = &args.log_file {
         return Ok(p.clone());
     }
     let dir: &Path = args
+        .engine
         .data_dir
         .as_deref()
         .unwrap_or(paths.state_dir.as_path());
@@ -375,7 +324,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             let address = listen_addr
                 .ok_or_else(|| anyhow!("public-key requires --listen TAILNET_IP:PORT"))?;
             let endpoint = osdl_auth::normalize_endpoint(&format!("https://{address}"))?;
-            let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
+            let data = args.engine.data_dir.as_ref().unwrap_or(&paths.state_dir);
             std::fs::create_dir_all(data)?;
             let channel = match args.channel.as_str() {
                 "dev" => osdl_auth::Channel::Dev,
@@ -400,105 +349,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     auth.validate_listener(&args.instance, listen_addr)
         .map_err(anyhow::Error::msg)?;
 
-    let mut config = build_config(&args)?;
-    let _asset_directory;
-    if !args.asset.is_empty() {
-        use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
-        let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
-        std::fs::create_dir_all(data)?;
-        let cache = AssetCache::open(data.join("assets"))?;
-        if args.asset.len() > 64 {
-            anyhow::bail!("select at most 64 simulation packages");
-        }
-        let references = args
-            .asset
-            .iter()
-            .map(|reference| {
-                let parsed = AssetReference::parse(reference)?;
-                parsed
-                    .digest()
-                    .context("--asset requires a sha256 digest-pinned reference")?;
-                Ok(parsed)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let mut pulls = tokio::task::JoinSet::new();
-        let mut requested = std::collections::HashSet::new();
-        for reference in references {
-            let digest = reference.digest().expect("validated pinned reference");
-            // A verified immutable cache hit needs no registry round trip.
-            if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
-                continue;
-            }
-            let cache = cache.clone();
-            pulls.spawn(async move {
-                RegistryClient::for_reference(&reference)
-                    .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
-                    .await
-            });
-            if pulls.len() == 4 {
-                pulls
-                    .join_next()
-                    .await
-                    .context("asset download task missing")???;
-            }
-        }
-        while let Some(result) = pulls.join_next().await {
-            result??;
-        }
-        _asset_directory = tempfile::tempdir_in(data)?;
-        config.simulation = Some(osdl_server::simulation_asset::compose(
-            &cache,
-            &args.asset,
-            _asset_directory.path(),
-            &args.instance,
-        )?);
-    }
-    // Propagate the resolved data_dir into the engine config so the
-    // ONVIF transport can write snapshots under it. The CLI's
-    // --data-dir wins; otherwise we use the platform default.
-    let resolved_data_dir = args
-        .data_dir
-        .clone()
-        .unwrap_or_else(|| paths.state_dir.clone());
-    config.data_dir = Some(resolved_data_dir.clone());
-
-    // Start broker + mDNS only when MQTT is enabled in the config.
-    let _broker = config
-        .mqtt
-        .as_ref()
-        .map(|c| EmbeddedBroker::start(c.port).map_err(|e| anyhow!("broker: {e}")))
-        .transpose()?;
-    let _mdns = config
-        .mqtt
-        .as_ref()
-        .filter(|_| !matches!(args.auth, AuthMode::Local))
-        .map(|c| MdnsAdvertiser::start(c.port).map_err(|e| anyhow!("mdns: {e}")))
-        .transpose()?;
-
-    if config.mqtt.is_some() {
-        // Give the broker a moment to bind before the engine connects.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-
-    let data_dir = resolved_data_dir;
-    std::fs::create_dir_all(&data_dir)
-        .with_context(|| format!("create data dir {}", data_dir.display()))?;
-    let db_path = data_dir.join(format!("{}.db", args.instance));
-    let store = EventStore::open(&db_path)
-        .map_err(|e| anyhow!("event store {}: {}", db_path.display(), e))?;
-
-    let adapters: Vec<Box<dyn osdl_core::adapter::ProtocolAdapter>> = vec![
-        Box::new(UniLabOsAdapter::new(DriverRegistry::with_builtins())),
-        Box::new(OnvifAdapter::new()),
-        Box::new(SimulationAdapter::new()),
-    ];
-    let mut engine = OsdlEngine::new(config, adapters).with_store(store);
-    let handle = engine.handle();
-
-    // Engine runs in a dedicated task. We stop it explicitly after the
-    // gRPC server returns so the shutdown order is: client → server → engine.
-    let mut engine_task = tokio::spawn(async move { engine.run().await });
-
+    let advertise_mqtt = !matches!(args.auth, AuthMode::Local);
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
         listen: ListenConfig {
@@ -508,226 +359,16 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         lock_dir: paths.lock_dir(),
         auth,
     };
-
-    log::info!(
-        "OpenSDL server starting (instance={}, db={}, lock_dir={})",
-        args.instance,
-        db_path.display(),
-        paths.lock_dir().display()
-    );
-
-    // A dead engine must never leave an apparently healthy control service.
-    let server = osdl_server::serve(handle.clone(), serve_cfg);
-    tokio::pin!(server);
-    tokio::select! {
-        result = &mut server => {
-            handle.request_stop();
-            engine_task.await.context("engine task failed")?;
-            result.context("serve")
-        }
-        result = &mut engine_task => {
-            handle.request_stop();
-            // Release listeners, event streams and the instance lockfile.
-            server.await.context("serve shutdown")?;
-            result.context("engine task failed")?;
-            anyhow::bail!("engine stopped before the control service")
-        }
-    }
-}
-
-fn build_config(args: &ServeArgs) -> anyhow::Result<OsdlConfig> {
-    // Recipe-relative path resolution requires a stable base. Pick the
-    // YAML's parent dir when a config was loaded — that's the only
-    // reference point that travels with the file across machines (CWD
-    // changes between an interactive shell and a launchd-spawned `.app`,
-    // but `dirname(config.yaml)` does not). Fall back to the current
-    // working directory when no config was given.
-    let (mut cfg, config_dir) = if let Some(path) = &args.config {
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("read config {}", path.display()))?;
-        let cfg: OsdlConfig = serde_yaml::from_str(&raw)
-            .with_context(|| format!("parse config {}", path.display()))?;
-        let dir = path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
-        (cfg, dir)
-    } else {
-        // No config: ship the physical default unless simulation was
-        // explicitly requested. A virtual lab must not probe a host's
-        // physical registry or broker just because no recipe was supplied.
-        let dir = std::env::current_dir().context("read current dir")?;
-        let cfg = OsdlConfig {
-            mqtt: if args.simulation {
-                None
-            } else {
-                Some(MqttConfig::default())
-            },
-            adapters: if args.simulation {
-                Vec::new()
-            } else {
-                vec![AdapterConfig {
-                    adapter_type: "unilabos".into(),
-                    registry_path: None,
-                }]
-            },
-            ..Default::default()
-        };
-        (cfg, dir)
-    };
-
-    // Expand `~` / `$VAR` / `${VAR}` in every path-shaped field, and
-    // resolve relatives against `config_dir`. Done before the CLI override
-    // pass so a user-provided override always wins, even if the YAML had
-    // a lab-local path with env vars.
-    normalize_config_paths(&mut cfg, &config_dir);
-
-    // CLI/env-var overrides take precedence over YAML so the same recipe
-    // config can be shared across machines that have different dongle
-    // ports or registry paths.
-    if let Some(reg) = &args.registry {
-        let reg_str = reg.display().to_string();
-        if cfg.adapters.is_empty() {
-            cfg.adapters.push(AdapterConfig {
-                adapter_type: "unilabos".into(),
-                registry_path: Some(reg_str),
-            });
-        } else {
-            for a in &mut cfg.adapters {
-                a.registry_path = Some(reg_str.clone());
-            }
-        }
-    } else if !args.simulation {
-        // Final fallback for adapters with no registry configured — pick
-        // the registry that ships next to the config file. With a config
-        // file, that's `<config_dir>/registry/unilabos`; without one,
-        // it's the historical CWD-relative `registry/unilabos`.
-        let default_registry = config_dir.join("registry/unilabos");
-        for a in &mut cfg.adapters {
-            if a.registry_path.is_none() {
-                a.registry_path = Some(default_registry.display().to_string());
-            }
-        }
-    }
-
-    if let Some(port) = &args.dongle_port {
-        if !port.is_empty() {
-            // Replace any YAML-configured dongles: `--dongle-port` is the
-            // authoritative answer for "which serial device is plugged in
-            // *right now*", and shipping multiple at once would just
-            // confuse the engine.
-            if args.simulation {
-                log::warn!("--simulation ignores --dongle-port; no physical hardware is started");
-            } else {
-                cfg.espnow_dongles = vec![EspNowDongleConfig {
-                    port: port.clone(),
-                    baud_rate: args.dongle_baud,
-                }];
-            }
-        }
-    }
-
-    if args.simulation {
-        // Preserve a world declared by the recipe. The flag is an enablement
-        // shortcut, not a request to discard the user's device definitions.
-        if cfg.simulation.is_none() {
-            cfg.simulation = Some(SimulationConfig::default());
-        }
-        // A simulation process must not open a serial port from a recipe
-        // copied from a physical lab. Use an explicit simulation recipe for
-        // mixed deployments instead of silently combining the two modes.
-        if !cfg.espnow_dongles.is_empty() {
-            log::warn!("--simulation ignores ESP-NOW dongles from the recipe");
-            cfg.espnow_dongles.clear();
-        }
-    }
-
-    Ok(cfg)
-}
-
-/// Expand env vars and resolve relative paths in every path-shaped config
-/// field. Run **after** the YAML is parsed and **before** any CLI override
-/// so user-provided overrides remain authoritative.
-///
-/// The fields touched here are all the spots where the engine treats a
-/// string as a filesystem path: adapter registry directories, ESP-NOW
-/// dongle device files, and the optional mediamtx binary path. URLs
-/// (RTSP / mediamtx endpoints, MQTT host) are deliberately left alone.
-fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
-    for a in &mut cfg.adapters {
-        if let Some(p) = a.registry_path.as_deref() {
-            a.registry_path = Some(path_expand::expand(p, config_dir).display().to_string());
-        }
-    }
-    for d in &mut cfg.espnow_dongles {
-        // Dongle port: usually `/dev/cu.usbmodem...` (absolute) or `COM3`
-        // (Windows, no leading separator). `expand` happens to leave
-        // both alone because absolute paths short-circuit and
-        // `COM3` has no `$` / `~` to expand. The point of running it
-        // through is to support `${LAB_DONGLE_PORT}` in shared recipes.
-        let raw = d.port.clone();
-        let expanded = path_expand::expand(&raw, config_dir);
-        d.port = expanded.display().to_string();
-    }
-    if let Some(bin) = cfg.media_gateway.binary.as_deref() {
-        cfg.media_gateway.binary = Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(simulation: bool, config: Option<PathBuf>) -> ServeArgs {
-        ServeArgs {
-            config,
-            instance: "test-simulation".into(),
-            socket: None,
-            listen: None,
-            data_dir: None,
-            registry: None,
-            dongle_port: None,
-            dongle_baud: 115_200,
-            #[cfg(unix)]
-            detach: false,
-            log_file: None,
-            auth_token: None,
-            auth: AuthMode::Local,
-            channel: "stable".into(),
-            simulation,
-            asset: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn simulation_without_recipe_has_no_physical_defaults() {
-        let config = build_config(&args(true, None)).expect("simulation config");
-
-        assert!(config.mqtt.is_none());
-        assert!(config.adapters.is_empty());
-        assert!(config.espnow_dongles.is_empty());
-        assert_eq!(
-            config
-                .simulation
-                .expect("default simulation world")
-                .world_id,
-            "lab-sim"
-        );
-    }
-
-    #[test]
-    fn simulation_flag_preserves_recipe_world() {
-        let path =
-            std::env::temp_dir().join(format!("opensdl-simulation-{}.yaml", std::process::id()));
-        std::fs::write(&path, "mqtt: null\nsimulation:\n  world_id: custom-world\n")
-            .expect("write simulation recipe");
-
-        let config = build_config(&args(true, Some(path.clone()))).expect("recipe config");
-        let _ = std::fs::remove_file(path);
-
-        assert_eq!(
-            config.simulation.expect("recipe simulation world").world_id,
-            "custom-world"
-        );
-    }
+    run_engine(
+        args.engine,
+        &args.instance,
+        paths.state_dir,
+        EngineMode::Standalone { advertise_mqtt },
+        |handle| async {
+            osdl_server::serve(handle, serve_cfg)
+                .await
+                .map_err(Into::into)
+        },
+    )
+    .await
 }
