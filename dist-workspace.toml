@@ -10,7 +10,7 @@ ci = "github"
 # PRs validate the release plan; native checks own tests. Package only releases.
 pr-run-mode = "plan"
 cache-builds = true
-local-artifacts-jobs = ["./checks"]
+local-artifacts-jobs = ["./native-checks"]
 # The installers to generate for each app
 installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)

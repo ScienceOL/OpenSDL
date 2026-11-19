@@ -1,0 +1,91 @@
+name: Native Checks
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: crates/lab-cli/src/commands/split/requirements.txt
+      - run: python -m pip install -r crates/lab-cli/src/commands/split/requirements.txt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check README installer URLs against the release plan
+        if: runner.os == 'Linux' && inputs.plan != ''
+        env:
+          DIST_PLAN: ${{ inputs.plan }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          plan = json.loads(os.environ["DIST_PLAN"])
+          readme = pathlib.Path("README.md").read_text()
+          urls = re.findall(r"https://github.com/ScienceOL/OpenSDL/releases/latest/download/([^\s\"|]+)", readme)
+          assert len(urls) == 2, f"Expected shell and PowerShell installer URLs, got {urls}"
+          assert {pathlib.Path(name).suffix for name in urls} == {".sh", ".ps1"}
+          for name in urls:
+              assert plan["artifacts"][name]["kind"] == "installer", f"Not a planned installer: {name}"
+          PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: python -m unittest discover -s tools/instrument-models -p "test_*.py"
+      - run: cargo fmt --all --check
+        timeout-minutes: 2
+      - name: Start disposable OCI registry
+        if: runner.os == 'Linux'
+        run: |
+          docker run --name opensdl-test-registry --detach --publish 127.0.0.1:5000:5000 registry:3
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors --retry-max-time 30 --max-time 2 http://127.0.0.1:5000/v2/
+      - name: Test workspace including OCI integration
+        timeout-minutes: 12
+        if: runner.os == 'Linux'
+        env:
+          OPENSDL_TEST_REGISTRY: localhost:5000
+          LAB_USD_PYTHON: python
+        run: cargo test --workspace --locked -- --include-ignored
+        # OpenUSD integration tests use the installed interpreter on every OS.
+      - name: Test workspace on macOS and Windows
+        timeout-minutes: 12
+        if: runner.os != 'Linux'
+        env:
+          LAB_USD_PYTHON: python
+        run: cargo test --workspace --locked
+      - name: Exercise the OpenSDL cluster against a disposable etcd quorum
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python scripts/test-cluster.py
+      - name: Registry diagnostics and cleanup
+        if: always() && runner.os == 'Linux'
+        run: |
+          docker logs opensdl-test-registry || true
+          docker rm --force --volumes opensdl-test-registry || true
