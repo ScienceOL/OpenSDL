@@ -106,6 +106,13 @@ OpenUSD prims into child asset directories, which then follow the same build,
 push, pull, and run lifecycle. See [`docs/lab-cli.md`](docs/lab-cli.md) for
 the complete Hub workflow.
 
+## Run an OpenSDL cluster
+
+`labadm` starts a control plane and work-plane nodes on a LAN or a routed
+private network. One control endpoint inventories and operates devices on all
+admitted workers. Multiple control-plane replicas and an etcd quorum provide
+failover. See the [cluster deployment guide](docs/cluster.md).
+
 ## What is OpenSDL?
 
 OpenSDL connects laboratory hardware to your application through a unified

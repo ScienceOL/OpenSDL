@@ -110,7 +110,12 @@ impl EngineHandle {
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {
-        self.devices.read().await.values().cloned().collect()
+        self.project_devices(Device::clone).await
+    }
+
+    /// Collect a view over the live registry without cloning unneeded state.
+    pub async fn project_devices<T>(&self, project: impl FnMut(&Device) -> T) -> Vec<T> {
+        self.devices.read().await.values().map(project).collect()
     }
 
     pub async fn get_device(&self, device_id: &str) -> Option<Device> {

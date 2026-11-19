@@ -1729,6 +1729,7 @@ dependencies = [
  "clap",
  "daemonize",
  "env_logger",
+ "futures-util",
  "hyper-util",
  "log",
  "opensdl-assets",
@@ -1749,6 +1750,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tower",
+ "uuid",
 ]
 
 [[package]]

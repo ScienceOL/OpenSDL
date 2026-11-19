@@ -88,6 +88,10 @@ jobs:
         env:
           LAB_USD_PYTHON: python
         run: cargo test --workspace --locked
+      - name: Exercise the OpenSDL cluster against a disposable etcd quorum
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python scripts/test-cluster.py
       - name: Registry diagnostics and cleanup
         if: always() && runner.os == 'Linux'
         run: |

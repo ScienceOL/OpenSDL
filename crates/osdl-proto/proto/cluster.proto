@@ -1,0 +1,75 @@
+syntax = "proto3";
+package osdl.cluster.v1;
+
+import "osdl.proto";
+
+service ControlPlane {
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+  rpc ListWorkers(WorkerPage) returns (WorkerList);
+  rpc ListDevices(InventoryRequest) returns (Inventory);
+  rpc GetDevice(DeviceRequest) returns (osdl.v1.Device);
+  rpc SendCommand(CommandRequest) returns (osdl.v1.CommandResult);
+  rpc StreamEvents(EventsRequest) returns (stream osdl.v1.Event);
+  rpc ReadSnapshot(SnapshotRequest) returns (osdl.v1.ReadSnapshotResponse);
+  rpc PublishMedia(MediaRequest) returns (stream osdl.v1.PublishMediaStatus);
+}
+
+// Internal to the work plane. Served on the same mTLS listener as Osdl.
+service WorkPlane {
+  rpc Inventory(WorkerInventoryRequest) returns (DeviceInventory);
+}
+
+message WorkerInventoryRequest {}
+message DeviceInventory { repeated DeviceSummary devices = 1; }
+message DeviceSummary {
+  string id = 1;
+  string device_type = 2;
+  bool online = 3;
+  optional string role = 4;
+}
+
+message ReadyRequest {}
+message ReadyResponse { string cluster = 1; }
+
+// Workers are returned in ID order. An empty next_after ends pagination.
+message WorkerPage { string after = 1; }
+message WorkerList {
+  repeated string workers = 1;
+  string next_after = 2;
+}
+
+message InventoryRequest {
+  // Empty selects all admitted workers, one page at a time.
+  string worker = 1;
+  string after = 2;
+}
+message Inventory {
+  repeated WorkerInventory workers = 1;
+  string next_after = 2;
+}
+message WorkerInventory {
+  string worker = 1;
+  repeated DeviceSummary devices = 2;
+  // A failed worker is distinct from a reachable worker with no devices.
+  optional string unavailable = 3;
+}
+message DeviceRequest {
+  string worker = 1;
+  string device_id = 2;
+}
+message CommandRequest {
+  string worker = 1;
+  osdl.v1.SendCommandRequest command = 2;
+}
+message EventsRequest {
+  string worker = 1;
+  osdl.v1.StreamEventsRequest filter = 2;
+}
+message SnapshotRequest {
+  string worker = 1;
+  osdl.v1.ReadSnapshotRequest snapshot = 2;
+}
+message MediaRequest {
+  string worker = 1;
+  osdl.v1.PublishMediaRequest media = 2;
+}

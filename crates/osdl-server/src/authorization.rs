@@ -10,6 +10,8 @@ use tonic::{Request, Status};
 pub enum Authorizer {
     #[default]
     Local,
+    /// The caller must terminate mutually authenticated control-plane TLS.
+    ControlPlane,
     Account(AccountAuth),
     PublicKey(crate::public_key::PublicKeyAuth),
 }
@@ -27,6 +29,12 @@ impl Authorizer {
     ) -> Result<Option<Resource>, Status> {
         match self {
             Self::Local => Ok(None),
+            Self::ControlPlane => match permission {
+                Permission::Shutdown => {
+                    Err(Status::permission_denied("local_administrator_required"))
+                }
+                _ => Ok(None),
+            },
             Self::PublicKey(auth) => auth.authorize(request, permission).map(Some),
             Self::Account(auth) => {
                 let identity = auth.verifier.authenticate(request)?;

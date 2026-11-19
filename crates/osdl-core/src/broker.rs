@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::thread;
 
 /// Embedded MQTT broker using rumqttd.
@@ -14,10 +14,11 @@ impl EmbeddedBroker {
     /// Start the embedded MQTT broker on the given port.
     /// This spawns a background thread and returns immediately.
     pub fn start(port: u16) -> Result<Self, String> {
-        let addr: SocketAddr = format!("0.0.0.0:{}", port)
-            .parse()
-            .map_err(|e| format!("invalid address: {}", e))?;
+        Self::bind((Ipv4Addr::UNSPECIFIED, port).into())
+    }
 
+    /// Bind the broker to a specific instrument-facing interface.
+    pub fn bind(addr: SocketAddr) -> Result<Self, String> {
         let mut v4 = HashMap::new();
         v4.insert(
             "osdl".to_string(),
@@ -67,8 +68,8 @@ impl EmbeddedBroker {
             })
             .map_err(|e| format!("failed to spawn broker thread: {}", e))?;
 
-        log::info!("Embedded MQTT broker started on port {}", port);
-        Ok(EmbeddedBroker { port })
+        log::info!("Embedded MQTT broker started at {addr}");
+        Ok(EmbeddedBroker { port: addr.port() })
     }
 
     pub fn port(&self) -> u16 {
