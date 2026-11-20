@@ -53,7 +53,10 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
                 .iter()
                 .map(|item| AssetReference::parse(&item.asset))
                 .collect::<Result<Vec<_>, _>>()?;
-            acquire(&cache, refs).await?;
+            let digests = acquire(&cache, refs).await?;
+            for digest in digests {
+                cache.pin(&format!("scene:{digest}"), &digest)?;
+            }
         }
         AssetCmd::List { json } => {
             let assets: Vec<AssetSummary> = execute(&cache, Operation::List).await?;
@@ -124,7 +127,7 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
 pub(super) async fn acquire(
     cache: &AssetCache,
     references: Vec<AssetReference>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<std::collections::HashSet<String>> {
     use anyhow::Context;
     let mut pulls = tokio::task::JoinSet::new();
     let mut requested = std::collections::HashSet::new();
@@ -149,5 +152,5 @@ pub(super) async fn acquire(
     while let Some(result) = pulls.join_next().await {
         result??;
     }
-    Ok(())
+    Ok(requested)
 }
