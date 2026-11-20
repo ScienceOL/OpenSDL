@@ -10,9 +10,10 @@ use tokio::{net::TcpListener, sync::Notify};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-use crate::{config::WorkerConfig, tls::Tls};
+use crate::{config::WorkerConfig, probes, tls::Tls};
 
 pub async fn serve(config: WorkerConfig, tls: Tls, engine_start: EngineArgs) -> anyhow::Result<()> {
+    probes::validate(&config.read_only_devices)?;
     let server = Server::builder().tls_config(tls.server())?;
     let listener = TcpListener::bind(config.listen).await?;
     let identity = ServerIdentity {
@@ -25,12 +26,13 @@ pub async fn serve(config: WorkerConfig, tls: Tls, engine_start: EngineArgs) -> 
     };
     let paths = osdl_server::Paths::discover().map_err(anyhow::Error::msg)?;
     let instance = config.worker.to_string();
+    let device_probes = config.read_only_devices;
     lab_cli::runtime::run_engine(
         engine_start,
         &instance,
         paths.state_dir,
         EngineMode::WorkPlane,
-        |engine| serve_engine(server, listener, engine, identity),
+        |engine| serve_engine(server, listener, engine, identity, device_probes),
     )
     .await
 }
@@ -40,7 +42,9 @@ async fn serve_engine(
     listener: TcpListener,
     engine: EngineHandle,
     identity: ServerIdentity,
+    device_probes: Vec<probes::DeviceProbe>,
 ) -> anyhow::Result<()> {
+    let _device_probes = probes::start(device_probes, &engine).await?;
     let shutdown = Arc::new(Notify::new());
     let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone())
         .with_authorizer(Authorizer::ControlPlane);

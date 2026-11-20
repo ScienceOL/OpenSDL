@@ -3,6 +3,7 @@ mod control;
 mod directory;
 mod etcd;
 mod operator;
+mod probes;
 mod routes;
 mod tls;
 mod worker;
