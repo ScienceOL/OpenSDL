@@ -55,6 +55,30 @@ pub enum InstrumentConfig {
     PHMeter(ph::PHConfig),
 }
 impl InstrumentConfig {
+    /// Physical observations meaningful for the model declared by the asset.
+    /// A backend reports measured values in model_state.values only when available.
+    pub fn condition_channels(&self) -> &'static [&'static str] {
+        match self {
+            Self::AnalyticalBalance(_) => &["pan_contact", "shield_obstruction"],
+            Self::Centrifuge(_) => &["rotor_imbalance", "lid_obstruction"],
+            Self::HeatedStirrer(_) => &["stir_bar_decoupled", "vessel_contact"],
+            Self::OverheadStirrer(_) => &["shaft_contact", "shaft_stalled"],
+            Self::WaterBath(_) | Self::UltrasonicCleaner(_) => &["bath_overflow", "vessel_contact"],
+            Self::DryBlockHeater(_) => &["tube_seated"],
+            Self::DryingOven(_) | Self::LaboratoryRefrigerator(_) => &["door_obstruction"],
+            Self::OrbitalShaker(_) | Self::VortexMixer(_) | Self::TubeRoller(_) => {
+                &["vessel_slipped", "vessel_collision"]
+            }
+            Self::Pipette(_) => &["tip_contact", "tip_seated"],
+            Self::SyringePump(_) => &["plunger_stalled", "line_occlusion"],
+            Self::PeristalticPump(_) => &["tube_occlusion", "roller_stalled"],
+            Self::VacuumPump(_) | Self::VacuumFiltration(_) => &["seal_leak", "line_occlusion"],
+            Self::RotaryEvaporator(_) => &["flask_contact", "seal_leak"],
+            Self::ConductivityMeter(_) | Self::PHMeter(_) => &["probe_contact", "probe_immersed"],
+            Self::UvVisSpectrophotometer(_) => &["cuvette_seated", "lid_obstruction"],
+            Self::ThermalCycler(_) => &["tube_seated", "lid_obstruction"],
+        }
+    }
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::AnalyticalBalance(c) => c.validate(),

@@ -56,6 +56,10 @@ impl WorldRuntime {
         for c in &config.devices {
             let instrument = c.model.as_ref().map(InstrumentState::new);
             let mut initial_properties = c.properties.clone();
+            if let Some(model) = &c.model {
+                initial_properties
+                    .insert("model_conditions".into(), json!(model.condition_channels()));
+            }
             if let Some(asset) = &c.asset_ref {
                 initial_properties.insert("simulation_asset".into(), json!(asset));
             }
