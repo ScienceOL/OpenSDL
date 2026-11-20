@@ -170,6 +170,7 @@ impl WorldRuntime {
             ));
         }
         properties.insert("position".into(), json!(config.position));
+        properties.insert("transition".into(), json!(device.backend.transition(state)));
         properties.insert("step".into(), json!(state.step));
         json!({"device_id":self.device_id(&config.id),"world_id":self.world_id,
             "engine":device.backend.engine_id(),"role":config.role,"position":config.position,

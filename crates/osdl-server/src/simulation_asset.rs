@@ -8,7 +8,31 @@ use osdl_core::{
     config::SimulationConfig,
     simulation::{InstrumentConfig, InstrumentState, SampleInventory},
 };
+use serde::Deserialize;
 use std::{fs, path::Path};
+
+#[derive(Deserialize)]
+pub struct SceneDefinition {
+    pub name: String,
+    pub instruments: Vec<SceneInstrument>,
+}
+
+impl SceneDefinition {
+    pub fn read(path: &Path) -> anyhow::Result<Self> {
+        Ok(serde_json::from_reader(fs::File::open(path)?)?)
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct SceneInstrument {
+    pub id: String,
+    pub asset: String,
+    pub version: String,
+    pub position: [f64; 3],
+    /// Local XYZ Euler angles in radians, relative to the parent or world.
+    pub rotation: [f64; 3],
+    pub parent: Option<String>,
+}
 
 pub fn prepare(
     cache: &AssetCache,
@@ -16,13 +40,34 @@ pub fn prepare(
     destination: &Path,
 ) -> anyhow::Result<SimulationConfig> {
     let lease = cache.lock()?;
-    let asset = lease.materialize(digest, destination)?;
-    let runtime = asset
-        .manifest
-        .spec
-        .runtime
-        .as_ref()
-        .context("asset has no executable runtime declaration")?;
+    let (asset, package) = lease.materialize_package(digest, destination)?;
+    let preview = &package
+        .layers
+        .iter()
+        .find(|layer| layer.media_type == opensdl_assets::PREVIEW_MEDIA_TYPE)
+        .context("missing preview layer")?
+        .digest;
+    drop(lease);
+    let Some(runtime) = asset.manifest.spec.runtime.as_ref() else {
+        let metadata = asset.manifest.metadata;
+        return Ok(SimulationConfig {
+            devices: vec![osdl_core::config::SimulationDeviceConfig {
+                id: metadata.name,
+                device_type: "simulation.static".into(),
+                description: metadata.display_name,
+                role: None,
+                model: None,
+                actions: Vec::new(),
+                asset_ref: None,
+                position: [0.; 3],
+                properties: std::collections::HashMap::from([
+                    ("model_manifest_digest".into(), serde_json::json!(digest)),
+                    ("model_preview_digest".into(), serde_json::json!(preview)),
+                ]),
+            }],
+            ..Default::default()
+        });
+    };
     if runtime.engine != RuntimeEngine::Kinematic {
         bail!("runtime engine is unavailable");
     }
@@ -40,6 +85,12 @@ pub fn prepare(
     }
     let definition = opensdl_assets::model::read_preview_model(&asset.paths.preview_model)?;
     for device in &mut simulation.devices {
+        device
+            .properties
+            .insert("model_preview_digest".into(), serde_json::json!(preview));
+        device
+            .properties
+            .insert("model_manifest_digest".into(), serde_json::json!(digest));
         if let Some(instrument) = &device.model {
             let definition = definition
                 .as_ref()
@@ -113,9 +164,6 @@ pub fn prepare(
                     bail!("model component references an undeclared action");
                 }
             }
-            device
-                .properties
-                .insert("model_manifest_digest".into(), serde_json::json!(digest));
         }
     }
     Ok(simulation)
@@ -125,11 +173,11 @@ pub fn prepare(
 /// kinematic configurations are combined; no source code or hardware is loaded.
 pub fn compose(
     cache: &AssetCache,
-    references: &[String],
+    instruments: &[SceneInstrument],
     destination: &Path,
     world_id: &str,
 ) -> anyhow::Result<SimulationConfig> {
-    if references.is_empty() || references.len() > 64 {
+    if instruments.is_empty() || instruments.len() > 64 {
         bail!("select between 1 and 64 simulation packages");
     }
     let mut world = SimulationConfig {
@@ -138,7 +186,8 @@ pub fn compose(
         samples: Vec::new(),
         ..Default::default()
     };
-    for (index, reference) in references.iter().enumerate() {
+    for (index, placement) in instruments.iter().enumerate() {
+        let reference = &placement.asset;
         let parsed = opensdl_assets::AssetReference::parse(reference)?;
         let digest = parsed
             .digest()
@@ -163,14 +212,35 @@ pub fn compose(
                 world.samples.push(sample);
             }
         }
-        for mut device in package.devices {
-            device.id = format!("{}-{}", index + 1, device.id);
-            // A deterministic table layout, in metres, keeps selected instruments
-            // separated. Instrument-relative geometry and sample poses stay intact.
-            device.position[0] += (index % 4) as f64 * 1.2 - 1.8;
-            device.position[2] += (index / 4) as f64 * 1.2;
-            world.devices.push(device);
-        }
+        let [mut device]: [_; 1] = package.devices.try_into().map_err(|_| {
+            anyhow::anyhow!("scene instrument must declare one device: {reference}")
+        })?;
+        let (namespace, name) = parsed
+            .repository()
+            .rsplit_once('/')
+            .context("instrument asset has no namespace")?;
+        device.asset_ref = Some(osdl_core::config::SimulationAssetRef {
+            namespace: namespace.to_owned(),
+            name: name.to_owned(),
+            version: Some(placement.version.clone()),
+        });
+        device.properties.insert(
+            "model_registry".into(),
+            serde_json::json!(parsed.registry()),
+        );
+        device.id.clone_from(&placement.id);
+        device.position = placement.position;
+        device
+            .properties
+            .insert("rotation".into(), serde_json::json!(placement.rotation));
+        device.properties.insert(
+            "parent".into(),
+            serde_json::json!(placement
+                .parent
+                .as_deref()
+                .map(|id| osdl_core::transport::simulation::device_id_for(world_id, id))),
+        );
+        world.devices.push(device);
     }
     world.validate().map_err(anyhow::Error::msg)?;
     Ok(world)

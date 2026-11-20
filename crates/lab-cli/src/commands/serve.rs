@@ -103,9 +103,12 @@ pub struct ServeArgs {
     /// devices, so local development does not require hardware.
     #[arg(long, env = "OSDL_SIMULATION")]
     pub simulation: bool,
-    /// Add a digest-pinned package to this world. Repeat for multiple instruments.
+    /// Start a single digest-pinned instrument package.
     #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
-    pub asset: Vec<String>,
+    pub asset: Option<String>,
+    /// Runner-owned scene definition, including instance identities and local transforms.
+    #[arg(long, conflicts_with_all = ["asset", "config", "registry", "dongle_port"], requires = "simulation")]
+    pub scene: Option<PathBuf>,
 }
 
 /// Synchronous entrypoint called from `main`. Handles `--detach` *before*
@@ -402,56 +405,30 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 
     let mut config = build_config(&args)?;
     let _asset_directory;
-    if !args.asset.is_empty() {
-        use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
+    if args.asset.is_some() || args.scene.is_some() {
+        use opensdl_assets::{AssetCache, AssetReference};
         let data = args.data_dir.as_ref().unwrap_or(&paths.state_dir);
         std::fs::create_dir_all(data)?;
         let cache = AssetCache::open(data.join("assets"))?;
-        if args.asset.len() > 64 {
-            anyhow::bail!("select at most 64 simulation packages");
-        }
-        let references = args
-            .asset
-            .iter()
-            .map(|reference| {
-                let parsed = AssetReference::parse(reference)?;
-                parsed
-                    .digest()
-                    .context("--asset requires a sha256 digest-pinned reference")?;
-                Ok(parsed)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let mut pulls = tokio::task::JoinSet::new();
-        let mut requested = std::collections::HashSet::new();
-        for reference in references {
-            let digest = reference.digest().expect("validated pinned reference");
-            // A verified immutable cache hit needs no registry round trip.
-            if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
-                continue;
-            }
-            let cache = cache.clone();
-            pulls.spawn(async move {
-                RegistryClient::for_reference(&reference)
-                    .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
-                    .await
-            });
-            if pulls.len() == 4 {
-                pulls
-                    .join_next()
-                    .await
-                    .context("asset download task missing")???;
-            }
-        }
-        while let Some(result) = pulls.join_next().await {
-            result??;
-        }
         _asset_directory = tempfile::tempdir_in(data)?;
-        config.simulation = Some(osdl_server::simulation_asset::compose(
-            &cache,
-            &args.asset,
-            _asset_directory.path(),
-            &args.instance,
-        )?);
+        config.simulation = Some(match &args.scene {
+            Some(path) => osdl_server::simulation_asset::compose(
+                &cache,
+                &osdl_server::simulation_asset::SceneDefinition::read(path)?.instruments,
+                _asset_directory.path(),
+                &args.instance,
+            )?,
+            None => {
+                let reference =
+                    AssetReference::parse(args.asset.as_deref().context("missing asset")?)?;
+                super::asset::acquire(&cache, vec![reference.clone()]).await?;
+                osdl_server::simulation_asset::prepare(
+                    &cache,
+                    reference.digest().context("missing digest")?,
+                    &_asset_directory.path().join("instrument"),
+                )?
+            }
+        });
     }
     // Propagate the resolved data_dir into the engine config so the
     // ONVIF transport can write snapshots under it. The CLI's
@@ -695,7 +672,8 @@ mod tests {
             auth: AuthMode::Local,
             channel: "stable".into(),
             simulation,
-            asset: Vec::new(),
+            asset: None,
+            scene: None,
         }
     }
 

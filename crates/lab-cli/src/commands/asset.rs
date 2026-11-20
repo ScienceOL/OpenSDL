@@ -1,12 +1,15 @@
 use clap::Subcommand;
 use opensdl_assets::{
     daemon::{execute, Operation},
-    AssetCache, AssetSummary, PackageDescriptor, PruneReport,
+    AssetCache, AssetReference, AssetSummary, PackageDescriptor, PruneReport, RegistryClient,
+    RegistryCredentials,
 };
 use std::path::PathBuf;
 
 #[derive(Debug, Subcommand)]
 pub enum AssetCmd {
+    /// Populate the local asset library before launching a scene.
+    PrepareScene { scene: PathBuf },
     /// List locally admitted packages and their references.
     List {
         #[arg(long)]
@@ -43,6 +46,15 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
         None => AssetCache::discover()?,
     };
     match command {
+        AssetCmd::PrepareScene { scene } => {
+            let scene = osdl_server::simulation_asset::SceneDefinition::read(&scene)?;
+            let refs = scene
+                .instruments
+                .iter()
+                .map(|item| AssetReference::parse(&item.asset))
+                .collect::<Result<Vec<_>, _>>()?;
+            acquire(&cache, refs).await?;
+        }
         AssetCmd::List { json } => {
             let assets: Vec<AssetSummary> = execute(&cache, Operation::List).await?;
             if json {
@@ -105,6 +117,37 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
                 );
             }
         }
+    }
+    Ok(())
+}
+
+pub(super) async fn acquire(
+    cache: &AssetCache,
+    references: Vec<AssetReference>,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let mut pulls = tokio::task::JoinSet::new();
+    let mut requested = std::collections::HashSet::new();
+    for reference in references {
+        let digest = reference.digest().context("scene requires pinned assets")?;
+        if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
+            continue;
+        }
+        let cache = cache.clone();
+        pulls.spawn(async move {
+            RegistryClient::for_reference(&reference)
+                .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
+                .await
+        });
+        if pulls.len() == 4 {
+            pulls
+                .join_next()
+                .await
+                .context("asset download missing")???;
+        }
+    }
+    while let Some(result) = pulls.join_next().await {
+        result??;
     }
     Ok(())
 }
