@@ -99,6 +99,8 @@ pub struct MediaSourceState {
     pub endpoints: Vec<MediaEndpoint>,
 }
 
+const READ_ONLY_ADAPTER: &str = "read_only";
+
 impl EngineHandle {
     // === Inspection ===
 
@@ -233,6 +235,63 @@ impl EngineHandle {
         Ok(())
     }
 
+    /// Publish the current observation of a locally configured, read-only device.
+    /// A failed or missing observation keeps its identity in the inventory.
+    pub async fn record_read_only_device(
+        &self,
+        id: &str,
+        device_type: &str,
+        description: &str,
+        properties: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<(), String> {
+        let online = properties.is_some();
+        let properties = properties.unwrap_or_default();
+        let mut devices = self.devices.write().await;
+        let previous = devices.get(id);
+        if let Some(previous) = previous {
+            if previous.adapter != READ_ONLY_ADAPTER {
+                return Err(format!("device ID {id} already belongs to a transport"));
+            }
+            if previous.online == online && previous.properties == properties {
+                return Ok(());
+            }
+        }
+        let previous_online = previous.map(|device| device.online);
+        let device = Device {
+            id: id.into(),
+            transport_id: String::new(),
+            device_type: device_type.into(),
+            adapter: READ_ONLY_ADAPTER.into(),
+            description: description.into(),
+            online,
+            properties,
+            properties_timestamp_ms: now_millis(),
+            actions: Vec::new(),
+            role: None,
+        };
+        let event = match (previous_online, online) {
+            (Some(true), false) => Some(OsdlEvent::DeviceOffline {
+                device_id: id.into(),
+            }),
+            (None | Some(false), true) => Some(OsdlEvent::DeviceOnline(device.clone())),
+            (Some(true), true) => Some(OsdlEvent::DeviceStatus(DeviceStatus {
+                device_id: id.into(),
+                timestamp: device.properties_timestamp_ms,
+                properties: device.properties.clone(),
+            })),
+            _ => None,
+        };
+        devices.insert(id.into(), device);
+        drop(devices);
+        if let Some(event) = event {
+            self.emit(event);
+        }
+        if previous_online.is_none() {
+            self.broadcast_status().await;
+        }
+        Ok(())
+    }
+
     /// Send a command to a device via its transport.
     pub async fn send_command(&self, cmd: DeviceCommand) -> Result<CommandResult, String> {
         if let Some(store) = &self.store {
@@ -244,6 +303,9 @@ impl EngineHandle {
             .get(&cmd.device_id)
             .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
 
+        if device.adapter == READ_ONLY_ADAPTER {
+            return Err(format!("device {} is read-only", device.id));
+        }
         let transport_id = device.transport_id.clone();
         let device_type = device.device_type.clone();
         let adapter_name = device.adapter.clone();

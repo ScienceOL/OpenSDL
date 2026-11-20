@@ -89,6 +89,31 @@ labadm --cluster-config worker.yaml join --config ./devices.yaml --registry ./re
 labadm --cluster-config admin.yaml admit worker-01 192.168.80.21:7444
 ~~~
 
+### 通过本机探测接入只读设备
+
+在工作节点的 `worker.yaml` 中添加 `read_only_devices`。节点启动后即列出这些设备，并在后台每 30 秒探测一次。探测失败时设备仍在目录中，状态为离线。目录和设备详情查询直接读取最近的探测结果。只读设备的动作列表为空。
+
+```yaml
+read_only_devices:
+  - id: serial-workstation
+    device_type: vendor.workstation
+    description: Serial workstation identity
+    probe:
+      type: program
+      executable: /opt/lab-tools/workstation-identity
+      args: [/dev/serial/by-path/your-controller]
+  - id: network-instrument
+    device_type: vendor.instrument
+    description: Instrument TCP endpoint reachability
+    probe:
+      type: tcp
+      address: 192.168.80.100:6666
+```
+
+`program` 执行管理员指定的绝对路径，参数来自本机配置。程序在确认成功时以退出码 0 输出一个 JSON 对象，其中的字段会出现在设备详情。使用已确认的只读命令，进程退出时结束相关子进程。每次探测限时 5 秒，输出上限为 8 KiB。
+
+`tcp` 建立 TCP 连接后关闭。在线表示指定端口可达，设备详情会包含 `tcp_reachable`。仪器身份和实验运行状态需要由本机驱动确认。
+
 ## 操作设备
 
 ~~~yaml
