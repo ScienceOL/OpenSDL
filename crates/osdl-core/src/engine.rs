@@ -219,10 +219,17 @@ impl EngineHandle {
             ));
         }
 
-        self.devices
-            .write()
-            .await
-            .insert(device_id.clone(), device.clone());
+        let mut devices = self.devices.write().await;
+        if devices
+            .get(&device_id)
+            .is_some_and(|prior| prior.adapter == READ_ONLY_ADAPTER)
+        {
+            return Err(format!(
+                "device ID {device_id} is reserved for a read-only device"
+            ));
+        }
+        devices.insert(device_id.clone(), device.clone());
+        drop(devices);
 
         log::info!(
             "Device registered: {} ({}) on transport {}",
@@ -247,16 +254,22 @@ impl EngineHandle {
         let online = properties.is_some();
         let properties = properties.unwrap_or_default();
         let mut devices = self.devices.write().await;
-        let previous = devices.get(id);
-        if let Some(previous) = previous {
+        let previous_online = if let Some(previous) = devices.get_mut(id) {
             if previous.adapter != READ_ONLY_ADAPTER {
                 return Err(format!("device ID {id} already belongs to a transport"));
             }
-            if previous.online == online && previous.properties == properties {
+            if previous.online == online
+                && previous.properties == properties
+                && previous.device_type == device_type
+                && previous.description == description
+            {
+                previous.properties_timestamp_ms = now_millis();
                 return Ok(());
             }
-        }
-        let previous_online = previous.map(|device| device.online);
+            Some(previous.online)
+        } else {
+            None
+        };
         let device = Device {
             id: id.into(),
             transport_id: String::new(),
@@ -270,7 +283,7 @@ impl EngineHandle {
             role: None,
         };
         let event = match (previous_online, online) {
-            (Some(true), false) => Some(OsdlEvent::DeviceOffline {
+            (None | Some(true), false) => Some(OsdlEvent::DeviceOffline {
                 device_id: id.into(),
             }),
             (None | Some(false), true) => Some(OsdlEvent::DeviceOnline(device.clone())),
@@ -562,18 +575,7 @@ impl OsdlEngine {
             None
         };
 
-        // Emit initial Connected status (broker description reflects MQTT mode).
-        let _ = self.handle.status_tx.send(OsdlStatus::Connected {
-            broker: self
-                .handle
-                .config
-                .mqtt
-                .as_ref()
-                .map(|c| format!("{}:{}", c.host, c.port))
-                .unwrap_or_else(|| "mqtt-disabled".into()),
-            node_count: 0,
-            device_count: 0,
-        });
+        self.handle.broadcast_status().await;
 
         if let Err(error) = self.start_simulation().await {
             log::error!("Failed to start simulation world: {error}");

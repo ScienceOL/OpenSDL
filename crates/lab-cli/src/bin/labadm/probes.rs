@@ -1,19 +1,15 @@
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
-    path::PathBuf,
-    process::Stdio,
     time::Duration,
 };
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 use osdl_core::EngineHandle;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
-    io::AsyncReadExt,
     net::TcpStream,
-    process::Command,
     task::JoinSet,
     time::{self, MissedTickBehavior},
 };
@@ -22,7 +18,6 @@ use crate::config::Id;
 
 const PROBE_INTERVAL: Duration = Duration::from_secs(30);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_PROBE_OUTPUT: u64 = 8 * 1024;
 type Properties = HashMap<String, Value>;
 
 #[derive(Deserialize)]
@@ -37,14 +32,7 @@ pub struct DeviceProbe {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum Probe {
-    Tcp {
-        address: SocketAddr,
-    },
-    Program {
-        executable: PathBuf,
-        #[serde(default)]
-        args: Vec<String>,
-    },
+    Tcp { address: SocketAddr },
 }
 
 pub fn validate(configs: &[DeviceProbe]) -> Result<()> {
@@ -60,16 +48,8 @@ pub fn validate(configs: &[DeviceProbe]) -> Result<()> {
             "device type is empty for {}",
             config.id
         );
-        match &config.probe {
-            Probe::Tcp { address } => {
-                crate::config::worker_address(*address)?;
-            }
-            Probe::Program { executable, .. } => ensure!(
-                executable.is_absolute(),
-                "probe executable for {} must be an absolute path",
-                config.id
-            ),
-        }
+        let Probe::Tcp { address } = config.probe;
+        crate::config::worker_address(address)?;
     }
     Ok(())
 }
@@ -124,38 +104,10 @@ impl DeviceProbe {
 }
 
 impl Probe {
-    async fn sample(&self) -> Result<Properties> {
-        match self {
-            Self::Tcp { address } => {
-                TcpStream::connect(address).await?;
-                Ok(HashMap::from([("tcp_reachable".into(), Value::Bool(true))]))
-            }
-            Self::Program { executable, args } => {
-                let mut child = Command::new(executable)
-                    .args(args)
-                    .stdin(Stdio::null())
-                    .stderr(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .kill_on_drop(true)
-                    .spawn()
-                    .context("start device probe executable")?;
-                let mut output = Vec::new();
-                child
-                    .stdout
-                    .take()
-                    .context("missing probe stdout")?
-                    .take(MAX_PROBE_OUTPUT + 1)
-                    .read_to_end(&mut output)
-                    .await?;
-                ensure!(
-                    output.len() as u64 <= MAX_PROBE_OUTPUT,
-                    "probe output exceeded 8 KiB"
-                );
-                let status = child.wait().await?;
-                ensure!(status.success(), "probe exited with {status}");
-                serde_json::from_slice(&output).context("probe did not return a JSON object")
-            }
-        }
+    async fn sample(&self) -> std::io::Result<Properties> {
+        let Self::Tcp { address } = self;
+        TcpStream::connect(address).await?;
+        Ok(HashMap::from([("tcp_reachable".into(), Value::Bool(true))]))
     }
 }
 
@@ -163,7 +115,20 @@ impl Probe {
 mod tests {
     use super::*;
     use osdl_core::{protocol::DeviceCommand, OsdlEngine};
-    use tokio::net::TcpListener;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
+
+    #[test]
+    fn configured_probes_cannot_launch_programs() {
+        let config = r#"
+id: reader
+device_type: example.instrument
+description: Read-only instrument
+probe:
+  type: program
+  executable: /usr/bin/true
+"#;
+        assert!(serde_yaml::from_str::<DeviceProbe>(config).is_err());
+    }
 
     #[tokio::test]
     async fn tcp_probe_reports_reachability_without_sending_bytes() {
