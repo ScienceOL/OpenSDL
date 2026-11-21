@@ -130,6 +130,11 @@ pub fn event_to_pb(ev: &CoreEvent) -> pb::Event {
         CoreEvent::DeviceOffline { device_id } => Kind::DeviceOffline(pb::DeviceOfflineEvent {
             device_id: device_id.clone(),
         }),
+        CoreEvent::SimulationSceneChanged { revision } => {
+            Kind::SimulationSceneChanged(pb::SimulationSceneChangedEvent {
+                revision: *revision,
+            })
+        }
         CoreEvent::DeviceStatus(s) => Kind::DeviceStatus(device_status_to_pb(s)),
         CoreEvent::CommandResult(r) => Kind::CommandResult(pb::CommandResultEvent {
             result: Some(command_result_to_pb(r)),

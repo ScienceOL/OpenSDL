@@ -11,7 +11,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
@@ -105,7 +105,13 @@ impl WorldRuntime {
             task: Mutex::new(None),
         }))
     }
-    pub async fn apply_layout(&self, poses: &[DevicePose]) {
+    pub async fn apply_layout(
+        &self,
+        revision: u64,
+        poses: &[DevicePose],
+        added: &HashSet<String>,
+    ) -> Vec<crate::protocol::DeviceStatus> {
+        let mut statuses = Vec::new();
         let mut world = self.state.lock().await;
         for DevicePose {
             id,
@@ -119,7 +125,8 @@ impl WorldRuntime {
             let Some(device) = world.devices.get_mut(id) else {
                 continue;
             };
-            if device.config.position == *position
+            if !added.contains(id)
+                && device.config.position == *position
                 && device.state.properties.get("rotation") == Some(&rotation)
                 && device.state.properties.get("parent") == Some(&parent)
             {
@@ -130,21 +137,28 @@ impl WorldRuntime {
                 &mut device.state.properties,
                 &mut device.state.initial_properties,
             ] {
+                props.insert("scene_revision".into(), json!(revision));
                 props.insert("rotation".into(), rotation.clone());
                 props.insert("parent".into(), parent.clone());
             }
-            self.emit(&world.devices[id], &world);
+            let device = &world.devices[id];
+            statuses.push(crate::protocol::DeviceStatus {
+                device_id: self.device_id(id),
+                timestamp: crate::engine::now_millis(),
+                properties: self.observations(device, &world),
+            });
         }
+        statuses
     }
     pub async fn reconcile(
         &self,
         config: &SimulationConfig,
         factory: &dyn SimulationBackendFactory,
-    ) -> Result<(Vec<String>, Vec<String>), String> {
+    ) -> Result<(Vec<String>, HashSet<String>), String> {
         let mut world = self.state.lock().await;
         let mut additions = Vec::new();
         let mut samples = SampleInventory::new(&config.samples)?;
-        let retained: std::collections::HashSet<_> = config
+        let retained: HashSet<_> = config
             .devices
             .iter()
             .filter_map(|c| {
@@ -178,12 +192,6 @@ impl WorldRuntime {
         let added = additions.iter().map(|(id, _)| id.clone()).collect();
         world.devices.extend(additions);
         Ok((removed, added))
-    }
-    pub async fn publish(&self, ids: &[String]) {
-        let world = self.state.lock().await;
-        for id in ids {
-            self.emit(&world.devices[id], &world);
-        }
     }
     pub fn device_id(&self, id: &str) -> String {
         device_id_for(&self.world_id, id)
@@ -228,6 +236,9 @@ impl WorldRuntime {
             devices, samples, ..
         } = &mut *world;
         let device = devices.get_mut(id).ok_or("UNKNOWN_DEVICE")?;
+        if device.config.device_type == "simulation.static" {
+            return Err("NO_DEVICE_ACTIONS".into());
+        }
         device
             .backend
             .apply_action(&mut device.state, samples, id, action, params)?;
@@ -253,7 +264,7 @@ impl WorldRuntime {
             self.emit(&world.devices[&id], &world);
         }
     }
-    fn snapshot(&self, device: &DeviceRuntime, world: &WorldState) -> Value {
+    fn observations(&self, device: &DeviceRuntime, world: &WorldState) -> HashMap<String, Value> {
         let state = &device.state;
         let config = &device.config;
         let mut properties = state.properties.clone();
@@ -267,8 +278,33 @@ impl WorldRuntime {
             ));
         }
         properties.insert("position".into(), json!(config.position));
-        properties.insert("transition".into(), json!(device.backend.transition(state)));
+        let mut transitions = serde_json::Map::new();
+        if let Some(values) = properties
+            .get("model_state")
+            .and_then(|model| model["values"].as_object())
+        {
+            for channel in values.keys() {
+                transitions.insert(
+                    channel.clone(),
+                    json!(device.backend.transition(channel, state)),
+                );
+            }
+        }
+        properties.insert("transition".into(), Value::Object(transitions));
         properties.insert("step".into(), json!(state.step));
+        properties.insert("simulation".into(), json!(true));
+        properties.insert("simulation_world".into(), json!(self.world_id));
+        properties.insert(
+            "simulation_engine".into(),
+            json!(device.backend.engine_id()),
+        );
+        properties.insert("last_action".into(), json!(state.last_action));
+        properties
+    }
+    fn snapshot(&self, device: &DeviceRuntime, world: &WorldState) -> Value {
+        let config = &device.config;
+        let state = &device.state;
+        let properties = self.observations(device, world);
         json!({"device_id":self.device_id(&config.id),"world_id":self.world_id,
             "engine":device.backend.engine_id(),"role":config.role,"position":config.position,
             "timestamp":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64,

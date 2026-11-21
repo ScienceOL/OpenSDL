@@ -1070,11 +1070,22 @@ impl OsdlEngine {
                     };
                     let mut devices_w = self.handle.devices.write().await;
                     if let Some(dev) = devices_w.get_mut(device_id) {
-                        dev.properties_timestamp_ms = status.timestamp;
-                        for (k, v) in &status.properties {
-                            dev.properties.insert(k.clone(), v.clone());
+                        if adapter_name == crate::adapter::simulation::PLATFORM {
+                            // Ignore observations queued before this device's layout was replaced.
+                            if dev.properties.get("scene_revision")
+                                != status.properties.get("scene_revision")
+                            {
+                                return;
+                            }
+                            dev.properties.clone_from(&status.properties);
+                        } else {
+                            dev.properties.extend(status.properties.clone());
                         }
+                        dev.properties_timestamp_ms = status.timestamp;
+                    } else if adapter_name == crate::adapter::simulation::PLATFORM {
+                        return;
                     }
+                    drop(devices_w);
                     self.handle.emit(OsdlEvent::DeviceStatus(status));
                 }
                 break;
@@ -1395,7 +1406,7 @@ fn mac_hex_flat(mac: &Mac) -> String {
     )
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

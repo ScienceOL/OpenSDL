@@ -9,7 +9,12 @@ pub enum OsdlEvent {
     /// A node registered and was matched to a device driver.
     DeviceOnline(Device),
     /// A node went offline (LWT or heartbeat timeout).
-    DeviceOffline { device_id: String },
+    DeviceOffline {
+        device_id: String,
+    },
+    SimulationSceneChanged {
+        revision: u64,
+    },
     /// Device reported new status (parsed from serial response).
     DeviceStatus(DeviceStatus),
     /// A command completed (success or failure).
@@ -27,5 +32,7 @@ pub enum OsdlEvent {
     },
     /// The media gateway exited unexpectedly. All sources go offline; the
     /// host can decide whether to restart.
-    MediaGatewayDown { reason: String },
+    MediaGatewayDown {
+        reason: String,
+    },
 }

@@ -8,7 +8,10 @@ use std::path::PathBuf;
 #[derive(Debug, Subcommand)]
 pub enum AssetCmd {
     /// Populate the local asset library before launching a scene.
-    PrepareScene { scene: PathBuf },
+    Prepare {
+        #[arg(required = true)]
+        references: Vec<String>,
+    },
     /// List locally admitted packages and their references.
     List {
         #[arg(long)]
@@ -45,12 +48,10 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
         None => AssetCache::discover()?,
     };
     match command {
-        AssetCmd::PrepareScene { scene } => {
-            let scene = osdl_server::simulation_asset::SceneDefinition::read(&scene)?;
-            let refs = scene
-                .instruments
+        AssetCmd::Prepare { references } => {
+            let refs = references
                 .iter()
-                .map(|item| AssetReference::parse(&item.asset))
+                .map(|value| AssetReference::parse(value))
                 .collect::<Result<Vec<_>, _>>()?;
             let digests = lab_cli::assets::acquire(&cache, refs).await?;
             for digest in digests {

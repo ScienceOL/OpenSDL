@@ -26,13 +26,18 @@ pub struct SimulationState {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChannelTransition {
     Instant,
-    Linear { duration_s: f64 },
-    Continuous { speed_per_s: f64 },
+    Linear {
+        duration_s: f64,
+    },
+    Continuous {
+        speed_per_s: f64,
+        stop_at: Option<f64>,
+    },
 }
 
 pub trait SimulationBackend: Send + Sync {
     fn engine_id(&self) -> &str;
-    fn transition(&self, _state: &SimulationState) -> ChannelTransition {
+    fn transition(&self, _channel: &str, _state: &SimulationState) -> ChannelTransition {
         ChannelTransition::Instant
     }
     fn apply_action(

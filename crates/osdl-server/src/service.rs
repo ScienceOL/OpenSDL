@@ -335,6 +335,7 @@ impl pb::osdl_server::Osdl for OsdlService {
 fn event_kind_matches(ev: &pb::Event, allowed: &[String]) -> bool {
     let name = match &ev.kind {
         Some(pb::event::Kind::DeviceOnline(_)) => "device_online",
+        Some(pb::event::Kind::SimulationSceneChanged(_)) => "simulation_scene_changed",
         Some(pb::event::Kind::DeviceOffline(_)) => "device_offline",
         Some(pb::event::Kind::DeviceStatus(_)) => "device_status",
         Some(pb::event::Kind::CommandResult(_)) => "command_result",

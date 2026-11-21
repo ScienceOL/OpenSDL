@@ -219,12 +219,15 @@ message Event {
     MediaSourceOnlineEvent media_source_online = 7;
     MediaGatewayDownEvent media_gateway_down = 8;
     LaggedEvent lagged = 9;
+    SimulationSceneChangedEvent simulation_scene_changed = 10;
   }
 }
 
 message DeviceOnlineEvent {
   Device device = 1;
 }
+
+message SimulationSceneChangedEvent { uint64 revision = 1; }
 
 message DeviceOfflineEvent {
   string device_id = 1;

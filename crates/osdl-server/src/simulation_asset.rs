@@ -379,7 +379,7 @@ pub async fn apply_revision(
         None
     };
     engine
-        .apply_simulation_scene(next.as_ref(), &poses)
+        .apply_simulation_scene(revision, next.as_ref(), &poses)
         .await
         .map_err(anyhow::Error::msg)
 }
