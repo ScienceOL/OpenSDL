@@ -158,9 +158,8 @@ async fn prepare_account_gateway(
     let Some(config) = config else {
         return Ok(None);
     };
-    let paths = osdl_server::Paths::discover().map_err(anyhow::Error::msg)?;
-    let binding =
-        Binding::load(&paths.config_dir, &config.instance).context("load gateway account")?;
+    let config_dir = osdl_server::Paths::config_directory().map_err(anyhow::Error::msg)?;
+    let binding = Binding::load(&config_dir, &config.instance).context("load gateway account")?;
     let account = AccountAuth::new(binding)?;
     let media_relay = config
         .media_relay
