@@ -34,6 +34,7 @@ pub struct OsdlService {
     authorizer: Authorizer,
     engine: EngineHandle,
     identity: ServerIdentity,
+    lab_profile: Option<Arc<crate::lab_profile::Store>>,
     /// Fires when the server is shutting down. `StreamEvents` watches
     /// this so live streams release their RPC slot and tonic's graceful
     /// shutdown can finish — without it, an open events stream wedges
@@ -52,6 +53,12 @@ impl OsdlService {
         self.authorizer = authorizer;
         self
     }
+
+    pub(crate) fn with_lab_profile(mut self, profile: Option<crate::lab_profile::Store>) -> Self {
+        self.lab_profile = profile.map(Arc::new);
+        self
+    }
+
     pub fn new(engine: EngineHandle, identity: ServerIdentity) -> Self {
         Self::with_shutdown(engine, identity, Arc::new(Notify::new()))
     }
@@ -65,6 +72,7 @@ impl OsdlService {
             authorizer: Authorizer::Local,
             engine,
             identity,
+            lab_profile: None,
             shutdown,
             media_publishers: crate::media_publish::Publishers::default(),
         }
@@ -111,7 +119,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::StatusRequest>,
     ) -> Result<Response<pb::StatusResponse>, Status> {
-        self.authorizer.authorize(&req, Permission::Read)?;
+        let writable = self.authorizer.lab_profile_writable(&req)?;
         let engine = status_to_pb(&self.engine.status());
         Ok(Response::new(pb::StatusResponse {
             version: self.identity.version.clone(),
@@ -121,7 +129,26 @@ impl pb::osdl_server::Osdl for OsdlService {
             listen_addr: self.identity.listen_addr.clone(),
             engine: Some(engine),
             started_at: Some(self.identity.started_at.clone()),
+            laboratory: self
+                .lab_profile
+                .as_ref()
+                .map(|store| store.snapshot(writable)),
         }))
+    }
+
+    async fn update_lab_profile(
+        &self,
+        request: Request<pb::UpdateLabProfileRequest>,
+    ) -> Result<Response<pb::LabProfile>, Status> {
+        let lease = self.authorizer.authorize_lab_profile_update(&request)?;
+        let store = self
+            .lab_profile
+            .clone()
+            .ok_or_else(|| Status::failed_precondition("laboratory profile unavailable"))?;
+        store
+            .update(request.into_inner(), lease)
+            .await
+            .map(Response::new)
     }
 
     async fn list_nodes(

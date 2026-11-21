@@ -95,7 +95,13 @@ pub fn create_dir(path: &Path) -> Result<()> {
             lpSecurityDescriptor: desc.0,
             bInheritHandle: 0,
         };
-        check(CreateDirectoryW(wide(path).as_ptr(), &attrs))
+        if CreateDirectoryW(wide(path).as_ptr(), &attrs) == 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(error.into());
+            }
+        }
+        Ok(())
     }
 }
 pub fn protect(path: &Path) -> Result<()> {
@@ -238,6 +244,8 @@ pub fn open_lock(path: &Path) -> Result<std::fs::File> {
         .open(path)?)
 }
 
+/// Publish an already-written temporary file durably in its own directory.
+/// Callers own the temporary file's permissions and content.
 pub fn publish(mut temp: tempfile::NamedTempFile, path: &Path, replace: bool) -> Result<()> {
     ensure!(
         temp.path().parent() == path.parent(),

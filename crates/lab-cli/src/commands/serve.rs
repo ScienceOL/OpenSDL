@@ -33,6 +33,10 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_INSTANCE", default_value = "default")]
     pub instance: String,
 
+    /// Laboratory display name if there is no saved profile. Defaults to the host name.
+    #[arg(long, env = "OSDL_LAB_NAME")]
+    pub name: Option<String>,
+
     /// Where to bind the Unix domain socket. Default:
     /// `<runtime_dir>/<instance>.sock`. Set `--socket=disabled` to opt
     /// out of UDS entirely (then a TCP listener must be set).
@@ -60,16 +64,19 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_LOG_FILE")]
     pub log_file: Option<PathBuf>,
 
-    /// Token for explicit --auth static. Prefer the private environment. Clients pass it via
-    /// `OSDL_AUTH_TOKEN` (the CLI sets `authorization: Bearer <token>`
-    /// on each request). UDS clients skip this — filesystem perms are
-    /// the auth there. Static mode requires a token even on loopback.
+    /// Token required by --auth static. Prefer the private environment.
+    /// Unix sockets use filesystem permissions.
     #[arg(long, env = "OSDL_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 
     /// Explicit listener authority. Account uses the binding saved by `lab login`.
     #[arg(long, value_enum, default_value = "local")]
     pub auth: AuthMode,
+
+    /// Treat a supervisor's static token as private local authority on an
+    /// explicitly configured loopback TCP listener.
+    #[arg(long, env = "OSDL_LOCAL_CAPABILITY")]
+    pub local_capability: bool,
     #[arg(long, default_value="stable", value_parser=["dev","beta","rc","stable"])]
     pub channel: String,
 }
@@ -300,6 +307,11 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         ));
     }
 
+    anyhow::ensure!(
+        !args.local_capability || (matches!(args.auth, AuthMode::Static) && args.listen.is_some()),
+        "--local-capability requires --auth static and an explicit loopback --listen address"
+    );
+
     // Resolve and validate authentication before starting the broker or hardware.
     // The server library enforces the same listener policy for non-CLI callers.
     let auth = match args.auth {
@@ -313,7 +325,10 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             )?)
         }
         AuthMode::Local => {
-            anyhow::ensure!(args.auth_token.is_none(),"local mode generates its own private capability; use --auth static for process-supplied tokens");
+            anyhow::ensure!(
+                args.auth_token.is_none(),
+                "local mode generates a private capability; use --auth static for process-supplied tokens"
+            );
             osdl_server::auth::ListenerAuth::Local
         }
         AuthMode::PublicKey => {
@@ -342,6 +357,9 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             )
         }
         AuthMode::Static => match &args.auth_token {
+            Some(token) if args.local_capability => {
+                osdl_server::auth::ListenerAuth::LocalCapability(token.clone())
+            }
             Some(token) => osdl_server::auth::ListenerAuth::Bearer(token.clone()),
             None => return Err(anyhow!("--auth static requires OSDL_AUTH_TOKEN")),
         },
@@ -365,7 +383,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         paths.state_dir,
         EngineMode::Standalone { advertise_mqtt },
         |handle| async {
-            osdl_server::serve(handle, serve_cfg)
+            osdl_server::serve_with_lab_name(handle, serve_cfg, args.name.as_deref())
                 .await
                 .map_err(Into::into)
         },

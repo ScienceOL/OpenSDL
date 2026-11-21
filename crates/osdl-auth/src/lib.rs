@@ -2,6 +2,8 @@
 mod invitation;
 mod store;
 pub use invitation::{normalize_endpoint, Access, Channel, Invitation};
+#[cfg(windows)]
+pub use store::publish_windows_file;
 pub use store::ProfileStore;
 /// One instance identity is used by account bindings, private discovery and lockfiles.
 pub fn valid_instance_name(value: &str) -> bool {

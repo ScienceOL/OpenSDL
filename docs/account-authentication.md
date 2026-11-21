@@ -35,6 +35,12 @@ verifies the pinned Ed25519 key, exact issuer/account/lab/channel, device UUID,
 positive generation, installation UUID, issuance/expiry and a maximum 300-second
 lifetime locally. Scope is `opensdl:read` or `opensdl:read opensdl:operate`;
 SendCommand requires operate and account assertions never authorize Shutdown.
+Authenticated Status includes the current laboratory display profile and whether
+the caller may edit it. UpdateLabProfile requires operate scope for the bound
+account on the account listener. Protected local administrator endpoints also
+permit edits. Static bearer TCP and public-key paired connections can read the
+profile. Updates change the display name and description and require the
+current profile revision from Status.
 
 `Authentication.Renew` verifies the newly presented assertion and returns
 `expires_at` (Unix seconds). It extends active leases for precisely the same device,
