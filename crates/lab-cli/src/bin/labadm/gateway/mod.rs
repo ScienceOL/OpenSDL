@@ -19,6 +19,9 @@ use tonic::{Code, Request, Response, Status};
 
 use crate::{control::Control, directory::PAGE_SIZE};
 
+const EVENT_SUBSCRIPTION_LIMIT: usize = 8;
+const FANOUT_REQUEST_LIMIT: usize = 8;
+
 type RpcStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send + 'static>>;
 
 #[derive(Clone)]
@@ -27,6 +30,8 @@ pub struct Gateway {
     instance: Arc<str>,
     started_at: prost_types::Timestamp,
     event_dials: Arc<Semaphore>,
+    event_subscriptions: Arc<Semaphore>,
+    fanout_requests: Arc<Semaphore>,
 }
 
 impl Gateway {
@@ -36,7 +41,15 @@ impl Gateway {
             instance: instance.into(),
             started_at: now_ts(),
             event_dials: Arc::new(Semaphore::new(PAGE_SIZE)),
+            event_subscriptions: Arc::new(Semaphore::new(EVENT_SUBSCRIPTION_LIMIT)),
+            fanout_requests: Arc::new(Semaphore::new(FANOUT_REQUEST_LIMIT)),
         }
+    }
+
+    fn fanout_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>, Status> {
+        self.fanout_requests
+            .try_acquire()
+            .map_err(|_| Status::resource_exhausted("cluster fan-out requests are busy"))
     }
 }
 
@@ -57,6 +70,7 @@ impl Osdl for Gateway {
             started_at: Some(self.started_at),
             engine: Some(pb::EngineStatus {
                 state: pb::engine_status::State::Connected as i32,
+                // Status checks directory readiness. Counts describe no local engine.
                 broker: "cluster".into(),
                 ..Default::default()
             }),

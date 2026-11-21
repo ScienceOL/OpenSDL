@@ -1,4 +1,4 @@
-use osdl_core::media::onvif_camera::SNAPSHOT_SUBDIR;
+use osdl_core::media::{is_valid_media_path_name, onvif_camera::SNAPSHOT_SUBDIR};
 use osdl_proto::v1 as pb;
 use prost_types::{value::Kind, Struct};
 use tonic::Status;
@@ -93,10 +93,7 @@ fn snapshot_relative(camera: &str, path: &str) -> Option<String> {
 
 pub(super) fn snapshot_path(path: &str) -> Result<&str, Status> {
     let valid = path.split_once('/').is_some_and(|(camera, file)| {
-        !camera.is_empty()
-            && camera
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+        is_valid_media_path_name(camera)
             && file.strip_suffix(".jpg").is_some_and(|name| {
                 (1..=20).contains(&name.len()) && name.bytes().all(|c| c.is_ascii_digit())
             })
@@ -180,6 +177,7 @@ mod tests {
     fn invalid_snapshot_routes_and_noncanonical_upstream_paths_are_rejected() {
         for invalid in [
             "/cam131/1234.jpg",
+            "cam.131/1234.jpg",
             "../cam131/1234.jpg",
             "cam131/../1234.jpg",
             r"cam131\1234.jpg",
@@ -188,6 +186,7 @@ mod tests {
         ] {
             assert!(snapshot_path(invalid).is_err(), "{invalid}");
         }
+        assert!(snapshot_path("Cam_131-A/1234.jpg").is_ok());
         assert!(snapshot_relative("cam131", "/foo/snapshots/cam53/1234.jpg").is_none());
         assert!(snapshot_relative("cam131", "/foo/other/cam131/1234.jpg").is_none());
     }

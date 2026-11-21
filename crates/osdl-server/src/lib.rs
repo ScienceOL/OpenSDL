@@ -33,7 +33,7 @@ mod listeners;
 pub mod local_access;
 use tokio::sync::Notify;
 
-pub use account_endpoint::serve_account_endpoint;
+pub use account_endpoint::{serve_account_endpoint, MediaRelay};
 pub use lockfile::{InstanceRecord, LockfileGuard};
 pub use paths::Paths;
 pub use service::{OsdlService, ServerIdentity};

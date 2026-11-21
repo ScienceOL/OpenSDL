@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use futures_util::{stream, StreamExt};
 use osdl_proto::v1 as pb;
-use tonic::{Code, Status, Streaming};
+use tokio::time::Instant;
+use tonic::{Status, Streaming};
 
 use crate::{config::Id, control::deadline, directory::Worker};
 
@@ -16,7 +17,12 @@ impl Gateway {
         &self,
         filter: pb::StreamEventsRequest,
     ) -> Result<RpcStream<pb::Event>, Status> {
-        let routes = self.stream_routes().await?;
+        let permit = self
+            .event_subscriptions
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("cluster event subscriptions are busy"))?;
+        let routes = self.worker_snapshot().await?;
         let streams = routes.into_iter().map(|route| {
             let feed = Feed {
                 gateway: self.clone(),
@@ -28,7 +34,11 @@ impl Gateway {
             };
             Box::pin(stream::unfold(feed, Feed::next))
         });
-        Ok(Box::pin(stream::select_all(streams).map(Ok)))
+        Ok(Box::pin(stream::select_all(streams).map(move |event| {
+            // Each downstream subscription owns its upstream streams.
+            let _permit = &permit;
+            Ok(event)
+        })))
     }
 }
 
@@ -36,7 +46,7 @@ struct Feed {
     gateway: Gateway,
     worker: Id,
     initial_route: Option<Worker>,
-    stream: Option<Streaming<pb::Event>>,
+    stream: Option<(Streaming<pb::Event>, Instant)>,
     filter: pb::StreamEventsRequest,
     backoff: Duration,
 }
@@ -44,10 +54,9 @@ struct Feed {
 impl Feed {
     async fn next(mut self) -> Option<(pb::Event, Self)> {
         loop {
-            if let Some(stream) = &mut self.stream {
+            let uptime = if let Some((stream, opened_at)) = &mut self.stream {
                 match stream.message().await {
                     Ok(Some(mut event)) => {
-                        self.backoff = Duration::ZERO;
                         project(&self.worker, &mut event);
                         return Some((event, self));
                     }
@@ -58,27 +67,29 @@ impl Feed {
                         error.code()
                     ),
                 }
+                let uptime = opened_at.elapsed();
                 self.stream = None;
+                Some(uptime)
             } else {
                 if !self.backoff.is_zero() {
                     tokio::time::sleep(self.backoff).await;
                 }
                 match self.connect().await {
                     Ok(stream) => {
-                        self.stream = Some(stream);
+                        self.stream = Some((stream, Instant::now()));
                         continue;
                     }
-                    Err(error) if error.code() == Code::NotFound => return None,
                     Err(error) => log::debug!(
                         "worker {} event stream unavailable: {}",
                         self.worker,
                         error.code()
                     ),
                 }
-            }
-            let first_failure = self.backoff.is_zero();
-            self.backoff = (self.backoff * 2).clamp(INITIAL_RETRY, MAX_RETRY);
-            if first_failure && wants_worker_unavailable(&self.filter) {
+                // A missing route may be re-admitted. Reuse the existing
+                // backoff and resolve the exact route again on the next attempt.
+                None
+            };
+            if after_failure(&mut self.backoff, uptime) && wants_worker_unavailable(&self.filter) {
                 let event = pb::Event {
                     timestamp: Some(osdl_server::convert::now_ts()),
                     kind: Some(pb::event::Kind::WorkerUnavailable(
@@ -108,6 +119,16 @@ impl Feed {
             .await?
             .into_inner())
     }
+}
+
+fn after_failure(backoff: &mut Duration, uptime: Option<Duration>) -> bool {
+    let notify = uptime.is_some() || backoff.is_zero();
+    if uptime.is_some_and(|duration| duration >= MAX_RETRY) {
+        *backoff = INITIAL_RETRY;
+    } else {
+        *backoff = (*backoff * 2).clamp(INITIAL_RETRY, MAX_RETRY);
+    }
+    notify
 }
 
 fn wants_worker_unavailable(filter: &pb::StreamEventsRequest) -> bool {
@@ -151,6 +172,20 @@ fn project(worker: &Id, event: &mut pb::Event) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn silent_reconnects_report_each_loss_and_flapping_increases_delay() {
+        let mut delay = Duration::ZERO;
+        assert!(after_failure(&mut delay, None));
+        assert_eq!(delay, Duration::from_secs(2));
+        assert!(!after_failure(&mut delay, None));
+        assert_eq!(delay, Duration::from_secs(4));
+        for seconds in [8, 16, 30, 30] {
+            assert!(after_failure(&mut delay, Some(Duration::from_millis(10))));
+            assert_eq!(delay, Duration::from_secs(seconds));
+        }
+        assert!(after_failure(&mut delay, Some(Duration::from_secs(30))));
+        assert_eq!(delay, Duration::from_secs(2));
+    }
     #[test]
     fn camera_events_expose_only_the_routed_source() {
         let worker = "scienceol".parse().unwrap();

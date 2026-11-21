@@ -324,7 +324,36 @@ def check_gateway_inventory_and_dispatch(binary, root, port, fixture, home, peer
     assert command_count(root, peer, "gateway-routed") == 1
 
 
-def check_gateway_worker_loss(binary, port, fixture, home, peer, stopped_worker):
+def check_gateway_event_capacity(binary, port, fixture, worker):
+    env, read_token, operate_token = fixture
+    lab = binary.with_name("lab" + binary.suffix)
+    endpoint = f"http://{LOOPBACK}:{port}"
+    events_cmd = (lab, "--endpoint", endpoint, "events", "--json", "--kinds", "command_result")
+    reader_env = {**env, "OSDL_AUTH_TOKEN": read_token}
+    with contextlib.ExitStack() as cleanup, concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        streams = []
+        try:
+            for _ in range(8):
+                process = subprocess.Popen(events_cmd, stdout=subprocess.PIPE, text=True, env=reader_env)
+                cleanup.callback(process.stdout.close)
+                cleanup.callback(terminate, process)
+                streams.append(process)
+            first_events = [executor.submit(process.stdout.readline) for process in streams]
+            end = time.monotonic() + 8
+            while time.monotonic() < end and not all(event.done() for event in first_events):
+                run(lab, "--endpoint", endpoint, "send", f"{worker}:{DEVICE}", "start",
+                    env={**env, "OSDL_AUTH_TOKEN": operate_token})
+                time.sleep(0.1)
+            for event in first_events:
+                assert json.loads(event.result(timeout=2))["kind"] == "command_result"
+            denied = subprocess.run(events_cmd, capture_output=True, text=True, env=reader_env, timeout=5)
+            assert denied.returncode != 0 and "cluster event subscriptions are busy" in denied.stderr
+        finally:
+            for process in streams:
+                terminate(process)
+
+
+def check_gateway_worker_loss(binary, port, fixture, home, peer, stopped_worker, rejoin):
     env, read_token, operate_token = fixture
     lab = binary.with_name("lab" + binary.suffix)
     endpoint = f"http://{LOOPBACK}:{port}"
@@ -362,6 +391,17 @@ def check_gateway_worker_loss(binary, port, fixture, home, peer, stopped_worker)
             run(*arg, "send", f"{peer}:{DEVICE}", "start", "--command-id", "gateway-survivor",
                 env=operate_env)
             assert retained.result(timeout=5)["payload"]["device_id"] == f"{peer}:{DEVICE}"
+
+            recovered = executor.submit(await_event, "command_result", "device_id", f"{home}:{DEVICE}")
+            restored = rejoin()
+            try:
+                end = time.monotonic() + 8
+                while time.monotonic() < end and not recovered.done():
+                    run(*arg, "send", f"{home}:{DEVICE}", "start", env=operate_env)
+                    time.sleep(0.1)
+                recovered.result(timeout=2)
+            finally:
+                terminate(restored)
         finally:
             terminate(events)
             events.stdout.close()
@@ -475,7 +515,12 @@ def exercise(binary, openssl):
         assert cli(binary, standby, "workers").splitlines() == names_in_order
         home, peer = names_in_order[:2]
         if fixture:
+            before = etcd_metrics(pki, endpoints)
             check_gateway_inventory_and_dispatch(binary, root, first_gateway, fixture, home, peer)
+            # One membership range, one GetDevice route, one WaitForDevice
+            # route and one SendCommand route. Denied requests never read etcd.
+            assert etcd_metrics(pki, endpoints) - before == 4
+            check_gateway_event_capacity(binary, first_gateway, fixture, home)
         with contextlib.closing(sqlite3.connect(root / peer / f"{peer}.db")) as db:
             db.execute("""
                 WITH RECURSIVE sequence(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM sequence WHERE i < 100000)
@@ -535,7 +580,18 @@ def exercise(binary, openssl):
                 events.stdout.close()
 
         if fixture:
-            check_gateway_worker_loss(binary, second_gateway, fixture, home, peer, workers[home])
+            def rejoin():
+                cli(binary, controls[1], "forget", home)
+                before = etcd_metrics(pki, endpoints)
+                # Observe the disconnected feed query the missing route
+                # before restoring it, so a terminal NotFound loses the test.
+                wait_for(lambda: etcd_metrics(pki, endpoints) > before, timeout=8)
+                process = start(stack, binary, root / f"{home}.json", "join", "--simulation",
+                                "--data-dir", root / home)
+                wait_for(lambda: cli(binary, controls[1], "admit", home, f"{LOOPBACK}:{worker_ports[0]}"))
+                return process
+
+            check_gateway_worker_loss(binary, second_gateway, fixture, home, peer, workers[home], rejoin)
         else:
             terminate(workers[home])
         assert f"{home}\tunavailable\t" in cli(binary, config, "devices")

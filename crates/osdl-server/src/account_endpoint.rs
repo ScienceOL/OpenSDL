@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, pin::Pin, str::FromStr};
 
 use osdl_proto::v1::{self as pb, osdl_server::Osdl};
 use tokio::net::TcpListener;
@@ -13,17 +13,55 @@ use crate::{
         stream::{expires, guard_stream},
         Authorizer, Permission,
     },
+    media_publish::parse_target,
     ServeError,
 };
 
 type RpcStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
+
+/// Exact RTMPS relay origin authorized by the control plane operator.
+pub struct MediaRelay {
+    origin: url::Url,
+}
+
+impl FromStr for MediaRelay {
+    type Err = Status;
+
+    fn from_str(value: &str) -> Result<Self, Status> {
+        let origin = parse_target(value)?;
+        if !matches!(origin.path(), "" | "/") || origin.query().is_some() || origin.port().is_none()
+        {
+            return Err(Status::invalid_argument(
+                "media relay must be an RTMPS origin with a port",
+            ));
+        }
+        Ok(Self { origin })
+    }
+}
+
+impl MediaRelay {
+    fn authorize(&self, value: &str) -> Result<(), Status> {
+        let target = parse_target(value)?;
+        if target.port() != self.origin.port()
+            || !target
+                .host_str()
+                .zip(self.origin.host_str())
+                .is_some_and(|(host, origin)| host.eq_ignore_ascii_case(origin))
+        {
+            return Err(Status::permission_denied(
+                "media relay destination is not authorized",
+            ));
+        }
+        Ok(())
+    }
+}
 
 /// Serve an OpenSDL API with the same account scope and stream leases as a local engine.
 pub async fn serve_account_endpoint(
     listener: TcpListener,
     account: AccountAuth,
     operations: impl Osdl,
-    max_response_bytes: usize,
+    media_relay: Option<MediaRelay>,
 ) -> Result<(), ServeError> {
     let instance = account.verifier.binding().instance.clone();
     let policy = ListenerAuth::Account(account.clone());
@@ -33,6 +71,7 @@ pub async fn serve_account_endpoint(
     let api = AccountApi {
         upstream: operations,
         authorizer: Authorizer::Account(account),
+        media_relay,
     };
     tonic::transport::Server::builder()
         .add_service(
@@ -43,7 +82,7 @@ pub async fn serve_account_endpoint(
             .max_decoding_message_size(1024),
         )
         .add_service(
-            pb::osdl_server::OsdlServer::new(api).max_encoding_message_size(max_response_bytes),
+            pb::osdl_server::OsdlServer::new(api).max_encoding_message_size(4 * 1024 * 1024),
         )
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await?;
@@ -53,6 +92,7 @@ pub async fn serve_account_endpoint(
 struct AccountApi<T> {
     upstream: T,
     authorizer: Authorizer,
+    media_relay: Option<MediaRelay>,
 }
 
 impl<T> AccountApi<T> {
@@ -170,7 +210,14 @@ impl<T: Osdl> Osdl for AccountApi<T> {
         &self,
         r: Request<pb::PublishMediaRequest>,
     ) -> Result<Response<Self::PublishMediaStream>, Status> {
-        self.leased(r, |req| self.upstream.publish_media(req)).await
+        self.leased(r, |req| async {
+            self.media_relay
+                .as_ref()
+                .ok_or_else(|| Status::failed_precondition("media relay is not configured"))?
+                .authorize(&req.get_ref().publish_url)?;
+            self.upstream.publish_media(req).await
+        })
+        .await
     }
 
     async fn shutdown(

@@ -42,8 +42,9 @@ impl Gateway {
                 Ok(device)
             }
             Some(Selector::DeviceType(_) | Selector::Role(_)) => {
+                let _permit = self.fanout_permit()?;
                 let mut calls = FuturesUnordered::new();
-                for worker in self.stream_routes().await? {
+                for worker in self.worker_snapshot().await? {
                     let req = req.clone();
                     calls.push(async move {
                         let mut client = self.client_for(&worker)?;

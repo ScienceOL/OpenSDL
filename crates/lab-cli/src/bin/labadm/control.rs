@@ -13,6 +13,7 @@ use crate::{
 
 // An inventory page can contain eight worker responses, each bounded by tonic.
 pub const INVENTORY_RESPONSE_LIMIT: usize = PAGE_SIZE * 4 * 1024 * 1024 + 4096;
+pub const COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct Control {
@@ -135,7 +136,8 @@ impl api::control_plane_server::ControlPlane for Control {
             .command
             .ok_or_else(|| Status::invalid_argument("command is required"))?;
         let mut worker = self.client(&request.worker).await?;
-        let result = deadline(worker.send_command(command)).await;
+        // An instrument can perform a bounded synchronous exchange before reporting its result.
+        let result = forward(COMMAND_REPLY_TIMEOUT, worker.send_command(command)).await;
         // Once dispatched, a transport failure cannot prove whether an action
         // reached the instrument. This path never tries a second request.
         result.map_err(|error| match error.code() {

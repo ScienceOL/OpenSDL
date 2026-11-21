@@ -67,6 +67,7 @@ pub struct ControlConfig {
 pub struct AccountGatewayConfig {
     pub listen: SocketAddr,
     pub instance: String,
+    pub media_relay: Option<String>,
 }
 
 #[derive(Deserialize)]

@@ -152,7 +152,7 @@ async fn gateway_applies_the_account_boundary_before_dispatching() {
         listener,
         account,
         crate::OsdlService::new(engine.handle(), identity),
-        4 * 1024 * 1024,
+        Some("rtmps://srs.test.liyanlabs.com:11935".parse().unwrap()),
     ));
     let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
         .unwrap()
@@ -179,6 +179,15 @@ async fn gateway_applies_the_account_boundary_before_dispatching() {
     );
     let mut read = claims();
     read["scope"] = json!("opensdl:read");
+    assert_eq!(
+        client
+            .status(authorized(pb::StatusRequest {}, &key, read.clone()))
+            .await
+            .unwrap()
+            .into_inner()
+            .version,
+        "test"
+    );
     client
         .list_devices(authorized(
             pb::ListDevicesRequest::default(),
@@ -187,6 +196,33 @@ async fn gateway_applies_the_account_boundary_before_dispatching() {
         ))
         .await
         .unwrap();
+    for (url, expected) in [
+        (
+            "rtmps://srs.test.liyanlabs.com:11935/live/authorized",
+            tonic::Code::Unavailable,
+        ),
+        (
+            "rtmps://srs.test.liyanlabs.com:12935/live/other",
+            tonic::Code::PermissionDenied,
+        ),
+        (
+            "rtmps://srs.test.liyanlabs.com.evil.invalid:11935/live/other",
+            tonic::Code::PermissionDenied,
+        ),
+    ] {
+        let error = client
+            .publish_media(authorized(
+                pb::PublishMediaRequest {
+                    source_id: "camera".into(),
+                    publish_url: url.into(),
+                },
+                &key,
+                read.clone(),
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), expected, "{url}");
+    }
     assert_eq!(
         client
             .send_command(authorized(pb::SendCommandRequest::default(), &key, read))

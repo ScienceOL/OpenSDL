@@ -50,17 +50,7 @@ impl Publishers {
         request: pb::PublishMediaRequest,
         shutdown: Arc<Notify>,
     ) -> Result<PublishStream, Status> {
-        let target = url::Url::parse(&request.publish_url)
-            .map_err(|_| Status::invalid_argument("invalid media target"))?;
-        if target.scheme() != "rtmps"
-            || target.host_str().is_none()
-            || target.username() != ""
-            || target.password().is_some()
-        {
-            return Err(Status::invalid_argument(
-                "remote camera publishing requires RTMPS",
-            ));
-        }
+        let target = parse_target(&request.publish_url)?;
         let executable = engine
             .config()
             .media_gateway
@@ -117,6 +107,22 @@ impl Publishers {
         let slot = self.acquire(request.source_id)?;
         publish_process(command, shutdown, slot).await
     }
+}
+
+pub(crate) fn parse_target(value: &str) -> Result<url::Url, Status> {
+    let target =
+        url::Url::parse(value).map_err(|_| Status::invalid_argument("invalid media target"))?;
+    if target.scheme() != "rtmps"
+        || target.host_str().is_none()
+        || !target.username().is_empty()
+        || target.password().is_some()
+        || target.fragment().is_some()
+    {
+        return Err(Status::invalid_argument(
+            "remote camera publishing requires RTMPS",
+        ));
+    }
+    Ok(target)
 }
 
 async fn publish_process(
