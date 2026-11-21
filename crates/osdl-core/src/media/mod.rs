@@ -10,6 +10,14 @@
 //! stream available to consumers (browsers, AI pipelines, recorders) at
 //! stable URLs.
 
+/// A MediaMTX path name and the resulting ONVIF camera identifier.
+pub fn is_valid_media_path_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 /// Maximum JPEG snapshot size accepted from cameras and served to clients.
 pub const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
 
