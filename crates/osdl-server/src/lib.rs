@@ -76,8 +76,6 @@ impl ListenConfig {
 pub struct ServeConfig {
     /// Logical name for this server instance. One lockfile per instance.
     pub instance: String,
-    /// Initial display name when the instance has no persisted profile.
-    pub lab_name: Option<String>,
     /// Where to listen. Both UDS and TCP can be set; either alone is fine.
     pub listen: ListenConfig,
     /// Where to write the instance lockfile (typically `paths.lock_dir()`).
@@ -105,6 +103,15 @@ pub enum ServeError {
 /// receives a Ctrl-C, or the listener fails. Cleans up the lockfile and
 /// any UDS file on the way out.
 pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeError> {
+    serve_with_lab_name(engine, cfg, None).await
+}
+
+/// Serve the engine with a display-name default for an instance without saved settings.
+pub async fn serve_with_lab_name(
+    engine: EngineHandle,
+    cfg: ServeConfig,
+    initial_lab_name: Option<&str>,
+) -> Result<(), ServeError> {
     if cfg.listen.is_empty() {
         return Err(ServeError::NoListener);
     }
@@ -170,7 +177,7 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     let _lock = lockfile::write(&cfg.lock_dir, &record).map_err(ServeError::Lock)?;
     let lab_profile = engine
         .data_dir()
-        .map(|dir| lab_profile::Store::open(dir, &cfg.instance, cfg.lab_name.as_deref()))
+        .map(|dir| lab_profile::Store::open(dir, &cfg.instance, initial_lab_name))
         .transpose()
         .map_err(ServeError::LabProfile)?;
 
@@ -231,6 +238,9 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
                     .save(&cfg.lock_dir, &cfg.instance)
                     .map_err(|e| ServeError::Auth(e.to_string()))?;
                 listeners::TcpAccess::LocalCapability(access.token)
+            }
+            auth::ListenerAuth::LocalCapability(token) => {
+                listeners::TcpAccess::LocalCapability(token.clone())
             }
             _ => listeners::TcpAccess::Remote,
         };
@@ -351,7 +361,6 @@ mod shutdown_signal_tests {
         handle.request_stop();
         let config = super::ServeConfig {
             instance: "stopped".into(),
-            lab_name: None,
             listen: super::ListenConfig {
                 socket_path: None,
                 tcp_addr: Some("127.0.0.1:0".parse().unwrap()),

@@ -51,7 +51,6 @@ mod tests {
         let handle = engine.handle();
         let config = crate::ServeConfig {
             instance: "private".into(),
-            lab_name: Some("Local Lab".into()),
             listen: crate::ListenConfig {
                 socket_path: None,
                 tcp_addr: Some("127.0.0.1:0".parse().unwrap()),
@@ -59,7 +58,11 @@ mod tests {
             lock_dir: locks.clone(),
             auth: crate::auth::ListenerAuth::Local,
         };
-        let service = tokio::spawn(crate::serve(handle, config));
+        let service = tokio::spawn(crate::serve_with_lab_name(
+            handle,
+            config,
+            Some("Local Lab"),
+        ));
         let access = tokio::time::timeout(std::time::Duration::from_secs(3), async {
             loop {
                 if let Ok(access) = LocalAccess::load(&locks, "private") {
@@ -88,7 +91,9 @@ mod tests {
             .parse::<tonic::metadata::MetadataValue<_>>()
             .unwrap();
         let mut request = tonic::Request::new(pb::StatusRequest {});
-        request.metadata_mut().insert("authorization", bearer.clone());
+        request
+            .metadata_mut()
+            .insert("authorization", bearer.clone());
         let profile = client
             .status(request)
             .await
@@ -111,8 +116,14 @@ mod tests {
             tonic::Code::Unauthenticated
         );
         let mut request = tonic::Request::new(update);
-        request.metadata_mut().insert("authorization", bearer.clone());
-        let saved = client.update_lab_profile(request).await.unwrap().into_inner();
+        request
+            .metadata_mut()
+            .insert("authorization", bearer.clone());
+        let saved = client
+            .update_lab_profile(request)
+            .await
+            .unwrap()
+            .into_inner();
         assert_eq!(saved.name, "Local Optics Lab");
         let mut request = tonic::Request::new(pb::ShutdownRequest {});
         request.metadata_mut().insert("authorization", bearer);
@@ -125,10 +136,16 @@ mod tests {
     }
     #[test]
     fn local_mode_rejects_remote_bindings() {
-        for addr in ["0.0.0.0:50051", "192.168.1.2:50051", "100.64.0.9:50051"] {
-            assert!(crate::auth::ListenerAuth::Local
-                .validate_listener("test", Some(addr.parse().unwrap()))
-                .is_err());
+        let policies = [
+            crate::auth::ListenerAuth::Local,
+            crate::auth::ListenerAuth::LocalCapability("provisioned".into()),
+        ];
+        for policy in policies {
+            for addr in ["0.0.0.0:50051", "192.168.1.2:50051", "100.64.0.9:50051"] {
+                assert!(policy
+                    .validate_listener("test", Some(addr.parse().unwrap()))
+                    .is_err());
+            }
         }
     }
 }
@@ -136,22 +153,29 @@ mod tests {
 #[cfg(all(test, unix))]
 mod unix_tests {
     #[tokio::test]
-    async fn protected_unix_socket_is_local_authority() {
+    async fn protected_unix_socket_retains_authority_alongside_static_tcp() {
+        use osdl_proto::v1 as pb;
+
         let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let run = osdl_auth::ProfileStore::open(temp.path().join("run")).unwrap();
         let path = run.root().join("lab.sock");
-        let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);
+        let engine = osdl_core::OsdlEngine::new(
+            osdl_core::config::OsdlConfig {
+                data_dir: Some(temp.path().to_path_buf()),
+                ..Default::default()
+            },
+            vec![],
+        );
         let service = tokio::spawn(crate::serve(
             engine.handle(),
             crate::ServeConfig {
                 instance: "unix".into(),
-                lab_name: None,
                 listen: crate::ListenConfig {
                     socket_path: Some(path.clone()),
-                    tcp_addr: None,
+                    tcp_addr: Some("127.0.0.1:0".parse().unwrap()),
                 },
                 lock_dir: temp.path().join("locks"),
-                auth: crate::auth::ListenerAuth::Local,
+                auth: crate::auth::ListenerAuth::Bearer("static-test".into()),
             },
         ));
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -177,15 +201,26 @@ mod unix_tests {
             }))
             .await
             .unwrap();
-        let mut client = osdl_proto::v1::osdl_client::OsdlClient::new(channel);
-        assert!(client
-            .status(osdl_proto::v1::StatusRequest {})
+        let mut client = pb::osdl_client::OsdlClient::new(channel);
+        let profile = client
+            .status(pb::StatusRequest {})
             .await
-            .is_ok());
-        client
-            .shutdown(osdl_proto::v1::ShutdownRequest {})
-            .await
+            .unwrap()
+            .into_inner()
+            .laboratory
             .unwrap();
+        assert!(profile.writable);
+        let saved = client
+            .update_lab_profile(pb::UpdateLabProfileRequest {
+                name: "Private Unix lab".into(),
+                description: String::new(),
+                revision: profile.revision,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(saved.name, "Private Unix lab");
+        client.shutdown(pb::ShutdownRequest {}).await.unwrap();
         service.await.unwrap().unwrap();
     }
 }

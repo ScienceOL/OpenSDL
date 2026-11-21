@@ -104,10 +104,14 @@ impl Lease {
         self.active
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let resource = Resource(self.clone());
+        self.check_current()?;
+        Ok(resource)
+    }
+    pub(crate) fn check_current(&self) -> Result<(), tonic::Status> {
         if *self.deadline.borrow() <= now() {
             return Err(self.expiry_status());
         }
-        Ok(resource)
+        Ok(())
     }
     pub(crate) async fn drained(&self) {
         loop {

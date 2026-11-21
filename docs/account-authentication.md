@@ -37,8 +37,8 @@ lifetime locally. Scope is `opensdl:read` or `opensdl:read opensdl:operate`;
 SendCommand requires operate and account assertions never authorize Shutdown.
 Authenticated Status includes the current laboratory display profile and whether
 the caller may edit it. UpdateLabProfile requires operate scope for the bound
-account on the account listener. The protected local endpoint in local mode
-also permits edits. Static bearer and public-key connections can read the
+account on the account listener. Protected local administrator endpoints also
+permit edits. Static bearer TCP and public-key paired connections can read the
 profile. Updates change the display name and description and require the
 current profile revision from Status.
 

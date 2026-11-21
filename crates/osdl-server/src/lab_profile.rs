@@ -1,9 +1,11 @@
 //! Server-owned display settings, independent of engine configuration.
 
+use crate::authorization::lease::Resource;
 use anyhow::{ensure, Context};
 use osdl_proto::v1 as pb;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
+use sha2::{Digest, Sha256};
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -15,6 +17,7 @@ use uuid::Uuid;
 mod tests;
 
 const MAX_PROFILE_BYTES: u64 = 4096;
+const MAX_NAME_CHARS: usize = 128;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -37,6 +40,8 @@ impl Profile {
 
 pub(crate) struct Store {
     path: PathBuf,
+    // Store clones and in-flight publications retain this exclusive ownership.
+    _ownership: File,
     profile: RwLock<Profile>,
     writer: Arc<Mutex<()>>,
 }
@@ -47,9 +52,19 @@ impl Store {
         instance: &str,
         initial_name: Option<&str>,
     ) -> anyhow::Result<Self> {
+        // The digest preserves case-distinct instance identities on every filesystem
+        // and keeps both filenames below the maximum component length.
         let path = dir
             .canonicalize()?
-            .join(format!("{instance}.lab-profile.json"));
+            .join(format!("lab-profile-{:x}.json", Sha256::digest(instance)));
+        let ownership = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path.with_extension("lock"))?;
+        ownership
+            .try_lock()
+            .context("acquire laboratory profile ownership")?;
         let profile = match File::open(&path) {
             Ok(file) => {
                 let mut bytes = Vec::new();
@@ -72,7 +87,7 @@ impl Store {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let name = match initial_name {
                     Some(name) => name.to_owned(),
-                    None => hostname().context("resolve host name")?,
+                    None => hostname_display_name(&hostname().unwrap_or_default(), instance),
                 };
                 validate(&name, "")?;
                 Profile {
@@ -85,6 +100,7 @@ impl Store {
         };
         Ok(Self {
             path,
+            _ownership: ownership,
             profile: RwLock::new(profile),
             writer: Arc::new(Mutex::new(())),
         })
@@ -101,6 +117,7 @@ impl Store {
     pub(crate) async fn update(
         self: Arc<Self>,
         request: pb::UpdateLabProfileRequest,
+        authority: Option<Resource>,
     ) -> Result<pb::LabProfile, Status> {
         validate(&request.name, &request.description)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
@@ -120,37 +137,54 @@ impl Store {
         };
         tokio::task::spawn_blocking(move || {
             let _writer = writer;
-            self.persist(next).map_err(|error| {
-                log::error!("cannot persist laboratory profile: {error:#}");
-                Status::internal("could not save laboratory profile")
-            })
+            // The blocking write can outlive a cancelled RPC. Keep its authorization
+            // resource here and check its deadline once the write can begin.
+            if let Some(lease) = &authority {
+                lease.check_current()?;
+            }
+            self.persist(next)
         })
         .await
         .map_err(|_| Status::internal("could not save laboratory profile"))?
     }
 
-    fn persist(&self, next: Profile) -> anyhow::Result<pb::LabProfile> {
+    fn persist(&self, next: Profile) -> Result<pb::LabProfile, Status> {
+        let directory_sync_error = self.publish(&next).map_err(|error| {
+            log::error!("cannot persist laboratory profile: {error:#}");
+            Status::internal("could not save laboratory profile")
+        })?;
+        *self.profile.write().unwrap() = next.clone();
+        if let Some(error) = directory_sync_error {
+            log::error!("laboratory profile published but directory sync failed: {error}");
+            return Err(Status::unknown(
+                "laboratory profile durability is uncertain",
+            ));
+        }
+        Ok(next.response(true))
+    }
+
+    /// A post-publication directory-flush error cannot undo the replacement.
+    fn publish(&self, profile: &Profile) -> anyhow::Result<Option<io::Error>> {
         let parent = self.path.parent().expect("profile has a parent directory");
         #[cfg(unix)]
         let directory = File::open(parent)?;
         let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-        temp.write_all(&serde_json::to_vec(&next)?)?;
+        temp.write_all(&serde_json::to_vec(profile)?)?;
+        #[cfg(unix)]
         replace(temp, &self.path)?;
+        #[cfg(windows)]
+        osdl_auth::publish_windows_file(temp, &self.path, true)?;
         #[cfg(unix)]
-        let sync_result = directory.sync_all();
-
-        // A failed directory flush is reported to the caller, but the rename
-        // already made this revision visible on disk.
-        *self.profile.write().unwrap() = next.clone();
-        #[cfg(unix)]
-        sync_result?;
-        Ok(next.response(true))
+        let directory_sync_error = directory.sync_all().err();
+        #[cfg(windows)]
+        let directory_sync_error = None;
+        Ok(directory_sync_error)
     }
 }
 
 fn validate(name: &str, description: &str) -> anyhow::Result<()> {
     ensure!(
-        name.chars().take(129).count() <= 128
+        name.chars().take(MAX_NAME_CHARS + 1).count() <= MAX_NAME_CHARS
             && !name.trim().is_empty()
             && !name
                 .chars()
@@ -165,6 +199,16 @@ fn validate(name: &str, description: &str) -> anyhow::Result<()> {
         "description must be at most 500 characters of text",
     );
     Ok(())
+}
+
+fn hostname_display_name(host: &str, instance: &str) -> String {
+    let bounded = host.trim().chars().take(MAX_NAME_CHARS).collect::<String>();
+    let name = bounded.trim_end();
+    if validate(name, "").is_ok() {
+        name.to_owned()
+    } else {
+        instance.to_owned()
+    }
 }
 
 #[cfg(unix)]
@@ -199,34 +243,5 @@ fn hostname() -> io::Result<String> {
 fn replace(temp: tempfile::NamedTempFile, path: &Path) -> io::Result<()> {
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|error| error.error)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn replace(mut temp: tempfile::NamedTempFile, path: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, SetFileAttributesW, FILE_ATTRIBUTE_NORMAL, MOVEFILE_REPLACE_EXISTING,
-        MOVEFILE_WRITE_THROUGH,
-    };
-
-    let wide = |path: &Path| {
-        path.as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>()
-    };
-    let source = wide(temp.path());
-    let destination = wide(path);
-    // SAFETY: Both paths are NUL-terminated UTF-16 arrays valid for these calls.
-    if unsafe { SetFileAttributesW(source.as_ptr(), FILE_ATTRIBUTE_NORMAL) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    temp.as_file().sync_all()?;
-    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
-    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), flags) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    temp.disable_cleanup(true);
     Ok(())
 }

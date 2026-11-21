@@ -238,6 +238,8 @@ pub fn open_lock(path: &Path) -> Result<std::fs::File> {
         .open(path)?)
 }
 
+/// Publish an already-written temporary file durably in its own directory.
+/// Callers own the temporary file's permissions and content.
 pub fn publish(mut temp: tempfile::NamedTempFile, path: &Path, replace: bool) -> Result<()> {
     ensure!(
         temp.path().parent() == path.parent(),

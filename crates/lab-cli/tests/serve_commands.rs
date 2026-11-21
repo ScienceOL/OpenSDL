@@ -17,6 +17,7 @@ fn serve_exits_when_its_listener_cannot_bind() {
                 .args(["--instance", "listener-failure", "--socket", "disabled"])
                 .args(["--listen", &address, "--data-dir"])
                 .arg(data.path())
+                .env_remove("OSDL_LOCAL_CAPABILITY")
                 .env("OSDL_AUTH_TOKEN", "listener-failure")
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -36,8 +37,17 @@ fn serve_exits_when_its_listener_cannot_bind() {
 
 #[tokio::test]
 async fn serve_displays_the_cli_name_ahead_of_the_environment_default() {
+    assert_profile_server(false).await;
+}
+
+#[tokio::test]
+async fn provisioned_local_authority_can_edit_the_profile_without_discovery() {
+    assert_profile_server(true).await;
+}
+
+async fn assert_profile_server(writable: bool) {
     let paths = osdl_server::Paths::discover().unwrap();
-    let instance = format!("serve-profile-{}", std::process::id());
+    let instance = format!("serve-profile-{writable}-{}", std::process::id());
     let data = tempfile::tempdir().unwrap();
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_lab"))
         .args(["serve", "--simulation", "--auth", "static"])
@@ -45,6 +55,7 @@ async fn serve_displays_the_cli_name_ahead_of_the_environment_default() {
         .args(["--listen", "127.0.0.1:0", "--data-dir"])
         .arg(data.path())
         .args(["--name", "Microscopy"])
+        .env("OSDL_LOCAL_CAPABILITY", writable.to_string())
         .env("OSDL_LAB_NAME", "Different name")
         .env("OSDL_AUTH_TOKEN", "profile-test")
         .stdin(Stdio::null())
@@ -103,16 +114,23 @@ async fn serve_displays_the_cli_name_ahead_of_the_environment_default() {
         .into_inner()
         .laboratory
         .unwrap();
-    assert!(!profile.writable);
-    let denied = client
+    assert_eq!(profile.writable, writable);
+    let result = client
         .update_lab_profile(pb::UpdateLabProfileRequest {
-            name: "Static edit".into(),
+            name: "Updated microscopy lab".into(),
             description: String::new(),
             revision: profile.revision,
         })
-        .await
-        .unwrap_err();
-    assert_eq!(denied.code(), tonic::Code::PermissionDenied);
+        .await;
+    if writable {
+        assert_eq!(result.unwrap().into_inner().name, "Updated microscopy lab");
+        assert!(!paths
+            .lock_dir()
+            .join(format!("private-{instance}"))
+            .exists());
+    } else {
+        assert_eq!(result.unwrap_err().code(), tonic::Code::PermissionDenied);
+    }
     client.shutdown(pb::ShutdownRequest {}).await.unwrap();
     tokio::time::timeout(Duration::from_secs(5), child.wait())
         .await

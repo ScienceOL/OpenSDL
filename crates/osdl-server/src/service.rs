@@ -140,14 +140,15 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         request: Request<pb::UpdateLabProfileRequest>,
     ) -> Result<Response<pb::LabProfile>, Status> {
-        if !self.authorizer.lab_profile_writable(&request)? {
-            return Err(Status::permission_denied("laboratory profile update denied"));
-        }
+        let lease = self.authorizer.authorize_lab_profile_update(&request)?;
         let store = self
             .lab_profile
             .clone()
             .ok_or_else(|| Status::failed_precondition("laboratory profile unavailable"))?;
-        store.update(request.into_inner()).await.map(Response::new)
+        store
+            .update(request.into_inner(), lease)
+            .await
+            .map(Response::new)
     }
 
     async fn list_nodes(

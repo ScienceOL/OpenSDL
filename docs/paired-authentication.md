@@ -90,9 +90,11 @@ Local mode rejects LAN, Tailnet and all-interface bindings and disables mDNS
 advertisement. Account/public-key services retain separate local administrator
 authority: a Unix UDS or a distinct authenticated Windows loopback listener.
 
-Supervisors intentionally supplying `OSDL_AUTH_TOKEN` must select `--auth static`.
-Static mode requires a nonempty token; it is an explicit internal/standalone
-mode, never a fallback from local/account/public-key authority.
+A supervisor can provision a private local capability with `--auth static`,
+`--local-capability` (or `OSDL_LOCAL_CAPABILITY=true`), an explicit loopback
+`--listen` address, and a nonempty `OSDL_AUTH_TOKEN`. The server leaves the
+token out of discovery storage. Ordinary static bearer TCP connections can
+read the laboratory profile.
 
 ## Persistence and client integration
 

@@ -39,7 +39,7 @@ pub(crate) async fn tcp(
         },
     };
     let authorizer = match (local, &policy) {
-        (true, ListenerAuth::Local) => Authorizer::ProtectedLocal,
+        (true, _) => Authorizer::ProtectedLocal,
         (false, ListenerAuth::Account(a)) => Authorizer::Account(a.clone()),
         (false, ListenerAuth::PublicKey(a)) => Authorizer::PublicKey(a.clone()),
         _ => Authorizer::Local,
@@ -102,11 +102,6 @@ pub(crate) async fn unix(
     policy: ListenerAuth,
     shutdown: Arc<Notify>,
 ) -> Result<(), tonic::transport::Error> {
-    let authorizer = if matches!(policy, ListenerAuth::Local) {
-        Authorizer::ProtectedLocal
-    } else {
-        Authorizer::Local
-    };
     let grants = match policy {
         ListenerAuth::PublicKey(auth) => Some(
             pb::grant_administration_server::GrantAdministrationServer::new(auth)
@@ -117,7 +112,7 @@ pub(crate) async fn unix(
     };
     tonic::transport::Server::builder()
         .add_service(pb::osdl_server::OsdlServer::new(
-            service.with_authorizer(authorizer),
+            service.with_authorizer(Authorizer::ProtectedLocal),
         ))
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(

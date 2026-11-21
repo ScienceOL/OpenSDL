@@ -10,7 +10,7 @@ use tonic::{Request, Status};
 pub enum Authorizer {
     #[default]
     Local,
-    /// Filesystem- or capability-protected endpoint in explicit local mode.
+    /// Filesystem- or capability-protected local administrator endpoint.
     ProtectedLocal,
     /// The caller must terminate mutually authenticated control-plane TLS.
     ControlPlane,
@@ -35,6 +35,19 @@ impl Authorizer {
     pub(crate) fn lab_profile_writable<T>(&self, request: &Request<T>) -> Result<bool, Status> {
         self.evaluate(request, Permission::Read)
             .map(|(_, writable)| writable)
+    }
+
+    pub(crate) fn authorize_lab_profile_update<T>(
+        &self,
+        request: &Request<T>,
+    ) -> Result<Option<Resource>, Status> {
+        let (lease, writable) = self.evaluate(request, Permission::Read)?;
+        if !writable {
+            return Err(Status::permission_denied(
+                "laboratory profile update denied",
+            ));
+        }
+        Ok(lease)
     }
 
     fn evaluate<T>(

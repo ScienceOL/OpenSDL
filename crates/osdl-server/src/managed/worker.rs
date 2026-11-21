@@ -117,7 +117,6 @@ async fn serve(
         handle.clone(),
         crate::ServeConfig {
             instance: record.info.name.clone(),
-            lab_name: None,
             listen: crate::ListenConfig {
                 socket_path: None,
                 tcp_addr: Some("127.0.0.1:0".parse()?),
