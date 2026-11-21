@@ -307,12 +307,27 @@ fn validate_balance(
     Ok(())
 }
 
-/// Apply a Runner-owned revision from this instance's private data directory.
-pub async fn apply_revision(
+/// Admitted configuration for a staged revision. Composition never mutates the live world.
+pub(crate) struct PreparedScene {
+    pub(crate) ticket: uuid::Uuid,
+    revision: u64,
+    config: Option<SimulationConfig>,
+    poses: Vec<osdl_core::simulation::world::DevicePose>,
+}
+
+impl PreparedScene {
+    pub async fn apply(self, engine: &osdl_core::EngineHandle) -> Result<(), String> {
+        engine
+            .apply_simulation_scene(self.revision, self.config.as_ref(), &self.poses)
+            .await
+    }
+}
+
+pub(crate) async fn prepare_revision(
     engine: &osdl_core::EngineHandle,
     revision: u64,
     templates: SceneTemplates,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<PreparedScene> {
     let config = engine.config();
     let world = &config
         .simulation
@@ -378,8 +393,10 @@ pub async fn apply_revision(
     } else {
         None
     };
-    engine
-        .apply_simulation_scene(revision, next.as_ref(), &poses)
-        .await
-        .map_err(anyhow::Error::msg)
+    Ok(PreparedScene {
+        ticket: uuid::Uuid::new_v4(),
+        revision,
+        config: next,
+        poses,
+    })
 }

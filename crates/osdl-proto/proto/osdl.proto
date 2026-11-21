@@ -14,6 +14,7 @@ import "google/protobuf/timestamp.proto";
 // ===== Service =====
 
 service Osdl {
+  rpc PrepareScene(PrepareSceneRequest) returns (PrepareSceneResponse);
   rpc ApplyScene(ApplySceneRequest) returns (ApplySceneResponse);
 
   // Read a bounded snapshot under this server's private snapshot root.
@@ -56,7 +57,9 @@ service Osdl {
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
-message ApplySceneRequest { uint64 revision = 1; }
+message PrepareSceneRequest { uint64 revision = 1; }
+message PrepareSceneResponse { string ticket = 1; }
+message ApplySceneRequest { string ticket = 1; }
 message ApplySceneResponse {}
 
 message PublishMediaRequest {
