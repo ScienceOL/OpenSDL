@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 
+mod observations;
+
 /// Buffer size for the broadcast events channel. Slow subscribers that fall
 /// further behind than this start receiving `RecvError::Lagged(n)` so they
 /// can resync rather than wedging the engine.
@@ -228,7 +230,9 @@ impl EngineHandle {
             device.device_type,
             transport_id
         );
-        self.emit(OsdlEvent::DeviceOnline(device));
+        if device.online {
+            self.emit(OsdlEvent::DeviceOnline(device));
+        }
         self.broadcast_status().await;
         Ok(())
     }
@@ -340,6 +344,9 @@ impl OsdlEngine {
     /// don't fail construction — that matches the previous in-`run()`
     /// behavior.
     pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        if !config.sc9300_instruments.is_empty() {
+            adapters.push(Box::new(crate::sc9300::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -523,6 +530,19 @@ impl OsdlEngine {
             return;
         }
 
+        let sc9300 = match crate::sc9300::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to register SC9300 workstations: {error}");
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
@@ -698,6 +718,9 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
+        if let Some(sc9300) = sc9300 {
+            sc9300.stop().await;
+        }
         self.stop_simulation().await;
 
         if let Some(p) = media_proc.take() {

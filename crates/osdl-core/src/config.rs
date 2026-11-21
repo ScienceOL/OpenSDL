@@ -18,6 +18,9 @@ pub struct OsdlConfig {
     /// owns one serial port and routes frames to/from its ESP-NOW nodes.
     #[serde(default)]
     pub espnow_dongles: Vec<EspNowDongleConfig>,
+    /// Explicit local serial endpoints for SC9300 identity and status reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sc9300_instruments: Vec<Sc9300Config>,
     /// Bus manifests: declares which devices hang off a single transport
     /// (shared RS-485 bus, etc.) when one node announces one hardware_id
     /// but physically bridges multiple addressed devices.
@@ -57,6 +60,13 @@ pub struct OsdlConfig {
     /// Agent and the UI can develop against them without a connected lab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub simulation: Option<SimulationConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Sc9300Config {
+    pub id: String,
+    pub port: String,
 }
 
 /// Configuration for a local simulation world.
