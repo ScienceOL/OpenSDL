@@ -15,6 +15,7 @@ export interface InstrumentNode {
 export interface InstrumentBinding {
   definition: ModelDefinition;
   control(object: InstrumentNode): ModelControl | null;
+  present(values: ModelValues): void;
   apply(state: ModelState): void;
   animate(dt: number): void;
   inspect(jointId: string, value: number): void;

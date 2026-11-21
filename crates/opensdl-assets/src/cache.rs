@@ -333,6 +333,13 @@ impl CacheLease {
         digest: &str,
         destination: &Path,
     ) -> Result<crate::ValidatedAsset, AssetError> {
+        Ok(self.materialize_package(digest, destination)?.0)
+    }
+    pub fn materialize_package(
+        &self,
+        digest: &str,
+        destination: &Path,
+    ) -> Result<(crate::ValidatedAsset, PackageDescriptor), AssetError> {
         crate::materialize::materialize_unlocked(&self.cache, digest, destination)
     }
 
