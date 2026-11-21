@@ -17,6 +17,46 @@ jobs:
   test:
     uses: ./.github/workflows/native-checks.yml
 
+  cluster-binary:
+    name: Build labadm (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-amd64
+            executable: labadm
+          - os: windows-2022
+            target: windows-amd64
+            executable: labadm.exe
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cluster-binary
+      - run: cargo build --locked --release -p lab-cli --bin labadm
+      - name: Record binary digest
+        shell: pwsh
+        env:
+          LABADM_EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          New-Item -Type Directory package | Out-Null
+          Copy-Item -LiteralPath "target/release/$env:LABADM_EXECUTABLE" -Destination package/
+          $hash = (Get-FileHash -Algorithm SHA256 "package/$env:LABADM_EXECUTABLE").Hash.ToLowerInvariant()
+          Set-Content -Encoding ascii -LiteralPath package/SHA256SUMS -Value "$hash  $env:LABADM_EXECUTABLE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: labadm-${{ matrix.target }}-${{ github.sha }}
+          path: package
+          if-no-files-found: error
+          retention-days: 7
+
   model-provenance:
     name: Sign verified model source bundle
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
