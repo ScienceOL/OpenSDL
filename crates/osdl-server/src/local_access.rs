@@ -38,11 +38,20 @@ mod tests {
     #[tokio::test]
     async fn explicit_local_loopback_requires_private_discovery_capability() {
         let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        use osdl_proto::v1 as pb;
+
         let locks = temp.path().join("locks");
-        let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);
+        let engine = osdl_core::OsdlEngine::new(
+            osdl_core::config::OsdlConfig {
+                data_dir: Some(temp.path().to_path_buf()),
+                ..Default::default()
+            },
+            vec![],
+        );
         let handle = engine.handle();
         let config = crate::ServeConfig {
             instance: "private".into(),
+            lab_name: Some("Local Lab".into()),
             listen: crate::ListenConfig {
                 socket_path: None,
                 tcp_addr: Some("127.0.0.1:0".parse().unwrap()),
@@ -75,11 +84,38 @@ mod tests {
                 .code(),
             tonic::Code::Unauthenticated
         );
-        let mut request = tonic::Request::new(osdl_proto::v1::ShutdownRequest {});
-        request.metadata_mut().insert(
-            "authorization",
-            format!("Bearer {}", access.token).parse().unwrap(),
+        let bearer = format!("Bearer {}", access.token)
+            .parse::<tonic::metadata::MetadataValue<_>>()
+            .unwrap();
+        let mut request = tonic::Request::new(pb::StatusRequest {});
+        request.metadata_mut().insert("authorization", bearer.clone());
+        let profile = client
+            .status(request)
+            .await
+            .unwrap()
+            .into_inner()
+            .laboratory
+            .unwrap();
+        assert!(profile.writable);
+        let update = pb::UpdateLabProfileRequest {
+            name: "Local Optics Lab".into(),
+            description: "Installed beside the microscope".into(),
+            revision: profile.revision,
+        };
+        assert_eq!(
+            client
+                .update_lab_profile(update.clone())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
         );
+        let mut request = tonic::Request::new(update);
+        request.metadata_mut().insert("authorization", bearer.clone());
+        let saved = client.update_lab_profile(request).await.unwrap().into_inner();
+        assert_eq!(saved.name, "Local Optics Lab");
+        let mut request = tonic::Request::new(pb::ShutdownRequest {});
+        request.metadata_mut().insert("authorization", bearer);
         client.shutdown(request).await.unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(2), service)
             .await
@@ -109,6 +145,7 @@ mod unix_tests {
             engine.handle(),
             crate::ServeConfig {
                 instance: "unix".into(),
+                lab_name: None,
                 listen: crate::ListenConfig {
                     socket_path: Some(path.clone()),
                     tcp_addr: None,

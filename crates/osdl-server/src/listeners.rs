@@ -38,14 +38,11 @@ pub(crate) async fn tcp(
             _ => None,
         },
     };
-    let authorizer = if local {
-        Authorizer::Local
-    } else {
-        match &policy {
-            ListenerAuth::Account(a) => Authorizer::Account(a.clone()),
-            ListenerAuth::PublicKey(a) => Authorizer::PublicKey(a.clone()),
-            _ => Authorizer::Local,
-        }
+    let authorizer = match (local, &policy) {
+        (true, ListenerAuth::Local) => Authorizer::ProtectedLocal,
+        (false, ListenerAuth::Account(a)) => Authorizer::Account(a.clone()),
+        (false, ListenerAuth::PublicKey(a)) => Authorizer::PublicKey(a.clone()),
+        _ => Authorizer::Local,
     };
     let service = pb::osdl_server::OsdlServer::new(service.with_authorizer(authorizer));
     let interceptor = move |req| {
@@ -105,6 +102,11 @@ pub(crate) async fn unix(
     policy: ListenerAuth,
     shutdown: Arc<Notify>,
 ) -> Result<(), tonic::transport::Error> {
+    let authorizer = if matches!(policy, ListenerAuth::Local) {
+        Authorizer::ProtectedLocal
+    } else {
+        Authorizer::Local
+    };
     let grants = match policy {
         ListenerAuth::PublicKey(auth) => Some(
             pb::grant_administration_server::GrantAdministrationServer::new(auth)
@@ -114,7 +116,9 @@ pub(crate) async fn unix(
         _ => None,
     };
     tonic::transport::Server::builder()
-        .add_service(pb::osdl_server::OsdlServer::new(service))
+        .add_service(pb::osdl_server::OsdlServer::new(
+            service.with_authorizer(authorizer),
+        ))
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::UnixListenerStream::new(listener),

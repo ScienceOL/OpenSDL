@@ -115,7 +115,12 @@ async fn grpc_server() -> (
         socket_path: None,
         listen_addr: None,
     };
-    let service = crate::OsdlService::new(engine.handle(), identity).with_account(account.clone());
+    let data = tempfile::tempdir().unwrap();
+    let profile =
+        crate::lab_profile::Store::open(data.path(), "laboratory", Some("Account Lab")).unwrap();
+    let service = crate::OsdlService::new(engine.handle(), identity)
+        .with_account(account.clone())
+        .with_lab_profile(Some(profile));
     let auth = crate::authorization::info::AuthenticationService {
         policy: crate::auth::ListenerAuth::Account(account.clone()),
         instance: "laboratory".into(),
@@ -123,6 +128,7 @@ async fn grpc_server() -> (
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let task = tokio::spawn(async move {
+        let _data = data;
         tonic::transport::Server::builder()
             .add_service(pb::osdl_server::OsdlServer::new(service))
             .add_service(pb::authentication_server::AuthenticationServer::new(auth))
@@ -179,12 +185,45 @@ async fn grpc_account_boundary_and_scope() {
             .code(),
         tonic::Code::Unauthenticated
     );
-    assert!(client
+    let profile = client
         .status(authorized(pb::StatusRequest {}, &key, claims()))
         .await
-        .is_ok());
+        .unwrap()
+        .into_inner()
+        .laboratory
+        .unwrap();
+    assert!(profile.writable);
     let mut read = claims();
     read["scope"] = json!("opensdl:read");
+    let read_profile = client
+        .status(authorized(pb::StatusRequest {}, &key, read.clone()))
+        .await
+        .unwrap()
+        .into_inner()
+        .laboratory
+        .unwrap();
+    assert!(!read_profile.writable);
+    assert_eq!(read_profile.revision, profile.revision);
+
+    let update = pb::UpdateLabProfileRequest {
+        name: "Account Optics Lab".into(),
+        description: "Account-managed lab".into(),
+        revision: profile.revision,
+    };
+    assert_eq!(
+        client
+            .update_lab_profile(authorized(update.clone(), &key, read.clone()))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
+    let saved = client
+        .update_lab_profile(authorized(update, &key, claims()))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(saved.name, "Account Optics Lab");
     assert_eq!(
         client
             .send_command(authorized(pb::SendCommandRequest::default(), &key, read))

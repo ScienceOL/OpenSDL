@@ -102,11 +102,12 @@ pub struct MediaSourceState {
 impl EngineHandle {
     // === Inspection ===
 
+    pub fn data_dir(&self) -> Option<&std::path::Path> {
+        self.config.data_dir.as_deref()
+    }
+
     pub fn snapshot_root(&self) -> Option<std::path::PathBuf> {
-        self.config
-            .data_dir
-            .as_ref()
-            .map(|path| path.join("snapshots"))
+        self.data_dir().map(|path| path.join("snapshots"))
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {

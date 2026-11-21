@@ -33,6 +33,10 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_INSTANCE", default_value = "default")]
     pub instance: String,
 
+    /// Laboratory display name if there is no saved profile. Defaults to the host name.
+    #[arg(long, env = "OSDL_LAB_NAME")]
+    pub name: Option<String>,
+
     /// Where to bind the Unix domain socket. Default:
     /// `<runtime_dir>/<instance>.sock`. Set `--socket=disabled` to opt
     /// out of UDS entirely (then a TCP listener must be set).
@@ -352,6 +356,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     let advertise_mqtt = !matches!(args.auth, AuthMode::Local);
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
+        lab_name: args.name,
         listen: ListenConfig {
             socket_path,
             tcp_addr: listen_addr,

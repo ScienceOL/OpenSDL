@@ -15,6 +15,7 @@ pub mod account;
 pub mod auth;
 pub mod background;
 pub mod convert;
+mod lab_profile;
 pub mod lockfile;
 pub mod managed;
 mod media_publish;
@@ -75,6 +76,8 @@ impl ListenConfig {
 pub struct ServeConfig {
     /// Logical name for this server instance. One lockfile per instance.
     pub instance: String,
+    /// Initial display name when the instance has no persisted profile.
+    pub lab_name: Option<String>,
     /// Where to listen. Both UDS and TCP can be set; either alone is fine.
     pub listen: ListenConfig,
     /// Where to write the instance lockfile (typically `paths.lock_dir()`).
@@ -88,6 +91,8 @@ pub enum ServeError {
     NoListener,
     #[error("authentication configuration: {0}")]
     Auth(String),
+    #[error("laboratory profile: {0:#}")]
+    LabProfile(#[source] anyhow::Error),
     #[error("lockfile error: {0}")]
     Lock(String),
     #[error("io error: {0}")]
@@ -163,6 +168,11 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         listen_addr_str.clone(),
     );
     let _lock = lockfile::write(&cfg.lock_dir, &record).map_err(ServeError::Lock)?;
+    let lab_profile = engine
+        .data_dir()
+        .map(|dir| lab_profile::Store::open(dir, &cfg.instance, cfg.lab_name.as_deref()))
+        .transpose()
+        .map_err(ServeError::LabProfile)?;
 
     // Now safe to unlink the UDS path (it's stale by definition — no
     // live server has the lock), then bind. Failures here propagate
@@ -204,7 +214,8 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     // (which would otherwise hold the RPC open until its broadcast
     // sender closes — i.e. forever, since the service still owns it).
     let shutdown = Arc::new(Notify::new());
-    let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone());
+    let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone())
+        .with_lab_profile(lab_profile);
 
     let mut joins: Vec<tokio::task::JoinHandle<Result<(), tonic::transport::Error>>> = Vec::new();
 
@@ -340,6 +351,7 @@ mod shutdown_signal_tests {
         handle.request_stop();
         let config = super::ServeConfig {
             instance: "stopped".into(),
+            lab_name: None,
             listen: super::ListenConfig {
                 socket_path: None,
                 tcp_addr: Some("127.0.0.1:0".parse().unwrap()),
