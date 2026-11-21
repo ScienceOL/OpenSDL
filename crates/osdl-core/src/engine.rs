@@ -1,3 +1,5 @@
+mod observations;
+
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
@@ -228,7 +230,9 @@ impl EngineHandle {
             device.device_type,
             transport_id
         );
-        self.emit(OsdlEvent::DeviceOnline(device));
+        if device.online {
+            self.emit(OsdlEvent::DeviceOnline(device));
+        }
         self.broadcast_status().await;
         Ok(())
     }
@@ -340,6 +344,9 @@ impl OsdlEngine {
     /// don't fail construction — that matches the previous in-`run()`
     /// behavior.
     pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        if !config.qx96m_instruments.is_empty() {
+            adapters.push(Box::new(crate::qx96m::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -523,6 +530,19 @@ impl OsdlEngine {
             return;
         }
 
+        let qx96m = match crate::qx96m::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to configure QX96M devices: {error}");
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
@@ -698,6 +718,7 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
+        qx96m.stop(&self.handle).await;
         self.stop_simulation().await;
 
         if let Some(p) = media_proc.take() {
