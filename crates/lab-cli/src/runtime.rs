@@ -352,6 +352,10 @@ fn build_config(args: &EngineArgs) -> anyhow::Result<OsdlConfig> {
             log::warn!("--simulation ignores ESP-NOW dongles from the recipe");
             cfg.espnow_dongles.clear();
         }
+        if !cfg.sc9300_instruments.is_empty() {
+            log::warn!("--simulation ignores SC9300 workstations from the recipe");
+            cfg.sc9300_instruments.clear();
+        }
     }
 
     Ok(cfg)
