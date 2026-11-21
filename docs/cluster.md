@@ -60,6 +60,20 @@ labadm --cluster-config admin.yaml init
 labadm --cluster-config control.yaml serve
 ~~~
 
+需要从 LiyanLabs 接入时，在控制面服务账户下为该控制面实例执行账号绑定。将下列配置加入 `control.yaml` 后启动现有的 `labadm serve`。此监听复用集群目录和节点证书路由。
+
+~~~yaml
+account_gateway:
+  listen: "100.64.0.10:50051"
+  instance: lab-a
+~~~
+
+~~~sh
+lab --instance lab-a login --server https://test.liyanlabs.com
+~~~
+
+在同环境的 LiyanLabs 中选择同一账号连接，填写上述地址。账号入口只允许回环或显式配置的 Tailscale IPv4 地址。设备使用 `工作节点:设备 ID` 寻址，设备命令、事件和摄像头发布都转发到设备所在的工作节点。集群成员变更后重连即可刷新事件订阅。
+
 工作节点示例使用 worker-01.lab-a.worker.opensdl.internal 作为证书 SAN。
 
 ~~~yaml

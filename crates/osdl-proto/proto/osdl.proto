@@ -214,6 +214,7 @@ message Event {
     MediaSourceOnlineEvent media_source_online = 7;
     MediaGatewayDownEvent media_gateway_down = 8;
     LaggedEvent lagged = 9;
+    WorkerUnavailableEvent worker_unavailable = 10;
   }
 }
 
@@ -254,6 +255,12 @@ message MediaSourceOnlineEvent {
 
 message MediaGatewayDownEvent {
   string reason = 1;
+  // When present, only camera IDs prefixed with this namespace and ":" are affected.
+  optional string source_namespace = 2;
+}
+
+message WorkerUnavailableEvent {
+  string worker = 1;
 }
 
 // Synthetic — emitted when the server-side broadcast buffer dropped events

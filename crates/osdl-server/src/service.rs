@@ -323,6 +323,7 @@ fn event_kind_matches(ev: &pb::Event, allowed: &[String]) -> bool {
         Some(pb::event::Kind::UnknownNode(_)) => "unknown_node",
         Some(pb::event::Kind::MediaSourceOnline(_)) => "media_source_online",
         Some(pb::event::Kind::MediaGatewayDown(_)) => "media_gateway_down",
+        Some(pb::event::Kind::WorkerUnavailable(_)) => "worker_unavailable",
         Some(pb::event::Kind::Lagged(_)) => "lagged",
         None => return false,
     };

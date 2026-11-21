@@ -197,7 +197,7 @@ fn parse_after(name: &str) -> Result<Option<Id>, Status> {
     }
 }
 
-async fn deadline<T>(
+pub(super) async fn deadline<T>(
     rpc: impl std::future::Future<Output = Result<Response<T>, Status>>,
 ) -> Result<Response<T>, Status> {
     forward(RPC_TIMEOUT, rpc).await

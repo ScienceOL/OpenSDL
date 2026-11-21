@@ -132,6 +132,79 @@ async fn grpc_server() -> (
     });
     (addr, task, key, account)
 }
+
+#[tokio::test]
+async fn gateway_applies_the_account_boundary_before_dispatching() {
+    let (binding, key) = fixture();
+    let account = AccountAuth::new(binding).unwrap();
+    let engine = osdl_core::OsdlEngine::new(osdl_core::config::OsdlConfig::default(), vec![]);
+    let identity = crate::ServerIdentity {
+        instance: "laboratory".into(),
+        version: "test".into(),
+        pid: 0,
+        started_at: crate::convert::now_ts(),
+        socket_path: None,
+        listen_addr: None,
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(crate::serve_account_endpoint(
+        listener,
+        account,
+        crate::OsdlService::new(engine.handle(), identity),
+        4 * 1024 * 1024,
+    ));
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut auth = pb::authentication_client::AuthenticationClient::new(channel.clone());
+    let info = auth
+        .info(pb::AuthenticationInfoRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(info.instance, "laboratory");
+    assert_eq!(info.mode, "account");
+
+    let mut client = pb::osdl_client::OsdlClient::new(channel);
+    assert_eq!(
+        client
+            .list_devices(pb::ListDevicesRequest::default())
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated
+    );
+    let mut read = claims();
+    read["scope"] = json!("opensdl:read");
+    client
+        .list_devices(authorized(
+            pb::ListDevicesRequest::default(),
+            &key,
+            read.clone(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .send_command(authorized(pb::SendCommandRequest::default(), &key, read))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
+    assert_eq!(
+        client
+            .shutdown(authorized(pb::ShutdownRequest {}, &key, claims()))
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
+    task.abort();
+}
 async fn grpc_fixture() -> (
     pb::osdl_client::OsdlClient<tonic::transport::Channel>,
     pb::authentication_client::AuthenticationClient<tonic::transport::Channel>,

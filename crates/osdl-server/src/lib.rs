@@ -12,6 +12,7 @@
 //! `expose-it-via-gRPC` keeps that mode simple.
 
 pub mod account;
+mod account_endpoint;
 pub mod auth;
 pub mod background;
 pub mod convert;
@@ -32,6 +33,7 @@ mod listeners;
 pub mod local_access;
 use tokio::sync::Notify;
 
+pub use account_endpoint::serve_account_endpoint;
 pub use lockfile::{InstanceRecord, LockfileGuard};
 pub use paths::Paths;
 pub use service::{OsdlService, ServerIdentity};

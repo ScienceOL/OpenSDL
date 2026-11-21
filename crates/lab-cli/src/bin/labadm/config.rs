@@ -59,6 +59,14 @@ pub struct ControlConfig {
     pub incoming: TlsFiles,
     pub workers: TlsFiles,
     pub directory: DirectoryConfig,
+    pub account_gateway: Option<AccountGatewayConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccountGatewayConfig {
+    pub listen: SocketAddr,
+    pub instance: String,
 }
 
 #[derive(Deserialize)]
