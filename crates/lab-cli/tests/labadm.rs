@@ -12,3 +12,15 @@ fn topology_and_device_commands_are_available() {
         assert!(help.contains(command), "missing labadm command {command}");
     }
 }
+
+#[test]
+fn lab_serve_can_attach_a_cluster_worker() {
+    let help = Command::new(env!("CARGO_BIN_EXE_lab"))
+        .args(["serve", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(String::from_utf8(help.stdout)
+        .unwrap()
+        .contains("--cluster-worker"));
+}

@@ -43,6 +43,10 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_LISTEN")]
     pub listen: Option<SocketAddr>,
 
+    /// Expose the same engine to a cluster control plane using this worker YAML.
+    #[arg(long)]
+    pub cluster_worker: Option<PathBuf>,
+
     /// Run in the background as a Unix daemon. Stdout/stderr are
     /// redirected to `--log-file`. The current process forks twice,
     /// detaches from the controlling terminal, and exits — leaving the
@@ -120,6 +124,9 @@ fn expand_env_in_path_args(args: &mut ServeArgs) {
         PathBuf::from(path_expand::expand_vars(&p.to_string_lossy()))
     }
     args.engine.expand_paths();
+    if let Some(p) = args.cluster_worker.as_deref() {
+        args.cluster_worker = Some(expand_pathbuf(p));
+    }
     if let Some(p) = args.log_file.as_deref() {
         args.log_file = Some(expand_pathbuf(p));
     }
@@ -156,6 +163,9 @@ fn absolutize_path_args(args: &mut ServeArgs) -> anyhow::Result<()> {
     }
     if let Some(p) = args.engine.registry.as_deref() {
         args.engine.registry = Some(require_existing(p)?);
+    }
+    if let Some(p) = args.cluster_worker.as_deref() {
+        args.cluster_worker = Some(require_existing(p)?);
     }
     if let Some(p) = args.engine.data_dir.as_deref() {
         args.engine.data_dir = Some(make_absolute(p)?);
@@ -350,6 +360,15 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         .map_err(anyhow::Error::msg)?;
 
     let advertise_mqtt = !matches!(args.auth, AuthMode::Local);
+    let worker = match args.cluster_worker.as_deref() {
+        Some(path) => Some(lab_cli::cluster::worker_listener(path).await?),
+        None => None,
+    };
+    let mode = if worker.is_some() {
+        EngineMode::WorkPlane
+    } else {
+        EngineMode::Standalone { advertise_mqtt }
+    };
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
         listen: ListenConfig {
@@ -363,9 +382,9 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         args.engine,
         &args.instance,
         paths.state_dir,
-        EngineMode::Standalone { advertise_mqtt },
+        mode,
         |handle| async {
-            osdl_server::serve(handle, serve_cfg)
+            osdl_server::serve_with_worker(handle, serve_cfg, worker)
                 .await
                 .map_err(Into::into)
         },

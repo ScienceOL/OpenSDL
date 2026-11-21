@@ -83,6 +83,16 @@ labadm --cluster-config worker.yaml join --simulation --data-dir ./worker-01-dat
 labadm --cluster-config worker.yaml join --config ./devices.yaml --registry ./registry/unilabos --data-dir ./worker-01-data
 ~~~
 
+如果这台主机还需要让桌面插件直接连接，用 `lab serve --cluster-worker` 启动同一个设备引擎。保留现有实例名、设备配方和状态目录，在工作节点 YAML 中保留集群身份、证书和监听地址。桌面插件继续使用实验室的账户或配对认证端口，控制面使用工作节点的双向 TLS 端口。
+
+~~~sh
+lab login --server https://test.liyanlabs.com --instance laboratory
+lab serve --instance laboratory --auth account --listen 100.64.0.9:50051 \
+  --config ./devices.yaml --data-dir ./laboratory-data --cluster-worker ./worker.yaml
+~~~
+
+从两进程迁移时，停止原来的 `lab serve` 和同主机的 `labadm join`，再启动上面的服务。保留工作节点原来已登记的地址和证书，控制面会继续使用同一条目录记录。相机视频源、设备连接、事件日志和推流进程由共享引擎持有。
+
 管理员从能访问该工作节点的主机完成接入。admit 会先验证节点证书和引擎身份，再提交注册。所有副本读取同一条记录。迁移仪器前先停止旧的工作节点，通过 forget 移除旧路由，再以新节点接入。
 
 ~~~sh

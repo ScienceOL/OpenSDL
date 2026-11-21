@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -39,6 +40,17 @@ impl TlsFiles {
 }
 
 impl Tls {
+    pub async fn worker_listener(
+        self,
+        name: String,
+        address: SocketAddr,
+    ) -> anyhow::Result<osdl_server::cluster::WorkerListener> {
+        Ok(
+            osdl_server::cluster::WorkerListener::bind(name, address, self.identity, self.ca)
+                .await?,
+        )
+    }
+
     pub fn server(self) -> ServerTlsConfig {
         ServerTlsConfig::new()
             .identity(self.identity)
