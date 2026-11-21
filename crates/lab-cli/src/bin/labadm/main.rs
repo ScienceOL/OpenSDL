@@ -1,11 +1,8 @@
-mod config;
 mod control;
 mod directory;
 mod etcd;
 mod operator;
 mod routes;
-mod tls;
-mod worker;
 
 use std::{
     net::SocketAddr,
@@ -14,13 +11,14 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use lab_cli::runtime::EngineArgs;
+use lab_cli::cluster::{self, config, tls};
+use lab_cli::runtime::{run_engine, EngineArgs, EngineMode};
 use osdl_proto::cluster::v1::control_plane_server::ControlPlaneServer;
 use tokio::{net::TcpListener, signal};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 
-use config::{ControlConfig, Id, WorkerConfig};
+use config::{ControlConfig, Id};
 use control::Control;
 use directory::{Directory, Worker};
 use etcd::Etcd;
@@ -63,15 +61,18 @@ async fn main() -> Result<()> {
     let path = &cluster_config;
     match command {
         Command::Join(mut engine) => {
-            let config: WorkerConfig = config::read(path)?;
-            let tls = config.incoming.load(path)?;
             engine.expand_paths();
-            log::info!(
-                "starting worker {} in cluster {}",
-                config.worker,
-                config.cluster
-            );
-            worker::serve(config, tls, engine).await
+            let listener = cluster::worker_listener(path).await?;
+            let instance = listener.worker_name().to_owned();
+            let paths = osdl_server::Paths::discover().map_err(anyhow::Error::msg)?;
+            run_engine(
+                engine,
+                &instance,
+                paths.state_dir,
+                EngineMode::WorkPlane,
+                |handle| async { listener.serve(handle).await.map_err(Into::into) },
+            )
+            .await
         }
         Command::Operator(command) => operator::run(command, path).await,
         command => manage(command, path).await,

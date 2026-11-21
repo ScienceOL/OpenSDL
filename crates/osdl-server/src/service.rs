@@ -44,6 +44,11 @@ pub struct OsdlService {
 }
 
 impl OsdlService {
+    pub(crate) fn with_identity(mut self, identity: ServerIdentity) -> Self {
+        self.identity = identity;
+        self
+    }
+
     pub fn with_account(mut self, account: crate::account::AccountAuth) -> Self {
         self.authorizer = Authorizer::Account(account);
         self

@@ -6,8 +6,7 @@ use crate::{
     OsdlService,
 };
 use osdl_proto::v1 as pb;
-use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 pub(crate) enum TcpAccess {
     Remote,
     LocalCapability(String),
@@ -24,7 +23,7 @@ pub(crate) async fn tcp(
     policy: ListenerAuth,
     instance: String,
     access: TcpAccess,
-    shutdown: Arc<Notify>,
+    stopped: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let key = match &policy {
         ListenerAuth::PublicKey(a) => Some(a.clone()),
@@ -94,7 +93,7 @@ pub(crate) async fn tcp(
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async move { shutdown.notified().await },
+            crate::listener_stopped(stopped),
         )
         .await
 }
@@ -103,7 +102,7 @@ pub(crate) async fn unix(
     listener: tokio::net::UnixListener,
     service: OsdlService,
     policy: ListenerAuth,
-    shutdown: Arc<Notify>,
+    stopped: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let grants = match policy {
         ListenerAuth::PublicKey(auth) => Some(
@@ -118,7 +117,7 @@ pub(crate) async fn unix(
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::UnixListenerStream::new(listener),
-            async move { shutdown.notified().await },
+            crate::listener_stopped(stopped),
         )
         .await
 }

@@ -4,7 +4,7 @@ use anyhow::{ensure, Context};
 use serde::{de::DeserializeOwned, Deserialize};
 use tonic::transport::Endpoint;
 
-use crate::tls::TlsFiles;
+use super::tls::TlsFiles;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(try_from = "String")]
