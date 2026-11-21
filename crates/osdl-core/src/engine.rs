@@ -219,10 +219,18 @@ impl EngineHandle {
             ));
         }
 
-        self.devices
-            .write()
-            .await
-            .insert(device_id.clone(), device.clone());
+        {
+            let mut devices = self.devices.write().await;
+            if devices
+                .get(&device_id)
+                .is_some_and(|current| current.transport_id != transport_id)
+            {
+                return Err(format!(
+                    "device ID '{device_id}' is already registered with another transport"
+                ));
+            }
+            devices.insert(device_id.clone(), device.clone());
+        }
 
         log::info!(
             "Device registered: {} ({}) on transport {}",
@@ -718,7 +726,9 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
-        qx96m.stop(&self.handle).await;
+        if let Some(qx96m) = qx96m {
+            qx96m.stop().await;
+        }
         self.stop_simulation().await;
 
         if let Some(p) = media_proc.take() {

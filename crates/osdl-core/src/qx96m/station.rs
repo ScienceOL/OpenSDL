@@ -2,11 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::{self, MissedTickBehavior};
 
@@ -16,7 +17,8 @@ use crate::protocol::{ActionSchema, CommandResult, CommandStatus, Device, Device
 use crate::transport::Transport;
 use crate::EngineHandle;
 
-use super::client::{Client, EquipmentState, Identity};
+use super::client::{Client, Observation, READ_TIMEOUT};
+use super::Error;
 
 const DEVICE_TYPE: &str = "jialeme.qpcr";
 const ADAPTER: &str = "qx96m";
@@ -107,18 +109,30 @@ impl ProtocolAdapter for Adapter {
 struct Station {
     id: String,
     transport_id: String,
-    client: Client,
+    reader: Mutex<Reader>,
     online: AtomicBool,
+    engine: Weak<EngineHandle>,
+}
+
+struct Reader {
+    client: Client,
+    stopped: bool,
+    last_failure: Option<Error>,
 }
 
 impl Station {
-    fn new(config: &Qx96mConfig) -> Result<Self, String> {
+    fn new(config: &Qx96mConfig, engine: &Arc<EngineHandle>) -> Result<Self, String> {
         config.validate()?;
         Ok(Self {
             id: config.id.clone(),
             transport_id: format!("{ADAPTER}:{}", config.id),
-            client: Client::new(config.endpoint, load_key(&config.key_file)?),
+            reader: Mutex::new(Reader {
+                client: Client::new(config.endpoint, load_key(&config.key_file)?),
+                stopped: false,
+                last_failure: None,
+            }),
             online: AtomicBool::new(false),
+            engine: Arc::downgrade(engine),
         })
     }
 
@@ -137,34 +151,63 @@ impl Station {
         }
     }
 
-    async fn sample(
-        &self,
-        read_status: bool,
-    ) -> Result<(Identity, Option<EquipmentState>), String> {
-        let result = self.client.read(read_status).await;
-        self.online.store(result.is_ok(), Ordering::Relaxed);
-        result.map_err(|error| error.to_string())
+    async fn read(&self, action: Action) -> Result<Observation, Error> {
+        // Bound admission and I/O independently, so time spent waiting for
+        // another read never shortens a newly acquired instrument exchange.
+        let mut reader = time::timeout(READ_TIMEOUT, self.reader.lock())
+            .await
+            .map_err(|_| Error::Unavailable)?;
+        if reader.stopped {
+            return Err(Error::Unavailable);
+        }
+        // The same owner serializes reads and publishes their observations in
+        // order. A status from the monitor cannot overwrite a newer RPC read.
+        let result = reader.client.read(matches!(action, Action::Status)).await;
+        let properties = match &result {
+            Ok(observation) => {
+                reader.last_failure = None;
+                let mut properties =
+                    HashMap::from([("identity".into(), json!(observation.identity))]);
+                if let Some(state) = observation.state {
+                    properties.insert("state".into(), json!(state));
+                }
+                Some(properties)
+            }
+            Err(error) => {
+                if reader.last_failure != Some(*error) {
+                    log::warn!("QX96M device {}: {error}", self.id);
+                    reader.last_failure = Some(*error);
+                }
+                None
+            }
+        };
+        self.record(properties).await;
+        result
     }
 
-    async fn monitor(&self, engine: EngineHandle) {
-        let mut observations = time::interval(OBSERVATION_INTERVAL);
-        observations.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        loop {
-            observations.tick().await;
-            let properties = match self.sample(true).await {
-                Ok((identity, state)) => Some(HashMap::from([
-                    ("identity".into(), json!(identity)),
-                    ("state".into(), json!(state)),
-                ])),
-                Err(error) => {
-                    log::debug!("QX96M device {}: {error}", self.id);
-                    None
-                }
-            };
+    async fn record(&self, properties: Option<HashMap<String, Value>>) {
+        self.online.store(properties.is_some(), Ordering::Relaxed);
+        if let Some(engine) = self.engine.upgrade() {
             engine
                 .record_device_observation(&self.id, &self.transport_id, properties)
                 .await;
         }
+    }
+
+    async fn monitor(&self) {
+        let mut observations = time::interval(OBSERVATION_INTERVAL);
+        observations.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        loop {
+            observations.tick().await;
+            let _ = self.read(Action::Status).await;
+        }
+    }
+
+    async fn stop(&self) {
+        let mut reader = self.reader.lock().await;
+        reader.stopped = true;
+        reader.client.close();
+        self.record(None).await;
     }
 }
 
@@ -192,11 +235,13 @@ impl Transport for Station {
         if command.device_id != self.id {
             return Err("QX96M read targets another device".into());
         }
-        let read_status = matches!(command.action, Action::Status);
-        let (identity, state) = self.sample(read_status).await?;
-        let data = match state {
-            Some(state) => json!({"state":state}),
-            None => json!(identity),
+        let observation = self
+            .read(command.action)
+            .await
+            .map_err(|error| error.to_string())?;
+        let data = match command.action {
+            Action::Identity => json!(observation.identity),
+            Action::Status => json!({"state":observation.state.ok_or("QX96M status unavailable")?}),
         };
         Ok(Some(CommandResult {
             device_id: command.device_id,
@@ -211,10 +256,16 @@ impl Transport for Station {
 pub(crate) struct Runtime {
     monitors: JoinSet<()>,
     stations: Vec<Arc<Station>>,
+    // Registered transports refer back weakly to avoid an ownership cycle.
+    _engine: Arc<EngineHandle>,
 }
 
 impl Runtime {
-    pub(crate) async fn start(engine: &EngineHandle) -> Result<Self, String> {
+    pub(crate) async fn start(engine: &EngineHandle) -> Result<Option<Self>, String> {
+        if engine.config().qx96m_instruments.is_empty() {
+            return Ok(None);
+        }
+        let engine = Arc::new(engine.clone());
         let mut ids = HashSet::new();
         let mut endpoints = HashSet::new();
         let mut stations = Vec::new();
@@ -222,7 +273,13 @@ impl Runtime {
             if !ids.insert(&config.id) || !endpoints.insert(config.endpoint) {
                 return Err("QX96M device IDs and endpoints must be unique".into());
             }
-            stations.push(Arc::new(Station::new(config)?));
+            if engine.get_device(&config.id).await.is_some() {
+                return Err(format!(
+                    "QX96M device ID '{}' is already registered",
+                    config.id
+                ));
+            }
+            stations.push(Arc::new(Station::new(config, &engine)?));
         }
         let mut monitors = JoinSet::new();
         for station in &stations {
@@ -231,20 +288,19 @@ impl Runtime {
                 .await;
             engine.register_device(station.device()).await?;
             let station = station.clone();
-            let engine = engine.clone();
-            monitors.spawn(async move { station.monitor(engine).await });
+            monitors.spawn(async move { station.monitor().await });
         }
-        Ok(Self { monitors, stations })
+        Ok(Some(Self {
+            monitors,
+            stations,
+            _engine: engine,
+        }))
     }
 
-    pub(crate) async fn stop(mut self, engine: &EngineHandle) {
+    pub(crate) async fn stop(mut self) {
         self.monitors.shutdown().await;
         for station in self.stations {
-            station.client.stop().await;
-            station.online.store(false, Ordering::Relaxed);
-            engine
-                .record_device_observation(&station.id, &station.transport_id, None)
-                .await;
+            station.stop().await;
         }
     }
 }

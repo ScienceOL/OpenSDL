@@ -47,6 +47,17 @@ async fn station_uses_one_session_for_observation_and_typed_reads() {
                     .as_bytes()
                 );
             }
+            if id == 2 {
+                for unrelated in [
+                    br#"{"ID":"event","Type":20,"State":"busy","Data":null}"#.as_slice(),
+                    br#"{"ID":3,"Type":3,"State":"unrelated","Data":{"event":true}}"#,
+                ] {
+                    link.get_mut()
+                        .write_all(&super::super::wire::encode(unrelated, KEY))
+                        .await
+                        .unwrap();
+                }
+            }
             let reply = serde_json::to_string(
                 &json!({"ID":id,"Type":kind,"State":0,"Result":result,"Data":data}),
             )
@@ -60,24 +71,39 @@ async fn station_uses_one_session_for_observation_and_typed_reads() {
         }
     });
 
-    let handle = OsdlEngine::new(Default::default(), vec![Box::new(Adapter)]).handle();
+    let handle = Arc::new(OsdlEngine::new(Default::default(), vec![Box::new(Adapter)]).handle());
     let mut events = handle.subscribe_events();
     let station = Arc::new(Station {
         id: "jlm-qpcr".into(),
         transport_id: "qx96m:jlm-qpcr".into(),
-        client: Client::new(endpoint, *KEY),
+        reader: Mutex::new(Reader {
+            client: Client::new(endpoint, *KEY),
+            last_failure: None,
+            stopped: false,
+        }),
         online: AtomicBool::new(false),
+        engine: Arc::downgrade(&handle),
     });
     handle
         .register_transport(station.transport_id.clone(), station.clone())
         .await;
     handle.register_device(station.device()).await.unwrap();
+    let mut collision = station.device();
+    collision.transport_id = "other-transport".into();
+    handle
+        .register_transport(collision.transport_id.clone(), station.clone())
+        .await;
+    let error = handle.register_device(collision).await.unwrap_err();
+    assert!(error.contains("already registered with another transport"));
+    assert_eq!(
+        handle.get_device(&station.id).await.unwrap().transport_id,
+        station.transport_id
+    );
     assert!(!handle.get_device(&station.id).await.unwrap().online);
     assert!(events.try_recv().is_err());
     let monitor = tokio::spawn({
         let station = station.clone();
-        let handle = handle.clone();
-        async move { station.monitor(handle).await }
+        async move { station.monitor().await }
     });
     let OsdlEvent::DeviceOnline(device) = time::timeout(Duration::from_secs(2), events.recv())
         .await
@@ -114,9 +140,22 @@ async fn station_uses_one_session_for_observation_and_typed_reads() {
     let status = call("run_status").await.unwrap();
     assert_eq!(status.command_id, "fixture-run_status");
     assert_eq!(status.data.unwrap(), json!({"state":"active"}));
+    assert_eq!(
+        handle.get_device(&station.id).await.unwrap().properties["state"],
+        "active"
+    );
+    call("device_info").await.unwrap();
+    assert_eq!(
+        handle.get_device(&station.id).await.unwrap().properties["state"],
+        "active"
+    );
     peer.await.unwrap();
+    assert!(call("run_status").await.is_err());
+    let device = handle.get_device(&station.id).await.unwrap();
+    assert!(!device.online);
+    assert!(device.properties.is_empty());
     monitor.abort();
-    station.client.stop().await;
+    station.stop().await;
 }
 
 #[test]

@@ -11,6 +11,9 @@ qx96m_instruments:
 ",
     )
     .unwrap();
+    config.qx96m_instruments[0]
+        .validate()
+        .expect("private endpoint and key file");
     let round_trip = serde_yaml::to_value(config).unwrap();
     assert_eq!(
         round_trip["qx96m_instruments"][0]["id"].as_str(),

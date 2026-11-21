@@ -4,13 +4,16 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::io::BufReader;
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
 use tokio::time::{self, Instant};
 
 use super::{wire, Error};
 
 const DIAL_TIMEOUT: Duration = Duration::from_secs(3);
-const REPLY_TIMEOUT: Duration = Duration::from_secs(8);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
+pub(super) const READ_TIMEOUT: Duration = Duration::from_secs(
+    DIAL_TIMEOUT.as_secs() + CONNECT_TIMEOUT.as_secs() + STATUS_TIMEOUT.as_secs(),
+);
 const SESSION_LIFETIME: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize)]
@@ -30,16 +33,15 @@ pub(super) enum EquipmentState {
     Active,
 }
 
+pub(super) struct Observation {
+    pub identity: Identity,
+    pub state: Option<EquipmentState>,
+}
+
 pub(super) struct Client {
     endpoint: SocketAddrV4,
     key: [u8; 8],
-    state: Mutex<ConnectionState>,
-}
-
-#[derive(Default)]
-struct ConnectionState {
     next_id: u64,
-    stopped: bool,
     session: Option<Session>,
 }
 
@@ -47,6 +49,7 @@ struct Session {
     link: BufReader<TcpStream>,
     expires: Instant,
     identity: Identity,
+    state: Option<EquipmentState>,
 }
 
 impl Client {
@@ -54,50 +57,49 @@ impl Client {
         Self {
             endpoint,
             key,
-            state: Mutex::new(ConnectionState::default()),
+            next_id: 0,
+            session: None,
         }
     }
 
-    pub async fn read(&self, status: bool) -> Result<(Identity, Option<EquipmentState>), Error> {
-        time::timeout(DIAL_TIMEOUT + REPLY_TIMEOUT, self.read_once(status))
-            .await
-            .map_err(|_| Error::Unavailable)?
-    }
-
-    async fn read_once(&self, status: bool) -> Result<(Identity, Option<EquipmentState>), Error> {
-        let mut state = self.state.lock().await;
-        if state.stopped {
-            return Err(Error::Unavailable);
-        }
+    pub async fn read(&mut self, status: bool) -> Result<Observation, Error> {
         // A cancelled or malformed exchange drops the socket with its in-flight
         // reply. A subsequent read gets a fresh session.
-        let mut session = match state.session.take() {
-            Some(session) if session.expires > Instant::now() => session,
-            _ => self.connect(state.request_id()).await?,
+        let minimum_lifetime = if status {
+            STATUS_TIMEOUT
+        } else {
+            Duration::ZERO
         };
-        let equipment_state = if status {
-            let deadline = session.expires.min(Instant::now() + REPLY_TIMEOUT);
+        let mut session = match self.session.take() {
+            Some(session) if session.expires > Instant::now() + minimum_lifetime => session,
+            _ => {
+                let id = self.request_id();
+                self.connect(id).await?
+            }
+        };
+        if status {
+            let deadline = session.expires.min(Instant::now() + STATUS_TIMEOUT);
+            let id = self.request_id();
             let reply = wire::exchange(
                 &mut session.link,
                 &self.key,
-                state.request_id(),
+                id,
                 wire::Read::Status,
                 deadline,
             )
             .await?;
-            Some(project_state(&reply)?)
-        } else {
-            None
+            session.state = Some(project_state(&reply)?);
+        }
+        let observation = Observation {
+            identity: session.identity.clone(),
+            state: session.state,
         };
-        let identity = session.identity.clone();
-        state.session = Some(session);
-        Ok((identity, equipment_state))
+        self.session = Some(session);
+        Ok(observation)
     }
 
-    pub async fn stop(&self) {
-        let mut state = self.state.lock().await;
-        state.stopped = true;
-        state.session = None;
+    pub fn close(&mut self) {
+        self.session = None;
     }
 
     async fn connect(&self, id: u64) -> Result<Session, Error> {
@@ -111,7 +113,7 @@ impl Client {
             &self.key,
             id,
             wire::Read::Connect,
-            Instant::now() + REPLY_TIMEOUT,
+            Instant::now() + CONNECT_TIMEOUT,
         )
         .await?;
         let identity = project_identity(&reply)?;
@@ -119,11 +121,10 @@ impl Client {
             link,
             expires,
             identity,
+            state: None,
         })
     }
-}
 
-impl ConnectionState {
     fn request_id(&mut self) -> u64 {
         self.next_id = self.next_id.wrapping_add(1).max(1);
         self.next_id
@@ -145,7 +146,7 @@ fn project_identity(reply: &wire::Reply) -> Result<Identity, Error> {
         columns: u16,
     }
 
-    if reply.result != Some(true) {
+    if !reply.accepted {
         return Err(Error::Rejected);
     }
     let data = reply.data.as_deref().ok_or(Error::Protocol)?;
@@ -165,7 +166,7 @@ fn project_identity(reply: &wire::Reply) -> Result<Identity, Error> {
 
 fn project_state(reply: &wire::Reply) -> Result<EquipmentState, Error> {
     let data = reply.data.as_deref().ok_or(Error::Protocol)?;
-    if reply.result != Some(true) {
+    if !reply.accepted {
         return if data.trim() == "PCR仪器上无正在运行的实验!" {
             Ok(EquipmentState::Idle)
         } else {
