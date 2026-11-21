@@ -352,6 +352,10 @@ fn build_config(args: &EngineArgs) -> anyhow::Result<OsdlConfig> {
             log::warn!("--simulation ignores ESP-NOW dongles from the recipe");
             cfg.espnow_dongles.clear();
         }
+        if !cfg.qx96m_instruments.is_empty() {
+            log::warn!("--simulation ignores QX96M instruments from the recipe");
+            cfg.qx96m_instruments.clear();
+        }
     }
 
     Ok(cfg)
@@ -380,6 +384,10 @@ fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
         let raw = d.port.clone();
         let expanded = path_expand::expand(&raw, config_dir);
         d.port = expanded.display().to_string();
+    }
+    for instrument in &mut cfg.qx96m_instruments {
+        instrument.key_file =
+            path_expand::expand(&instrument.key_file.to_string_lossy(), config_dir);
     }
     if let Some(bin) = cfg.media_gateway.binary.as_deref() {
         cfg.media_gateway.binary = Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
@@ -429,6 +437,25 @@ mod tests {
                 .world_id,
             "lab-sim"
         );
+    }
+
+    #[test]
+    fn qx96m_key_paths_are_recipe_relative_and_simulation_opens_no_instruments() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("devices.yaml");
+        std::fs::write(
+            &path,
+            "qx96m_instruments:\n  - id: test\n    endpoint: 192.168.42.10:6666\n    key_file: private/qx96m.key\n",
+        )
+        .unwrap();
+
+        let physical = build_config(&args(false, Some(path.clone()))).unwrap();
+        assert_eq!(
+            physical.qx96m_instruments[0].key_file,
+            directory.path().join("private/qx96m.key")
+        );
+        let simulation = build_config(&args(true, Some(path))).unwrap();
+        assert!(simulation.qx96m_instruments.is_empty());
     }
 
     #[test]
