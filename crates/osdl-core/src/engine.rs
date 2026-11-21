@@ -1,5 +1,3 @@
-mod observations;
-
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
@@ -25,6 +23,8 @@ use rumqttc::AsyncClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
+
+mod observations;
 
 /// Buffer size for the broadcast events channel. Slow subscribers that fall
 /// further behind than this start receiving `RecvError::Lagged(n)` so they
@@ -355,6 +355,9 @@ impl OsdlEngine {
         if !config.qx96m_instruments.is_empty() {
             adapters.push(Box::new(crate::qx96m::Adapter));
         }
+        if !config.sc9300_instruments.is_empty() {
+            adapters.push(Box::new(crate::sc9300::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -550,6 +553,21 @@ impl OsdlEngine {
                 return;
             }
         };
+        let sc9300 = match crate::sc9300::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to register SC9300 workstations: {error}");
+                if let Some(qx96m) = qx96m {
+                    qx96m.stop().await;
+                }
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
 
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
@@ -728,6 +746,9 @@ impl OsdlEngine {
 
         if let Some(qx96m) = qx96m {
             qx96m.stop().await;
+        }
+        if let Some(sc9300) = sc9300 {
+            sc9300.stop().await;
         }
         self.stop_simulation().await;
 

@@ -356,6 +356,10 @@ fn build_config(args: &EngineArgs) -> anyhow::Result<OsdlConfig> {
             log::warn!("--simulation ignores QX96M instruments from the recipe");
             cfg.qx96m_instruments.clear();
         }
+        if !cfg.sc9300_instruments.is_empty() {
+            log::warn!("--simulation ignores SC9300 workstations from the recipe");
+            cfg.sc9300_instruments.clear();
+        }
     }
 
     Ok(cfg)

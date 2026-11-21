@@ -11,6 +11,7 @@ pub mod orchestrator;
 pub mod path_expand;
 pub mod protocol;
 mod qx96m;
+mod sc9300;
 pub mod simulation;
 pub mod store;
 pub mod transport;
