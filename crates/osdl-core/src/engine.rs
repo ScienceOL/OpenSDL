@@ -1,3 +1,4 @@
+mod simulation;
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
@@ -68,6 +69,7 @@ pub struct EngineHandle {
     transport_rx_tx: mpsc::UnboundedSender<TransportRx>,
     /// Factory for the physics runtime used by configured simulation worlds.
     simulation_backend_factory: Arc<dyn SimulationBackendFactory>,
+    simulation_world: Arc<RwLock<Option<Arc<crate::simulation::world::WorldRuntime>>>>,
     /// External command injection — drop a `DeviceCommand` in here and the
     /// engine's main loop dispatches it via `send_command`.
     cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
@@ -372,6 +374,7 @@ impl OsdlEngine {
             devices: Arc::new(RwLock::new(HashMap::new())),
             transports: Arc::new(RwLock::new(HashMap::new())),
             transport_rx_tx,
+            simulation_world: Default::default(),
             simulation_backend_factory: Arc::new(BuiltinSimulationBackendFactory),
             cmd_inject_tx,
             events_tx,
@@ -708,119 +711,6 @@ impl OsdlEngine {
         }
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
-    }
-
-    /// Register the configured local simulation world before entering the
-    /// event loop. Virtual devices use the same transport and adapter path as
-    /// physical devices, which keeps the Agent/UI contract identical.
-    async fn start_simulation(&self) -> Result<(), String> {
-        let Some(config) = self.handle.config.simulation.clone() else {
-            return Ok(());
-        };
-        config.validate()?;
-
-        let world = crate::simulation::world::WorldRuntime::new(
-            &config,
-            self.handle.transport_rx_tx.clone(),
-            self.handle.simulation_backend_factory.as_ref(),
-        )?;
-        for device_config in &config.devices {
-            let transport_id = simulation_transport_id(&config.world_id, &device_config.id);
-            let backend_engine = config.engine.clone();
-            let transport = Arc::new(SimulationTransport::for_device(
-                world.clone(),
-                device_config.id.clone(),
-            ));
-            transport.start().await?;
-            self.handle
-                .register_transport(transport_id.clone(), transport)
-                .await;
-
-            let device_id = simulation_device_id(&config.world_id, &device_config.id);
-            let mut properties = device_config.properties.clone();
-            properties.insert("simulation".into(), serde_json::Value::Bool(true));
-            properties.insert(
-                "simulation_engine".into(),
-                serde_json::Value::String(backend_engine),
-            );
-            properties.insert(
-                "simulation_world".into(),
-                serde_json::Value::String(config.world_id.clone()),
-            );
-            if let Some(asset_ref) = &device_config.asset_ref {
-                properties.insert(
-                    "simulation_asset".into(),
-                    serde_json::json!({
-                        "namespace": asset_ref.namespace,
-                        "name": asset_ref.name,
-                        "version": asset_ref.version,
-                    }),
-                );
-            }
-            properties.insert("position".into(), serde_json::json!(device_config.position));
-
-            let description = if device_config.description.is_empty() {
-                format!("Virtual {}", device_config.device_type)
-            } else {
-                device_config.description.clone()
-            };
-            let mut actions = device_config.actions.clone();
-            if actions.iter().all(|action| action.name != "reset") {
-                actions.push(ActionSchema {
-                    name: "reset".into(),
-                    description: "Restore this virtual device to its configured initial state"
-                        .into(),
-                    params: serde_json::json!({"type":"object","properties":{}}),
-                });
-            }
-            self.handle
-                .register_device(Device {
-                    id: device_id,
-                    transport_id,
-                    device_type: device_config.device_type.clone(),
-                    adapter: crate::adapter::simulation::PLATFORM.into(),
-                    description,
-                    online: true,
-                    properties,
-                    properties_timestamp_ms: now_millis(),
-                    actions,
-                    role: device_config.role.clone(),
-                })
-                .await?;
-        }
-
-        log::info!(
-            "Simulation world '{}' started with '{}' backend ({} devices)",
-            config.world_id,
-            config.engine,
-            config.devices.len()
-        );
-        Ok(())
-    }
-
-    async fn stop_simulation(&self) {
-        let Some(config) = self.handle.config.simulation.as_ref() else {
-            return;
-        };
-        let transport_list = {
-            let transports = self.handle.transports.read().await;
-            config
-                .devices
-                .iter()
-                .filter_map(|device| {
-                    let id = simulation_transport_id(&config.world_id, &device.id);
-                    transports
-                        .get(&id)
-                        .cloned()
-                        .map(|transport| (id, transport))
-                })
-                .collect::<Vec<_>>()
-        };
-        for (id, transport) in transport_list {
-            if let Err(error) = transport.stop().await {
-                log::warn!("Failed to stop simulation transport {id}: {error}");
-            }
-        }
     }
 
     /// Spawn mediamtx if any media sources are configured. Emits
@@ -1180,11 +1070,22 @@ impl OsdlEngine {
                     };
                     let mut devices_w = self.handle.devices.write().await;
                     if let Some(dev) = devices_w.get_mut(device_id) {
-                        dev.properties_timestamp_ms = status.timestamp;
-                        for (k, v) in &status.properties {
-                            dev.properties.insert(k.clone(), v.clone());
+                        if adapter_name == crate::adapter::simulation::PLATFORM {
+                            // Ignore observations queued before this device's layout was replaced.
+                            if dev.properties.get("scene_revision")
+                                != status.properties.get("scene_revision")
+                            {
+                                return;
+                            }
+                            dev.properties.clone_from(&status.properties);
+                        } else {
+                            dev.properties.extend(status.properties.clone());
                         }
+                        dev.properties_timestamp_ms = status.timestamp;
+                    } else if adapter_name == crate::adapter::simulation::PLATFORM {
+                        return;
                     }
+                    drop(devices_w);
                     self.handle.emit(OsdlEvent::DeviceStatus(status));
                 }
                 break;
@@ -1505,7 +1406,7 @@ fn mac_hex_flat(mac: &Mac) -> String {
     )
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

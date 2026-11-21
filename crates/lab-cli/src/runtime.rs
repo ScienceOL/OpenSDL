@@ -43,9 +43,12 @@ pub struct EngineArgs {
     /// devices, so local development does not require hardware.
     #[arg(long, env = "OSDL_SIMULATION")]
     pub simulation: bool,
-    /// Add a digest-pinned package to this world. Repeat for multiple instruments.
+    /// Start a single digest-pinned instrument package.
     #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
-    pub asset: Vec<String>,
+    pub asset: Option<String>,
+    /// Runner-owned scene definition, including instance identities and local transforms.
+    #[arg(long, conflicts_with_all = ["asset", "config", "registry", "dongle_port"], requires = "simulation")]
+    pub scene: Option<PathBuf>,
 }
 
 impl EngineArgs {
@@ -138,54 +141,28 @@ where
         .with_context(|| format!("lock engine {}", lock_path.display()))?;
 
     let _asset_directory;
-    if !args.asset.is_empty() {
-        use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
+    if args.asset.is_some() || args.scene.is_some() {
+        use opensdl_assets::{AssetCache, AssetReference};
         let cache = AssetCache::open(data_dir.join("assets"))?;
-        if args.asset.len() > 64 {
-            anyhow::bail!("select at most 64 simulation packages");
-        }
-        let references = args
-            .asset
-            .iter()
-            .map(|reference| {
-                let parsed = AssetReference::parse(reference)?;
-                parsed
-                    .digest()
-                    .context("--asset requires a sha256 digest-pinned reference")?;
-                Ok(parsed)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let mut pulls = tokio::task::JoinSet::new();
-        let mut requested = std::collections::HashSet::new();
-        for reference in references {
-            let digest = reference.digest().expect("validated pinned reference");
-            // A verified immutable cache hit needs no registry round trip.
-            if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
-                continue;
-            }
-            let cache = cache.clone();
-            pulls.spawn(async move {
-                RegistryClient::for_reference(&reference)
-                    .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
-                    .await
-            });
-            if pulls.len() == 4 {
-                pulls
-                    .join_next()
-                    .await
-                    .context("asset download task missing")???;
-            }
-        }
-        while let Some(result) = pulls.join_next().await {
-            result??;
-        }
         _asset_directory = tempfile::tempdir_in(data_dir)?;
-        config.simulation = Some(osdl_server::simulation_asset::compose(
-            &cache,
-            &args.asset,
-            _asset_directory.path(),
-            instance,
-        )?);
+        config.simulation = Some(match &args.scene {
+            Some(path) => osdl_server::simulation_asset::compose(
+                &cache,
+                &osdl_server::simulation_asset::SceneDefinition::read(path)?.instruments,
+                _asset_directory.path(),
+                instance,
+            )?,
+            None => {
+                let reference =
+                    AssetReference::parse(args.asset.as_deref().context("missing asset")?)?;
+                crate::assets::acquire(&cache, vec![reference.clone()]).await?;
+                osdl_server::simulation_asset::prepare(
+                    &cache,
+                    reference.digest().context("missing digest")?,
+                    &_asset_directory.path().join("instrument"),
+                )?
+            }
+        });
     }
     config.data_dir = Some(data_dir.clone());
 
@@ -398,7 +375,8 @@ mod tests {
             dongle_port: None,
             dongle_baud: 115_200,
             simulation,
-            asset: Vec::new(),
+            asset: None,
+            scene: None,
         }
     }
 

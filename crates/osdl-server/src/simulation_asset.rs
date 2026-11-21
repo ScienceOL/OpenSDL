@@ -8,7 +8,31 @@ use osdl_core::{
     config::SimulationConfig,
     simulation::{InstrumentConfig, InstrumentState, SampleInventory},
 };
+use serde::Deserialize;
 use std::{fs, path::Path};
+
+#[derive(Deserialize)]
+pub struct SceneDefinition {
+    pub name: String,
+    pub instruments: Vec<SceneInstrument>,
+}
+
+impl SceneDefinition {
+    pub fn read(path: &Path) -> anyhow::Result<Self> {
+        Ok(serde_json::from_reader(fs::File::open(path)?)?)
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct SceneInstrument {
+    pub id: String,
+    pub asset: String,
+    pub version: String,
+    pub position: [f64; 3],
+    /// Local XYZ Euler angles in radians, relative to the parent or world.
+    pub rotation: [f64; 3],
+    pub parent: Option<String>,
+}
 
 pub fn prepare(
     cache: &AssetCache,
@@ -16,13 +40,34 @@ pub fn prepare(
     destination: &Path,
 ) -> anyhow::Result<SimulationConfig> {
     let lease = cache.lock()?;
-    let asset = lease.materialize(digest, destination)?;
-    let runtime = asset
-        .manifest
-        .spec
-        .runtime
-        .as_ref()
-        .context("asset has no executable runtime declaration")?;
+    let (asset, package) = lease.materialize_package(digest, destination)?;
+    let preview = &package
+        .layers
+        .iter()
+        .find(|layer| layer.media_type == opensdl_assets::PREVIEW_MEDIA_TYPE)
+        .context("missing preview layer")?
+        .digest;
+    drop(lease);
+    let Some(runtime) = asset.manifest.spec.runtime.as_ref() else {
+        let metadata = asset.manifest.metadata;
+        return Ok(SimulationConfig {
+            devices: vec![osdl_core::config::SimulationDeviceConfig {
+                id: metadata.name,
+                device_type: "simulation.static".into(),
+                description: metadata.display_name,
+                role: None,
+                model: None,
+                actions: Vec::new(),
+                asset_ref: None,
+                position: [0.; 3],
+                properties: std::collections::HashMap::from([
+                    ("model_manifest_digest".into(), serde_json::json!(digest)),
+                    ("model_preview_digest".into(), serde_json::json!(preview)),
+                ]),
+            }],
+            ..Default::default()
+        });
+    };
     if runtime.engine != RuntimeEngine::Kinematic {
         bail!("runtime engine is unavailable");
     }
@@ -40,6 +85,12 @@ pub fn prepare(
     }
     let definition = opensdl_assets::model::read_preview_model(&asset.paths.preview_model)?;
     for device in &mut simulation.devices {
+        device
+            .properties
+            .insert("model_preview_digest".into(), serde_json::json!(preview));
+        device
+            .properties
+            .insert("model_manifest_digest".into(), serde_json::json!(digest));
         if let Some(instrument) = &device.model {
             let definition = definition
                 .as_ref()
@@ -113,9 +164,6 @@ pub fn prepare(
                     bail!("model component references an undeclared action");
                 }
             }
-            device
-                .properties
-                .insert("model_manifest_digest".into(), serde_json::json!(digest));
         }
     }
     Ok(simulation)
@@ -125,11 +173,34 @@ pub fn prepare(
 /// kinematic configurations are combined; no source code or hardware is loaded.
 pub fn compose(
     cache: &AssetCache,
-    references: &[String],
+    instruments: &[SceneInstrument],
     destination: &Path,
     world_id: &str,
 ) -> anyhow::Result<SimulationConfig> {
-    if references.is_empty() || references.len() > 64 {
+    compose_packages(
+        cache,
+        instruments,
+        destination,
+        world_id,
+        &mut Default::default(),
+    )
+}
+
+type Templates = std::collections::HashMap<String, SimulationConfig>;
+pub type SceneTemplates = std::sync::Arc<std::sync::Mutex<Templates>>;
+fn compose_packages(
+    cache: &AssetCache,
+    instruments: &[SceneInstrument],
+    destination: &Path,
+    world_id: &str,
+    templates: &mut Templates,
+) -> anyhow::Result<SimulationConfig> {
+    templates.retain(|digest, _| {
+        instruments
+            .iter()
+            .any(|i| i.asset.rsplit_once('@').is_some_and(|(_, d)| d == digest))
+    });
+    if instruments.is_empty() || instruments.len() > 64 {
         bail!("select between 1 and 64 simulation packages");
     }
     let mut world = SimulationConfig {
@@ -138,13 +209,20 @@ pub fn compose(
         samples: Vec::new(),
         ..Default::default()
     };
-    for (index, reference) in references.iter().enumerate() {
+    for (index, placement) in instruments.iter().enumerate() {
+        let reference = &placement.asset;
         let parsed = opensdl_assets::AssetReference::parse(reference)?;
         let digest = parsed
             .digest()
             .context("simulation requires digest-pinned packages")?;
-        let package = prepare(cache, digest, &destination.join(index.to_string()))
-            .with_context(|| format!("cannot prepare simulation package {reference}"))?;
+        let template = match templates.entry(digest.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(
+                prepare(cache, digest, &destination.join(index.to_string()))
+                    .with_context(|| format!("cannot prepare simulation package {reference}"))?,
+            ),
+        };
+        let package = template.clone();
         if index == 0 {
             world.tick_hz = package.tick_hz;
             world.seed = package.seed;
@@ -163,14 +241,35 @@ pub fn compose(
                 world.samples.push(sample);
             }
         }
-        for mut device in package.devices {
-            device.id = format!("{}-{}", index + 1, device.id);
-            // A deterministic table layout, in metres, keeps selected instruments
-            // separated. Instrument-relative geometry and sample poses stay intact.
-            device.position[0] += (index % 4) as f64 * 1.2 - 1.8;
-            device.position[2] += (index / 4) as f64 * 1.2;
-            world.devices.push(device);
-        }
+        let [mut device]: [_; 1] = package.devices.try_into().map_err(|_| {
+            anyhow::anyhow!("scene instrument must declare one device: {reference}")
+        })?;
+        let (namespace, name) = parsed
+            .repository()
+            .rsplit_once('/')
+            .context("instrument asset has no namespace")?;
+        device.asset_ref = Some(osdl_core::config::SimulationAssetRef {
+            namespace: namespace.to_owned(),
+            name: name.to_owned(),
+            version: Some(placement.version.clone()),
+        });
+        device.properties.insert(
+            "model_registry".into(),
+            serde_json::json!(parsed.registry()),
+        );
+        device.id.clone_from(&placement.id);
+        device.position = placement.position;
+        device
+            .properties
+            .insert("rotation".into(), serde_json::json!(placement.rotation));
+        device.properties.insert(
+            "parent".into(),
+            serde_json::json!(placement
+                .parent
+                .as_deref()
+                .map(|id| osdl_core::transport::simulation::device_id_for(world_id, id))),
+        );
+        world.devices.push(device);
     }
     world.validate().map_err(anyhow::Error::msg)?;
     Ok(world)
@@ -206,4 +305,98 @@ fn validate_balance(
         bail!("balance pan radius differs from the model");
     }
     Ok(())
+}
+
+/// Admitted configuration for a staged revision. Composition never mutates the live world.
+pub(crate) struct PreparedScene {
+    pub(crate) ticket: uuid::Uuid,
+    revision: u64,
+    config: Option<SimulationConfig>,
+    poses: Vec<osdl_core::simulation::world::DevicePose>,
+}
+
+impl PreparedScene {
+    pub async fn apply(self, engine: &osdl_core::EngineHandle) -> Result<(), String> {
+        engine
+            .apply_simulation_scene(self.revision, self.config.as_ref(), &self.poses)
+            .await
+    }
+}
+
+pub(crate) async fn prepare_revision(
+    engine: &osdl_core::EngineHandle,
+    revision: u64,
+    templates: SceneTemplates,
+) -> anyhow::Result<PreparedScene> {
+    let config = engine.config();
+    let world = &config
+        .simulation
+        .as_ref()
+        .context("simulation unavailable")?
+        .world_id;
+    let root = config
+        .data_dir
+        .as_ref()
+        .context("scene directory unavailable")?;
+    let scene = SceneDefinition::read(&root.join(format!("scene-{revision}.json")))?;
+    let devices = engine.list_devices().await;
+    let ids: std::collections::HashMap<_, _> = devices
+        .iter()
+        .map(|d| {
+            (
+                d.id.as_str(),
+                d.properties
+                    .get("model_manifest_digest")
+                    .and_then(|v| v.as_str()),
+            )
+        })
+        .collect();
+    let topology_changed = ids.len() != scene.instruments.len()
+        || scene.instruments.iter().any(|i| {
+            ids.get(osdl_core::transport::simulation::device_id_for(world, &i.id).as_str())
+                .copied()
+                .flatten()
+                != i.asset.rsplit_once('@').map(|(_, d)| d)
+        });
+    let poses = scene
+        .instruments
+        .iter()
+        .map(|i| osdl_core::simulation::world::DevicePose {
+            id: i.id.clone(),
+            position: i.position,
+            rotation: i.rotation,
+            parent: i
+                .parent
+                .as_ref()
+                .map(|p| osdl_core::transport::simulation::device_id_for(world, p)),
+        })
+        .collect::<Vec<_>>();
+    let next = if topology_changed {
+        let root = root.clone();
+        let world = world.clone();
+        Some(
+            tokio::task::spawn_blocking(move || {
+                let directory = tempfile::tempdir_in(&root)?;
+                let mut templates = templates
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("scene unavailable"))?;
+                compose_packages(
+                    &AssetCache::open(root.join("assets"))?,
+                    &scene.instruments,
+                    directory.path(),
+                    &world,
+                    &mut templates,
+                )
+            })
+            .await??,
+        )
+    } else {
+        None
+    };
+    Ok(PreparedScene {
+        ticket: uuid::Uuid::new_v4(),
+        revision,
+        config: next,
+        poses,
+    })
 }

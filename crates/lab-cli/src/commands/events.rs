@@ -113,6 +113,9 @@ fn print_human(ev: &pb::Event) {
         Some(pb::event::Kind::MediaGatewayDown(e)) => {
             println!("[{ts}] media_gateway_down  {}", e.reason);
         }
+        Some(pb::event::Kind::SimulationSceneChanged(e)) => {
+            println!("[{ts}] simulation_scene_changed revision={}", e.revision)
+        }
         Some(pb::event::Kind::Lagged(e)) => {
             println!("[{ts}] lagged           dropped={}", e.dropped);
         }
@@ -184,6 +187,10 @@ fn event_to_jsonl(ev: &pb::Event) -> String {
         Some(pb::event::Kind::MediaGatewayDown(e)) => (
             "media_gateway_down",
             serde_json::json!({"reason": e.reason}),
+        ),
+        Some(pb::event::Kind::SimulationSceneChanged(e)) => (
+            "simulation_scene_changed",
+            serde_json::json!({"revision":e.revision}),
         ),
         Some(pb::event::Kind::Lagged(e)) => ("lagged", serde_json::json!({"dropped": e.dropped})),
         None => ("unknown", serde_json::Value::Null),

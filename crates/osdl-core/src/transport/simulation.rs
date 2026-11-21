@@ -21,8 +21,25 @@ pub struct SimulationState {
     pub last_action: Option<String>,
 }
 
+/// How a settled observation reaches its reported values, in simulation seconds.
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChannelTransition {
+    Instant,
+    Linear {
+        duration_s: f64,
+    },
+    Continuous {
+        speed_per_s: f64,
+        stop_at: Option<f64>,
+    },
+}
+
 pub trait SimulationBackend: Send + Sync {
     fn engine_id(&self) -> &str;
+    fn transition(&self, _channel: &str, _state: &SimulationState) -> ChannelTransition {
+        ChannelTransition::Instant
+    }
     fn apply_action(
         &self,
         state: &mut SimulationState,
