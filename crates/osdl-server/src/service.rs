@@ -41,6 +41,7 @@ pub struct OsdlService {
     /// the service still holds it).
     shutdown: Arc<Notify>,
     media_publishers: crate::media_publish::Publishers,
+    scene_templates: crate::simulation_asset::SceneTemplates,
 }
 
 impl OsdlService {
@@ -66,6 +67,7 @@ impl OsdlService {
             engine,
             identity,
             shutdown,
+            scene_templates: Default::default(),
             media_publishers: crate::media_publish::Publishers::default(),
         }
     }
@@ -87,6 +89,22 @@ impl pb::osdl_server::Osdl for OsdlService {
         };
         Ok(Response::new(guard_stream(stream, lease)))
     }
+    async fn apply_scene(
+        &self,
+        request: Request<pb::ApplySceneRequest>,
+    ) -> Result<Response<pb::ApplySceneResponse>, Status> {
+        self.authorizer.authorize(&request, Permission::Shutdown)?;
+        let revision = request.into_inner().revision;
+        crate::simulation_asset::apply_revision(
+            &self.engine,
+            revision,
+            self.scene_templates.clone(),
+        )
+        .await
+        .map_err(|e| Status::failed_precondition(e.to_string()))?;
+        Ok(Response::new(pb::ApplySceneResponse {}))
+    }
+
     async fn read_snapshot(
         &self,
         request: Request<pb::ReadSnapshotRequest>,

@@ -177,6 +177,29 @@ pub fn compose(
     destination: &Path,
     world_id: &str,
 ) -> anyhow::Result<SimulationConfig> {
+    compose_packages(
+        cache,
+        instruments,
+        destination,
+        world_id,
+        &mut Default::default(),
+    )
+}
+
+type Templates = std::collections::HashMap<String, SimulationConfig>;
+pub type SceneTemplates = std::sync::Arc<std::sync::Mutex<Templates>>;
+fn compose_packages(
+    cache: &AssetCache,
+    instruments: &[SceneInstrument],
+    destination: &Path,
+    world_id: &str,
+    templates: &mut Templates,
+) -> anyhow::Result<SimulationConfig> {
+    templates.retain(|digest, _| {
+        instruments
+            .iter()
+            .any(|i| i.asset.rsplit_once('@').is_some_and(|(_, d)| d == digest))
+    });
     if instruments.is_empty() || instruments.len() > 64 {
         bail!("select between 1 and 64 simulation packages");
     }
@@ -192,8 +215,14 @@ pub fn compose(
         let digest = parsed
             .digest()
             .context("simulation requires digest-pinned packages")?;
-        let package = prepare(cache, digest, &destination.join(index.to_string()))
-            .with_context(|| format!("cannot prepare simulation package {reference}"))?;
+        let template = match templates.entry(digest.to_owned()) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(
+                prepare(cache, digest, &destination.join(index.to_string()))
+                    .with_context(|| format!("cannot prepare simulation package {reference}"))?,
+            ),
+        };
+        let package = template.clone();
         if index == 0 {
             world.tick_hz = package.tick_hz;
             world.seed = package.seed;
@@ -276,4 +305,81 @@ fn validate_balance(
         bail!("balance pan radius differs from the model");
     }
     Ok(())
+}
+
+/// Apply a Runner-owned revision from this instance's private data directory.
+pub async fn apply_revision(
+    engine: &osdl_core::EngineHandle,
+    revision: u64,
+    templates: SceneTemplates,
+) -> anyhow::Result<()> {
+    let config = engine.config();
+    let world = &config
+        .simulation
+        .as_ref()
+        .context("simulation unavailable")?
+        .world_id;
+    let root = config
+        .data_dir
+        .as_ref()
+        .context("scene directory unavailable")?;
+    let scene = SceneDefinition::read(&root.join(format!("scene-{revision}.json")))?;
+    let devices = engine.list_devices().await;
+    let ids: std::collections::HashMap<_, _> = devices
+        .iter()
+        .map(|d| {
+            (
+                d.id.as_str(),
+                d.properties
+                    .get("model_manifest_digest")
+                    .and_then(|v| v.as_str()),
+            )
+        })
+        .collect();
+    let topology_changed = ids.len() != scene.instruments.len()
+        || scene.instruments.iter().any(|i| {
+            ids.get(osdl_core::transport::simulation::device_id_for(world, &i.id).as_str())
+                .copied()
+                .flatten()
+                != i.asset.rsplit_once('@').map(|(_, d)| d)
+        });
+    let poses = scene
+        .instruments
+        .iter()
+        .map(|i| osdl_core::simulation::world::DevicePose {
+            id: i.id.clone(),
+            position: i.position,
+            rotation: i.rotation,
+            parent: i
+                .parent
+                .as_ref()
+                .map(|p| osdl_core::transport::simulation::device_id_for(world, p)),
+        })
+        .collect::<Vec<_>>();
+    let next = if topology_changed {
+        let root = root.clone();
+        let world = world.clone();
+        Some(
+            tokio::task::spawn_blocking(move || {
+                let directory = tempfile::tempdir_in(&root)?;
+                let mut templates = templates
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("scene unavailable"))?;
+                compose_packages(
+                    &AssetCache::open(root.join("assets"))?,
+                    &scene.instruments,
+                    directory.path(),
+                    &world,
+                    &mut templates,
+                )
+            })
+            .await??,
+        )
+    } else {
+        None
+    };
+    engine
+        .apply_simulation_scene(next.as_ref(), &poses)
+        .await
+        .map_err(anyhow::Error::msg)
 }

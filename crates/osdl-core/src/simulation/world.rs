@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -28,6 +28,34 @@ struct DeviceRuntime {
     backend: Arc<dyn SimulationBackend>,
     state: SimulationState,
 }
+impl DeviceRuntime {
+    fn new(
+        config: &SimulationConfig,
+        c: &SimulationDeviceConfig,
+        factory: &dyn SimulationBackendFactory,
+    ) -> Result<Self, String> {
+        let instrument = c.model.as_ref().map(InstrumentState::new);
+        let mut initial_properties = c.properties.clone();
+        if let Some(model) = &c.model {
+            initial_properties.insert("model_conditions".into(), json!(model.condition_channels()));
+        }
+        if let Some(asset) = &c.asset_ref {
+            initial_properties.insert("simulation_asset".into(), json!(asset));
+        }
+        Ok(DeviceRuntime {
+            config: c.clone(),
+            backend: factory.create(&config.engine, &config.world_id, c)?,
+            state: SimulationState {
+                initial_properties: initial_properties.clone(),
+                properties: initial_properties,
+                instrument,
+                step: 0,
+                revision: 0,
+                last_action: None,
+            },
+        })
+    }
+}
 struct WorldState {
     devices: HashMap<String, DeviceRuntime>,
     samples: SampleInventory,
@@ -38,11 +66,18 @@ struct WorldState {
 pub struct WorldRuntime {
     world_id: String,
     run_id: String,
-    tick_hz: u32,
+    tick_hz: AtomicU32,
     state: Mutex<WorldState>,
     tx: mpsc::UnboundedSender<TransportRx>,
     running: AtomicBool,
     task: Mutex<Option<JoinHandle<()>>>,
+}
+
+pub struct DevicePose {
+    pub id: String,
+    pub position: [f64; 3],
+    pub rotation: [f64; 3],
+    pub parent: Option<String>,
 }
 
 impl WorldRuntime {
@@ -54,35 +89,12 @@ impl WorldRuntime {
         config.validate()?;
         let mut devices = HashMap::new();
         for c in &config.devices {
-            let instrument = c.model.as_ref().map(InstrumentState::new);
-            let mut initial_properties = c.properties.clone();
-            if let Some(model) = &c.model {
-                initial_properties
-                    .insert("model_conditions".into(), json!(model.condition_channels()));
-            }
-            if let Some(asset) = &c.asset_ref {
-                initial_properties.insert("simulation_asset".into(), json!(asset));
-            }
-            devices.insert(
-                c.id.clone(),
-                DeviceRuntime {
-                    config: c.clone(),
-                    backend: factory.create(&config.engine, &config.world_id, c)?,
-                    state: SimulationState {
-                        initial_properties: initial_properties.clone(),
-                        properties: initial_properties,
-                        instrument,
-                        step: 0,
-                        revision: 0,
-                        last_action: None,
-                    },
-                },
-            );
+            devices.insert(c.id.clone(), DeviceRuntime::new(config, c, factory)?);
         }
         Ok(Arc::new(Self {
             world_id: config.world_id.clone(),
             run_id: uuid::Uuid::new_v4().simple().to_string(),
-            tick_hz: config.tick_hz,
+            tick_hz: AtomicU32::new(config.tick_hz),
             state: Mutex::new(WorldState {
                 devices,
                 samples: SampleInventory::new(&config.samples)?,
@@ -92,6 +104,86 @@ impl WorldRuntime {
             running: AtomicBool::new(false),
             task: Mutex::new(None),
         }))
+    }
+    pub async fn apply_layout(&self, poses: &[DevicePose]) {
+        let mut world = self.state.lock().await;
+        for DevicePose {
+            id,
+            position,
+            rotation,
+            parent,
+        } in poses
+        {
+            let rotation = json!(rotation);
+            let parent = json!(parent);
+            let Some(device) = world.devices.get_mut(id) else {
+                continue;
+            };
+            if device.config.position == *position
+                && device.state.properties.get("rotation") == Some(&rotation)
+                && device.state.properties.get("parent") == Some(&parent)
+            {
+                continue;
+            }
+            device.config.position = *position;
+            for props in [
+                &mut device.state.properties,
+                &mut device.state.initial_properties,
+            ] {
+                props.insert("rotation".into(), rotation.clone());
+                props.insert("parent".into(), parent.clone());
+            }
+            self.emit(&world.devices[id], &world);
+        }
+    }
+    pub async fn reconcile(
+        &self,
+        config: &SimulationConfig,
+        factory: &dyn SimulationBackendFactory,
+    ) -> Result<(Vec<String>, Vec<String>), String> {
+        let mut world = self.state.lock().await;
+        let mut additions = Vec::new();
+        let mut samples = SampleInventory::new(&config.samples)?;
+        let retained: std::collections::HashSet<_> = config
+            .devices
+            .iter()
+            .filter_map(|c| {
+                world
+                    .devices
+                    .get(&c.id)
+                    .filter(|d| {
+                        d.config.properties.get("model_manifest_digest")
+                            == c.properties.get("model_manifest_digest")
+                    })
+                    .map(|_| c.id.clone())
+            })
+            .collect();
+        for c in &config.devices {
+            if !retained.contains(&c.id) {
+                additions.push((c.id.clone(), DeviceRuntime::new(config, c, factory)?));
+            }
+        }
+        let removed = world
+            .devices
+            .keys()
+            .filter(|id| !retained.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        samples.retain_owners(&world.samples, &retained);
+        world.samples = samples;
+        self.tick_hz.store(config.tick_hz, Ordering::Relaxed);
+        for id in &removed {
+            world.devices.remove(id);
+        }
+        let added = additions.iter().map(|(id, _)| id.clone()).collect();
+        world.devices.extend(additions);
+        Ok((removed, added))
+    }
+    pub async fn publish(&self, ids: &[String]) {
+        let world = self.state.lock().await;
+        for id in ids {
+            self.emit(&world.devices[id], &world);
+        }
     }
     pub fn device_id(&self, id: &str) -> String {
         device_id_for(&self.world_id, id)
@@ -113,12 +205,13 @@ impl WorldRuntime {
         }
         let world = self.clone();
         *task = Some(tokio::spawn(async move {
-            let period = Duration::from_secs_f64(1.0 / world.tick_hz as f64);
-            let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut deadline = tokio::time::Instant::now();
             while world.is_running() {
-                ticker.tick().await;
-                world.advance(1.0 / world.tick_hz as f64).await;
+                let dt = 1.0 / f64::from(world.tick_hz.load(Ordering::Relaxed));
+                deadline += Duration::from_secs_f64(dt);
+                tokio::time::sleep_until(deadline).await;
+                world.advance(dt).await;
+                deadline = deadline.max(tokio::time::Instant::now());
             }
         }));
     }

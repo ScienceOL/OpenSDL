@@ -210,6 +210,20 @@ impl SampleInventory {
         sample.owner = None;
         Ok(sample.config.mass_kg)
     }
+    pub(super) fn retain_owners(
+        &mut self,
+        previous: &Self,
+        retained: &std::collections::HashSet<String>,
+    ) {
+        for (id, sample) in &mut self.values {
+            sample.owner = previous
+                .values
+                .get(id)
+                .and_then(|s| s.owner.as_ref())
+                .filter(|id| retained.contains(*id))
+                .cloned();
+        }
+    }
     pub fn release_device(&mut self, device: &str) {
         for sample in self.values.values_mut() {
             if sample.owner.as_deref() == Some(device) {
