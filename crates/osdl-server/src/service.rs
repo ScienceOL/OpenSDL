@@ -35,11 +35,7 @@ pub struct OsdlService {
     engine: EngineHandle,
     identity: ServerIdentity,
     lab_profile: Option<Arc<crate::lab_profile::Store>>,
-    /// Fires when the server is shutting down. `StreamEvents` watches
-    /// this so live streams release their RPC slot and tonic's graceful
-    /// shutdown can finish — without it, an open events stream wedges
-    /// the daemon forever (the broadcast Sender never closes because
-    /// the service still holds it).
+    /// Stops the media publisher when the server shuts down.
     shutdown: Arc<Notify>,
     media_publishers: crate::media_publish::Publishers,
     prepared_scene: Arc<tokio::sync::Mutex<Option<crate::simulation_asset::PreparedScene>>>,

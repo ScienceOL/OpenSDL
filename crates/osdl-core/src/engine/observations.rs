@@ -22,16 +22,14 @@ impl EngineHandle {
                 device.id
             ));
         }
-        let event = if device.online {
-            OsdlEvent::DeviceOnline(device.clone())
-        } else {
-            OsdlEvent::DeviceOffline {
-                device_id: device.id.clone(),
-            }
-        };
+        let event = device
+            .online
+            .then(|| OsdlEvent::DeviceOnline(device.clone()));
         devices.insert(device.id.clone(), device);
         drop(devices);
-        self.emit(event);
+        if let Some(event) = event {
+            self.emit(event);
+        }
         Ok(())
     }
 
@@ -54,6 +52,9 @@ impl EngineHandle {
             role: None,
         })
         .await?;
+        self.emit(OsdlEvent::DeviceOffline {
+            device_id: id.into(),
+        });
         self.broadcast_status().await;
         Ok(())
     }
