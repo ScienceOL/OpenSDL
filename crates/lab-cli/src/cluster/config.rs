@@ -84,6 +84,8 @@ pub struct WorkerConfig {
     pub worker: Id,
     pub listen: SocketAddr,
     pub incoming: TlsFiles,
+    #[serde(default)]
+    pub(super) read_only_devices: Vec<super::probes::DeviceProbe>,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +125,27 @@ pub fn worker_address(address: SocketAddr) -> anyhow::Result<SocketAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_recipe_accepts_an_explicit_tcp_probe() {
+        let yaml = r#"
+cluster: bench
+worker: station
+listen: 127.0.0.1:7444
+incoming:
+  certificate: server.crt
+  private_key: server.key
+  ca: ca.crt
+read_only_devices:
+  - id: reader
+    device_type: example.reader
+    description: Endpoint reachability
+    probe:
+      type: tcp
+      address: 127.0.0.1:1234
+"#;
+        serde_yaml::from_str::<WorkerConfig>(yaml).unwrap();
+    }
 
     #[test]
     fn node_ids_cannot_escape_the_directory_scope() {

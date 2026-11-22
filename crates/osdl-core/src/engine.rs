@@ -101,6 +101,8 @@ pub struct MediaSourceState {
     pub endpoints: Vec<MediaEndpoint>,
 }
 
+const READ_ONLY_ADAPTER: &str = "read_only";
+
 impl EngineHandle {
     // === Inspection ===
 
@@ -220,28 +222,8 @@ impl EngineHandle {
             ));
         }
 
-        {
-            let mut devices = self.devices.write().await;
-            if devices
-                .get(&device_id)
-                .is_some_and(|current| current.transport_id != transport_id)
-            {
-                return Err(format!(
-                    "device ID '{device_id}' is already registered with another transport"
-                ));
-            }
-            devices.insert(device_id.clone(), device.clone());
-        }
-
-        log::info!(
-            "Device registered: {} ({}) on transport {}",
-            device_id,
-            device.device_type,
-            transport_id
-        );
-        if device.online {
-            self.emit(OsdlEvent::DeviceOnline(device));
-        }
+        self.publish_device(device).await?;
+        log::info!("Device registered: {device_id} on transport {transport_id}");
         self.broadcast_status().await;
         Ok(())
     }
@@ -257,6 +239,9 @@ impl EngineHandle {
             .get(&cmd.device_id)
             .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
 
+        if device.adapter == READ_ONLY_ADAPTER {
+            return Err(format!("device {} is read-only", device.id));
+        }
         let transport_id = device.transport_id.clone();
         let device_type = device.device_type.clone();
         let adapter_name = device.adapter.clone();
@@ -519,18 +504,7 @@ impl OsdlEngine {
             None
         };
 
-        // Emit initial Connected status (broker description reflects MQTT mode).
-        let _ = self.handle.status_tx.send(OsdlStatus::Connected {
-            broker: self
-                .handle
-                .config
-                .mqtt
-                .as_ref()
-                .map(|c| format!("{}:{}", c.host, c.port))
-                .unwrap_or_else(|| "mqtt-disabled".into()),
-            node_count: 0,
-            device_count: 0,
-        });
+        self.handle.broadcast_status().await;
 
         if let Err(error) = self.start_simulation().await {
             log::error!("Failed to start simulation world: {error}");
@@ -1038,12 +1012,7 @@ impl OsdlEngine {
                 transport_id,
                 ctrl.onvif_url,
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device.id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
         }
         self.handle.broadcast_status().await;
     }
@@ -1136,12 +1105,7 @@ impl OsdlEngine {
                 device.device_type
             );
 
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
             self.handle.broadcast_status().await;
         } else {
             log::warn!(
@@ -1441,12 +1405,7 @@ impl OsdlEngine {
                 device.device_type,
                 mac_hex_flat(&mac),
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
             self.handle.broadcast_status().await;
         } else {
             log::warn!(
@@ -1533,14 +1492,15 @@ impl OsdlEngine {
                     .map(|r| format!(" role={}", r))
                     .unwrap_or_default(),
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id, device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
         }
         self.handle.broadcast_status().await;
+    }
+
+    async fn publish_discovered_device(&self, device: Device) {
+        if let Err(error) = self.handle.publish_device(device).await {
+            log::warn!("{error}");
+        }
     }
 }
 

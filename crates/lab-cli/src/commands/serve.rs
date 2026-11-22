@@ -379,7 +379,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
 
     let advertise_mqtt = !matches!(args.auth, AuthMode::Local);
     let worker = match args.cluster_worker.as_deref() {
-        Some(path) => Some(lab_cli::cluster::worker_listener(path).await?),
+        Some(path) => Some(lab_cli::cluster::Worker::bind(path).await?),
         None => None,
     };
     let mode = if worker.is_some() {
@@ -389,7 +389,7 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     };
     let engine_instance = worker
         .as_ref()
-        .map_or(args.instance.as_str(), |listener| listener.worker_name())
+        .map_or(args.instance.as_str(), |worker| worker.name())
         .to_owned();
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
@@ -406,7 +406,14 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         paths.state_dir,
         mode,
         |handle| async {
-            osdl_server::serve_with_worker(handle, serve_cfg, worker, args.name.as_deref())
+            let (listener, _probes) = match worker {
+                Some(worker) => {
+                    let (listener, probes) = worker.start(&handle).await?;
+                    (Some(listener), Some(probes))
+                }
+                None => (None, None),
+            };
+            osdl_server::serve_with_worker(handle, serve_cfg, listener, args.name.as_deref())
                 .await
                 .map_err(Into::into)
         },

@@ -4,11 +4,73 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::{protocol::DeviceStatus, OsdlEvent};
+use crate::{
+    protocol::{Device, DeviceStatus},
+    OsdlEvent,
+};
 
-use super::{now_millis, EngineHandle};
+use super::{now_millis, EngineHandle, READ_ONLY_ADAPTER};
 
 impl EngineHandle {
+    pub(super) async fn publish_device(&self, device: Device) -> Result<(), String> {
+        let mut devices = self.devices.write().await;
+        if devices.get(&device.id).is_some_and(|current| {
+            current.transport_id != device.transport_id || current.adapter != device.adapter
+        }) {
+            return Err(format!(
+                "device ID '{}' is already registered with another owner",
+                device.id
+            ));
+        }
+        let event = if device.online {
+            OsdlEvent::DeviceOnline(device.clone())
+        } else {
+            OsdlEvent::DeviceOffline {
+                device_id: device.id.clone(),
+            }
+        };
+        devices.insert(device.id.clone(), device);
+        drop(devices);
+        self.emit(event);
+        Ok(())
+    }
+
+    pub async fn register_read_only_device(
+        &self,
+        id: &str,
+        device_type: &str,
+        description: &str,
+    ) -> Result<(), String> {
+        self.publish_device(Device {
+            id: id.into(),
+            transport_id: Self::probe_owner(id),
+            device_type: device_type.into(),
+            adapter: READ_ONLY_ADAPTER.into(),
+            description: description.into(),
+            online: false,
+            properties: HashMap::new(),
+            properties_timestamp_ms: 0,
+            actions: Vec::new(),
+            role: None,
+        })
+        .await?;
+        self.broadcast_status().await;
+        Ok(())
+    }
+
+    pub async fn observe_read_only_device(
+        &self,
+        id: &str,
+        properties: Option<HashMap<String, Value>>,
+    ) {
+        self.record_device_observation(id, &Self::probe_owner(id), properties)
+            .await;
+    }
+
+    fn probe_owner(id: &str) -> String {
+        format!("probe:{id}")
+    }
+
     /// Update the owning transport's cached observation. Identical samples
     /// renew freshness without appending an unchanged event to history.
     pub(crate) async fn record_device_observation(

@@ -65,8 +65,8 @@ async fn main() -> Result<()> {
     match command {
         Command::Join(mut engine) => {
             engine.expand_paths();
-            let listener = cluster::worker_listener(path).await?;
-            let instance = listener.worker_name().to_owned();
+            let worker = cluster::Worker::bind(path).await?;
+            let instance = worker.name().to_owned();
             let paths = osdl_server::Paths::discover().map_err(anyhow::Error::msg)?;
             run_engine(
                 engine,
@@ -75,7 +75,10 @@ async fn main() -> Result<()> {
                 EngineMode::WorkPlane {
                     advertise_mqtt: false,
                 },
-                |handle| async { listener.serve(handle).await.map_err(Into::into) },
+                |handle| async {
+                    let (listener, _probes) = worker.start(&handle).await?;
+                    listener.serve(handle).await.map_err(Into::into)
+                },
             )
             .await
         }

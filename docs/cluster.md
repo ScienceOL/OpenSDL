@@ -2,15 +2,19 @@
 
 OpenSDL 集群通过局域网或已有的路由型 VPN 把多台设备主机接到同一个控制入口。工作节点在本机运行 OpenSDL 引擎，持有设备连接和本地事件日志。控制面按工作节点 ID 转发请求，设备 ID 可以在不同工作节点上重复。
 
-## 准备网络和证书
+## 构建和部署 labadm
 
-从源码构建两个命令。
+每个操作系统和架构构建一份 labadm。集群角色由子命令选择，控制面运行 serve，工作节点运行 join，管理操作和设备查询也使用同一份可执行文件。
 
 ~~~sh
-cargo build --release --locked -p lab-cli
+cargo build --release --locked -p lab-cli --bin labadm
 ~~~
 
-把 target/release 下的 labadm 安装到控制面、工作节点和操作终端。控制面需要访问所有工作节点的 TCP 端口和 etcd 客户端端口。操作终端只需访问控制面端口。工作节点监听 LAN 地址或 VPN 地址。跨网段部署时，先通过现有 VPN 打通到工作节点的路由，再用该 VPN 地址注册。
+安装 target/release/labadm，Windows 对应 target/release/labadm.exe。同一台主机兼任控制面和工作节点时，两项服务指向同一个绝对可执行路径，各自使用对应的 YAML 配置。升级时为同一主机上的两个角色选用同一个版本。仪器接入代码随 OpenSDL 构建发布，调试主机使用仓库产物和本机设备配置。
+
+## 准备网络和证书
+
+控制面需要访问所有工作节点的 TCP 端口和 etcd 客户端端口。操作终端只需访问控制面端口。工作节点监听 LAN 地址或 VPN 地址。跨网段部署时，先通过现有 VPN 打通到工作节点的路由，再用该 VPN 地址注册。
 
 单机开发可用单成员 etcd。高可用部署将三个 etcd 成员放在三个独立故障域，为客户端和成员间通信开启 TLS，并分别部署至少两个控制面副本。所有控制面副本使用同一组 etcd 端点。etcd 负责复制目录和维护仲裁。生产部署配置和快照恢复请参阅 [etcd 运维指南](https://etcd.io/docs/v3.6/op-guide/)。
 
@@ -90,7 +94,7 @@ incoming:
   ca: control-ca.crt
 ~~~
 
-先在节点上运行仿真，用相同的命令入口验证集群。接入物理设备时，使用该节点的设备配置及私有数据目录，并通过进程管理器运行 join。每台物理设备只由它实际连接的工作节点管理。
+先在节点上运行仿真，用相同的命令入口验证集群。接入物理设备时，使用该节点的内置驱动配置及私有数据目录，并通过进程管理器运行 join。每台物理设备只由它实际连接的工作节点管理。
 
 工作节点要求显式传入 --config 或 --simulation。设备配方使用 MQTT 时，将 mqtt.host 设置为工作节点的仪器网卡 IPv4 地址。嵌入式 MQTT 只绑定该地址，使用既有设备协议。将该网卡置于仪器隔离网段，通过固件的 MQTT_HOST 指向此节点，并在防火墙上将 MQTT 端口限制给仪器网段。工作节点仅在 gRPC 端口运行双向 TLS，MQTT 与视频传输是独立设备链路。
 
@@ -115,6 +119,22 @@ lab serve --instance laboratory --auth account --listen 100.64.0.9:50051 \
 ~~~sh
 labadm --cluster-config admin.yaml admit worker-01 192.168.80.21:7444
 ~~~
+
+### 通过内置 TCP 探测登记只读设备
+
+在工作节点的 `worker.yaml` 中添加 `read_only_devices`。节点启动后即列出这些设备，并在后台每 30 秒探测一次。探测失败时设备仍在目录中，状态为离线。目录和设备详情查询直接读取最近的探测结果。只读设备的动作列表为空。
+
+```yaml
+read_only_devices:
+  - id: network-instrument
+    device_type: vendor.instrument
+    description: Instrument TCP endpoint reachability
+    probe:
+      type: tcp
+      address: 192.168.80.100:6666
+```
+
+`tcp` 建立 TCP 连接后关闭。在线表示指定端口可达，设备详情会包含 `tcp_reachable`。仪器身份和实验运行状态需要由本机驱动确认。
 
 ## 操作设备
 
