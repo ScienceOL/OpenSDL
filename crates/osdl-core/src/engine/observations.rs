@@ -18,7 +18,7 @@ impl EngineHandle {
             current.transport_id != device.transport_id || current.adapter != device.adapter
         }) {
             return Err(format!(
-                "device ID '{}' is already registered with another owner",
+                "device ID '{}' is already registered with another transport or probe",
                 device.id
             ));
         }
