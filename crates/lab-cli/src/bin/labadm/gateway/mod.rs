@@ -58,6 +58,24 @@ impl Osdl for Gateway {
     type StreamEventsStream = RpcStream<pb::Event>;
     type PublishMediaStream = RpcStream<pb::PublishMediaStatus>;
 
+    async fn prepare_scene(
+        &self,
+        _: Request<pb::PrepareSceneRequest>,
+    ) -> Result<Response<pb::PrepareSceneResponse>, Status> {
+        Err(Status::failed_precondition(
+            "scene requires the owning laboratory endpoint",
+        ))
+    }
+
+    async fn apply_scene(
+        &self,
+        _: Request<pb::ApplySceneRequest>,
+    ) -> Result<Response<pb::ApplySceneResponse>, Status> {
+        Err(Status::failed_precondition(
+            "scene requires the owning laboratory endpoint",
+        ))
+    }
+
     async fn status(
         &self,
         _: Request<pb::StatusRequest>,

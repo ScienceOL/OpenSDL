@@ -133,6 +133,22 @@ impl<T: Osdl> Osdl for AccountApi<T> {
     type StreamEventsStream = RpcStream<pb::Event>;
     type PublishMediaStream = RpcStream<pb::PublishMediaStatus>;
 
+    async fn prepare_scene(
+        &self,
+        r: Request<pb::PrepareSceneRequest>,
+    ) -> Result<Response<pb::PrepareSceneResponse>, Status> {
+        self.authorizer.authorize(&r, Permission::Shutdown)?;
+        Err(Status::permission_denied("local_administrator_required"))
+    }
+
+    async fn apply_scene(
+        &self,
+        r: Request<pb::ApplySceneRequest>,
+    ) -> Result<Response<pb::ApplySceneResponse>, Status> {
+        self.authorizer.authorize(&r, Permission::Shutdown)?;
+        Err(Status::permission_denied("local_administrator_required"))
+    }
+
     async fn status(
         &self,
         r: Request<pb::StatusRequest>,

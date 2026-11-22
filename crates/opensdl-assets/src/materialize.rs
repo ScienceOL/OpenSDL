@@ -7,7 +7,7 @@ use tar::EntryType;
 use crate::cache::AssetCache;
 use crate::manifest::{AssetError, ValidatedAsset, VirtualAssetManifest};
 use crate::media_types::{PREVIEW_MEDIA_TYPE, SOURCE_MEDIA_TYPE};
-use crate::package::OciDescriptor;
+use crate::package::{OciDescriptor, PackageDescriptor};
 use crate::paths::safe_relative_path;
 
 const MAX_EXPANDED_FILES: usize = 100_000;
@@ -25,7 +25,7 @@ pub(crate) fn materialize_unlocked(
     cache: &AssetCache,
     manifest_digest: &str,
     destination: &Path,
-) -> Result<ValidatedAsset, AssetError> {
+) -> Result<(ValidatedAsset, PackageDescriptor), AssetError> {
     if destination.exists() {
         return Err(AssetError::invalid(format!(
             "destination already exists: {}",
@@ -88,7 +88,7 @@ pub(crate) fn materialize_unlocked(
     VirtualAssetManifest::load(&root)?;
 
     fs::rename(&root, destination).map_err(|source| AssetError::read(destination, source))?;
-    VirtualAssetManifest::load(destination)
+    Ok((VirtualAssetManifest::load(destination)?, package))
 }
 
 fn extract_source(

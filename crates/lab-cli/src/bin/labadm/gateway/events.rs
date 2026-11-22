@@ -57,6 +57,9 @@ impl Feed {
             let uptime = if let Some((stream, opened_at)) = &mut self.stream {
                 match stream.message().await {
                     Ok(Some(mut event)) => {
+                        if matches!(event.kind, Some(pb::event::Kind::SimulationSceneChanged(_))) {
+                            continue;
+                        }
                         project(&self.worker, &mut event);
                         return Some((event, self));
                     }
@@ -164,7 +167,7 @@ fn project(worker: &Id, event: &mut pb::Event) {
             ev.reason = "worker media gateway down".into();
         }
         Some(Kind::WorkerUnavailable(ev)) => ev.worker = worker.to_string(),
-        Some(Kind::Lagged(_)) | None => {}
+        Some(Kind::SimulationSceneChanged(_) | Kind::Lagged(_)) | None => {}
     }
 }
 

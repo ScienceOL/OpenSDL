@@ -42,6 +42,8 @@ pub struct OsdlService {
     /// the service still holds it).
     shutdown: Arc<Notify>,
     media_publishers: crate::media_publish::Publishers,
+    prepared_scene: Arc<tokio::sync::Mutex<Option<crate::simulation_asset::PreparedScene>>>,
+    scene_templates: crate::simulation_asset::SceneTemplates,
 }
 
 impl OsdlService {
@@ -79,6 +81,8 @@ impl OsdlService {
             identity,
             lab_profile: None,
             shutdown,
+            prepared_scene: Default::default(),
+            scene_templates: Default::default(),
             media_publishers: crate::media_publish::Publishers::default(),
         }
     }
@@ -100,6 +104,37 @@ impl pb::osdl_server::Osdl for OsdlService {
         };
         Ok(Response::new(guard_stream(stream, lease)))
     }
+    async fn prepare_scene(
+        &self,
+        request: Request<pb::PrepareSceneRequest>,
+    ) -> Result<Response<pb::PrepareSceneResponse>, Status> {
+        self.authorizer.authorize(&request, Permission::Shutdown)?;
+        let mut pending = self.prepared_scene.lock().await;
+        let scene = crate::simulation_asset::prepare_revision(
+            &self.engine,
+            request.into_inner().revision,
+            self.scene_templates.clone(),
+        )
+        .await
+        .map_err(|e| Status::failed_precondition(e.to_string()))?;
+        let ticket = scene.ticket.to_string();
+        *pending = Some(scene);
+        Ok(Response::new(pb::PrepareSceneResponse { ticket }))
+    }
+    async fn apply_scene(
+        &self,
+        request: Request<pb::ApplySceneRequest>,
+    ) -> Result<Response<pb::ApplySceneResponse>, Status> {
+        self.authorizer.authorize(&request, Permission::Shutdown)?;
+        let ticket = request.into_inner().ticket;
+        let mut pending = self.prepared_scene.lock().await;
+        let scene = pending
+            .take_if(|scene| uuid::Uuid::try_parse(&ticket) == Ok(scene.ticket))
+            .ok_or_else(|| Status::aborted("prepared scene expired"))?;
+        scene.apply(&self.engine).await.map_err(Status::internal)?;
+        Ok(Response::new(pb::ApplySceneResponse {}))
+    }
+
     async fn read_snapshot(
         &self,
         request: Request<pb::ReadSnapshotRequest>,
@@ -346,6 +381,7 @@ impl pb::osdl_server::Osdl for OsdlService {
 fn event_kind_matches(ev: &pb::Event, allowed: &[String]) -> bool {
     let name = match &ev.kind {
         Some(pb::event::Kind::DeviceOnline(_)) => "device_online",
+        Some(pb::event::Kind::SimulationSceneChanged(_)) => "simulation_scene_changed",
         Some(pb::event::Kind::DeviceOffline(_)) => "device_offline",
         Some(pb::event::Kind::DeviceStatus(_)) => "device_status",
         Some(pb::event::Kind::CommandResult(_)) => "command_result",

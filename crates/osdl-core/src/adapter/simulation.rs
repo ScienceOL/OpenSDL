@@ -44,20 +44,11 @@ impl ProtocolAdapter for SimulationAdapter {
     fn decode_response(&self, _device_type: &str, bytes: &[u8]) -> Option<HashMap<String, Value>> {
         let envelope: Value = serde_json::from_slice(bytes).ok()?;
         let properties = envelope.get("properties")?.as_object()?;
-        let mut decoded = properties
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<HashMap<_, _>>();
-        decoded.insert("simulation".into(), Value::Bool(true));
-        if let Some(engine) = envelope.get("engine") {
-            decoded.insert("simulation_engine".into(), engine.clone());
-        }
-        if let Some(world_id) = envelope.get("world_id") {
-            decoded.insert("simulation_world".into(), world_id.clone());
-        }
-        if let Some(action) = envelope.get("last_action") {
-            decoded.insert("last_action".into(), action.clone());
-        }
-        Some(decoded)
+        Some(
+            properties
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
     }
 }

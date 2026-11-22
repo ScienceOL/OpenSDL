@@ -118,6 +118,8 @@ pub struct Sc9300Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SimulationConfig {
+    #[serde(skip)]
+    pub scene_revision: u64,
     #[serde(default)]
     pub samples: Vec<crate::simulation::SimulationSampleConfig>,
     /// Stable world identifier used in simulated transport/device ids.
@@ -336,6 +338,7 @@ fn simulation_clear_asset_action() -> ActionSchema {
 impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
+            scene_revision: 0,
             samples: Vec::new(),
             world_id: default_simulation_world_id(),
             engine: default_simulation_engine(),

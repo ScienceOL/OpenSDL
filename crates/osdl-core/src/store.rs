@@ -219,6 +219,7 @@ fn event_type_str(event: &OsdlEvent) -> &'static str {
     match event {
         OsdlEvent::DeviceOnline(_) => "device_online",
         OsdlEvent::DeviceOffline { .. } => "device_offline",
+        OsdlEvent::SimulationSceneChanged { .. } => "simulation_scene_changed",
         OsdlEvent::DeviceStatus(_) => "device_status",
         OsdlEvent::CommandResult(_) => "command_result",
         OsdlEvent::UnknownNode { .. } => "unknown_node",
