@@ -43,9 +43,12 @@ pub struct EngineArgs {
     /// devices, so local development does not require hardware.
     #[arg(long, env = "OSDL_SIMULATION")]
     pub simulation: bool,
-    /// Add a digest-pinned package to this world. Repeat for multiple instruments.
+    /// Start a single digest-pinned instrument package.
     #[arg(long, conflicts_with_all = ["config", "registry", "dongle_port"], requires = "simulation")]
-    pub asset: Vec<String>,
+    pub asset: Option<String>,
+    /// Runner-owned scene definition, including instance identities and local transforms.
+    #[arg(long, conflicts_with_all = ["asset", "config", "registry", "dongle_port"], requires = "simulation")]
+    pub scene: Option<PathBuf>,
 }
 
 impl EngineArgs {
@@ -76,14 +79,14 @@ impl EngineArgs {
 
 pub enum EngineMode {
     Standalone { advertise_mqtt: bool },
-    WorkPlane,
+    WorkPlane { advertise_mqtt: bool },
 }
 
 impl EngineMode {
     fn broker_addr(&self, config: &MqttConfig) -> anyhow::Result<SocketAddr> {
         let ip = match self {
             Self::Standalone { .. } => Ipv4Addr::UNSPECIFIED,
-            Self::WorkPlane => {
+            Self::WorkPlane { .. } => {
                 let ip = config.host.parse::<Ipv4Addr>().context(
                     "work-plane MQTT requires an explicit instrument interface IP in mqtt.host",
                 )?;
@@ -95,6 +98,14 @@ impl EngineMode {
             }
         };
         Ok((ip, config.port).into())
+    }
+
+    fn advertise_mqtt(&self) -> bool {
+        match *self {
+            Self::Standalone { advertise_mqtt } | Self::WorkPlane { advertise_mqtt } => {
+                advertise_mqtt
+            }
+        }
     }
 }
 
@@ -113,7 +124,7 @@ where
         osdl_auth::valid_instance_name(instance),
         "invalid engine instance name"
     );
-    if matches!(mode, EngineMode::WorkPlane) {
+    if matches!(mode, EngineMode::WorkPlane { .. }) {
         anyhow::ensure!(
             args.config.is_some() || args.simulation,
             "work-plane nodes require --config or --simulation"
@@ -138,54 +149,33 @@ where
         .with_context(|| format!("lock engine {}", lock_path.display()))?;
 
     let _asset_directory;
-    if !args.asset.is_empty() {
-        use opensdl_assets::{AssetCache, AssetReference, RegistryClient, RegistryCredentials};
+    if args.asset.is_some() || args.scene.is_some() {
+        use opensdl_assets::{AssetCache, AssetReference};
         let cache = AssetCache::open(data_dir.join("assets"))?;
-        if args.asset.len() > 64 {
-            anyhow::bail!("select at most 64 simulation packages");
-        }
-        let references = args
-            .asset
-            .iter()
-            .map(|reference| {
-                let parsed = AssetReference::parse(reference)?;
-                parsed
-                    .digest()
-                    .context("--asset requires a sha256 digest-pinned reference")?;
-                Ok(parsed)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let mut pulls = tokio::task::JoinSet::new();
-        let mut requested = std::collections::HashSet::new();
-        for reference in references {
-            let digest = reference.digest().expect("validated pinned reference");
-            // A verified immutable cache hit needs no registry round trip.
-            if !requested.insert(digest.to_owned()) || cache.package(digest).is_ok() {
-                continue;
-            }
-            let cache = cache.clone();
-            pulls.spawn(async move {
-                RegistryClient::for_reference(&reference)
-                    .pull(&reference, &cache, &RegistryCredentials::Anonymous, false)
-                    .await
-            });
-            if pulls.len() == 4 {
-                pulls
-                    .join_next()
-                    .await
-                    .context("asset download task missing")???;
-            }
-        }
-        while let Some(result) = pulls.join_next().await {
-            result??;
-        }
         _asset_directory = tempfile::tempdir_in(data_dir)?;
-        config.simulation = Some(osdl_server::simulation_asset::compose(
-            &cache,
-            &args.asset,
-            _asset_directory.path(),
-            instance,
-        )?);
+        config.simulation = Some(match &args.scene {
+            Some(path) => {
+                let scene = osdl_server::simulation_asset::SceneDefinition::read(path)?;
+                let mut world = osdl_server::simulation_asset::compose(
+                    &cache,
+                    &scene.instruments,
+                    _asset_directory.path(),
+                    instance,
+                )?;
+                world.scene_revision = scene.revision;
+                world
+            }
+            None => {
+                let reference =
+                    AssetReference::parse(args.asset.as_deref().context("missing asset")?)?;
+                crate::assets::acquire(&cache, vec![reference.clone()]).await?;
+                osdl_server::simulation_asset::prepare(
+                    &cache,
+                    reference.digest().context("missing digest")?,
+                    &_asset_directory.path().join("instrument"),
+                )?
+            }
+        });
     }
     config.data_dir = Some(data_dir.clone());
 
@@ -193,18 +183,9 @@ where
     let _broker = broker_addr
         .map(|addr| EmbeddedBroker::bind(addr).map_err(|e| anyhow!("broker: {e}")))
         .transpose()?;
-    let _mdns = config
-        .mqtt
-        .as_ref()
-        .filter(|_| {
-            matches!(
-                mode,
-                EngineMode::Standalone {
-                    advertise_mqtt: true
-                }
-            )
-        })
-        .map(|c| MdnsAdvertiser::start(c.port).map_err(|e| anyhow!("mdns: {e}")))
+    let _mdns = broker_addr
+        .filter(|_| mode.advertise_mqtt())
+        .map(|addr| MdnsAdvertiser::start(addr).map_err(|e| anyhow!("mdns: {e}")))
         .transpose()?;
 
     if config.mqtt.is_some() {
@@ -238,11 +219,13 @@ where
             result.context("serve")
         }
         result = &mut engine_task => {
+            let requested = handle.is_stop_requested();
             handle.request_stop();
             // Release listeners, event streams and the instance lockfile.
             server.await.context("serve shutdown")?;
             result.context("engine task failed")?;
-            anyhow::bail!("engine stopped before the control service")
+            anyhow::ensure!(requested, "engine stopped before the control service");
+            Ok(())
         }
     }
 }
@@ -352,6 +335,14 @@ fn build_config(args: &EngineArgs) -> anyhow::Result<OsdlConfig> {
             log::warn!("--simulation ignores ESP-NOW dongles from the recipe");
             cfg.espnow_dongles.clear();
         }
+        if !cfg.qx96m_instruments.is_empty() {
+            log::warn!("--simulation ignores QX96M instruments from the recipe");
+            cfg.qx96m_instruments.clear();
+        }
+        if !cfg.sc9300_instruments.is_empty() {
+            log::warn!("--simulation ignores SC9300 workstations from the recipe");
+            cfg.sc9300_instruments.clear();
+        }
     }
 
     Ok(cfg)
@@ -381,6 +372,10 @@ fn normalize_config_paths(cfg: &mut OsdlConfig, config_dir: &Path) {
         let expanded = path_expand::expand(&raw, config_dir);
         d.port = expanded.display().to_string();
     }
+    for instrument in &mut cfg.qx96m_instruments {
+        instrument.key_file =
+            path_expand::expand(&instrument.key_file.to_string_lossy(), config_dir);
+    }
     if let Some(bin) = cfg.media_gateway.binary.as_deref() {
         cfg.media_gateway.binary = Some(path_expand::expand(&bin.to_string_lossy(), config_dir));
     }
@@ -398,19 +393,23 @@ mod tests {
             dongle_port: None,
             dongle_baud: 115_200,
             simulation,
-            asset: Vec::new(),
+            asset: None,
+            scene: None,
         }
     }
 
     #[test]
     fn worker_broker_requires_specific_interface() {
         let mut mqtt = MqttConfig::default();
-        assert!(EngineMode::WorkPlane.broker_addr(&mqtt).is_err());
+        let mode = EngineMode::WorkPlane {
+            advertise_mqtt: false,
+        };
+        assert!(mode.broker_addr(&mqtt).is_err());
         mqtt.host = "0.0.0.0".into();
-        assert!(EngineMode::WorkPlane.broker_addr(&mqtt).is_err());
+        assert!(mode.broker_addr(&mqtt).is_err());
         mqtt.host = "192.168.50.4".into();
         assert_eq!(
-            EngineMode::WorkPlane.broker_addr(&mqtt).unwrap(),
+            mode.broker_addr(&mqtt).unwrap(),
             "192.168.50.4:1883".parse().unwrap()
         );
     }
@@ -429,6 +428,25 @@ mod tests {
                 .world_id,
             "lab-sim"
         );
+    }
+
+    #[test]
+    fn qx96m_key_paths_are_recipe_relative_and_simulation_opens_no_instruments() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("devices.yaml");
+        std::fs::write(
+            &path,
+            "qx96m_instruments:\n  - id: test\n    endpoint: 192.168.42.10:6666\n    key_file: private/qx96m.key\n",
+        )
+        .unwrap();
+
+        let physical = build_config(&args(false, Some(path.clone()))).unwrap();
+        assert_eq!(
+            physical.qx96m_instruments[0].key_file,
+            directory.path().join("private/qx96m.key")
+        );
+        let simulation = build_config(&args(true, Some(path))).unwrap();
+        assert!(simulation.qx96m_instruments.is_empty());
     }
 
     #[test]

@@ -8,8 +8,11 @@ pub fn no_reparse(_: &Path) -> Result<()> {
     Ok(())
 }
 pub fn create_dir(path: &Path) -> Result<()> {
-    fs::DirBuilder::new().mode(0o700).create(path)?;
-    Ok(())
+    match fs::DirBuilder::new().mode(0o700).create(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 pub fn verify(path: &Path, dir: bool) -> Result<()> {
     let m = fs::symlink_metadata(path)?;

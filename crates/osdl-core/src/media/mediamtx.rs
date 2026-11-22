@@ -103,12 +103,7 @@ fn default_webrtc_udp_port() -> u16 {
 /// must parse, must use a known scheme, and must not contain control
 /// characters or quotes that could confuse the ffmpeg argv splitter.
 fn validate_path(p: &MediaPath) -> Result<(), MediamtxError> {
-    if p.name.is_empty()
-        || !p
-            .name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if !super::is_valid_media_path_name(&p.name) {
         return Err(MediamtxError::InvalidConfig(format!(
             "path name {:?}: must match [A-Za-z0-9_-]+",
             p.name

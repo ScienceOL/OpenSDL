@@ -9,6 +9,8 @@ mod native;
 #[cfg(windows)]
 #[path = "store/windows.rs"]
 mod native;
+#[cfg(windows)]
+pub use native::publish as publish_windows_file;
 /// Explicit caller-selected namespace; standalone and Runner roots must be distinct.
 pub struct ProfileStore {
     root: PathBuf,

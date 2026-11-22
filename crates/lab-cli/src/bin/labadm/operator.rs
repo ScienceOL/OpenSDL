@@ -12,6 +12,7 @@ use osdl_proto::{
 use tonic::{transport::Channel, Code, Status};
 
 use crate::config::{self, Id, OperatorConfig};
+use crate::control::COMMAND_REPLY_TIMEOUT;
 
 type Client = ControlPlaneClient<Channel>;
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -119,18 +120,19 @@ pub async fn run(command: Command, path: &Path) -> Result<()> {
                 worker: worker.to_string(),
                 command: Some(command),
             };
-            let result = bounded(client.send_command(request))
-                .await
-                .map_err(|error| match error.code() {
-                    Code::Unknown
-                    | Code::Unavailable
-                    | Code::DeadlineExceeded
-                    | Code::Cancelled => anyhow::anyhow!(
-                        "command {command_id} outcome could not be confirmed: {error}"
-                    ),
-                    _ => error.into(),
-                })?
-                .into_inner();
+            let result = tokio::time::timeout(
+                COMMAND_REPLY_TIMEOUT + REQUEST_TIMEOUT,
+                client.send_command(request),
+            )
+            .await
+            .unwrap_or_else(|_| Err(Status::deadline_exceeded("control command timed out")))
+            .map_err(|error| match error.code() {
+                Code::Unknown | Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled => {
+                    anyhow::anyhow!("command {command_id} outcome could not be confirmed: {error}")
+                }
+                _ => error.into(),
+            })?
+            .into_inner();
             let status = osdl::command_result::Status::try_from(result.status)
                 .unwrap_or(osdl::command_result::Status::Unspecified);
             println!(

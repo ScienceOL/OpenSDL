@@ -33,6 +33,10 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_INSTANCE", default_value = "default")]
     pub instance: String,
 
+    /// Laboratory display name if there is no saved profile. Defaults to the host name.
+    #[arg(long, env = "OSDL_LAB_NAME")]
+    pub name: Option<String>,
+
     /// Where to bind the Unix domain socket. Default:
     /// `<runtime_dir>/<instance>.sock`. Set `--socket=disabled` to opt
     /// out of UDS entirely (then a TCP listener must be set).
@@ -42,6 +46,10 @@ pub struct ServeArgs {
     /// Bind a TCP gRPC listener. Off by default — UDS only.
     #[arg(long, env = "OSDL_LISTEN")]
     pub listen: Option<SocketAddr>,
+
+    /// Expose the same engine to a cluster control plane using this worker YAML.
+    #[arg(long)]
+    pub cluster_worker: Option<PathBuf>,
 
     /// Run in the background as a Unix daemon. Stdout/stderr are
     /// redirected to `--log-file`. The current process forks twice,
@@ -60,16 +68,19 @@ pub struct ServeArgs {
     #[arg(long, env = "OSDL_LOG_FILE")]
     pub log_file: Option<PathBuf>,
 
-    /// Token for explicit --auth static. Prefer the private environment. Clients pass it via
-    /// `OSDL_AUTH_TOKEN` (the CLI sets `authorization: Bearer <token>`
-    /// on each request). UDS clients skip this — filesystem perms are
-    /// the auth there. Static mode requires a token even on loopback.
+    /// Token required by --auth static. Prefer the private environment.
+    /// Unix sockets use filesystem permissions.
     #[arg(long, env = "OSDL_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 
     /// Explicit listener authority. Account uses the binding saved by `lab login`.
     #[arg(long, value_enum, default_value = "local")]
     pub auth: AuthMode,
+
+    /// Treat a supervisor's static token as private local authority on an
+    /// explicitly configured loopback TCP listener.
+    #[arg(long, env = "OSDL_LOCAL_CAPABILITY")]
+    pub local_capability: bool,
     #[arg(long, default_value="stable", value_parser=["dev","beta","rc","stable"])]
     pub channel: String,
 }
@@ -120,6 +131,9 @@ fn expand_env_in_path_args(args: &mut ServeArgs) {
         PathBuf::from(path_expand::expand_vars(&p.to_string_lossy()))
     }
     args.engine.expand_paths();
+    if let Some(p) = args.cluster_worker.as_deref() {
+        args.cluster_worker = Some(expand_pathbuf(p));
+    }
     if let Some(p) = args.log_file.as_deref() {
         args.log_file = Some(expand_pathbuf(p));
     }
@@ -156,6 +170,9 @@ fn absolutize_path_args(args: &mut ServeArgs) -> anyhow::Result<()> {
     }
     if let Some(p) = args.engine.registry.as_deref() {
         args.engine.registry = Some(require_existing(p)?);
+    }
+    if let Some(p) = args.cluster_worker.as_deref() {
+        args.cluster_worker = Some(require_existing(p)?);
     }
     if let Some(p) = args.engine.data_dir.as_deref() {
         args.engine.data_dir = Some(make_absolute(p)?);
@@ -300,6 +317,11 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         ));
     }
 
+    anyhow::ensure!(
+        !args.local_capability || (matches!(args.auth, AuthMode::Static) && args.listen.is_some()),
+        "--local-capability requires --auth static and an explicit loopback --listen address"
+    );
+
     // Resolve and validate authentication before starting the broker or hardware.
     // The server library enforces the same listener policy for non-CLI callers.
     let auth = match args.auth {
@@ -313,7 +335,10 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             )?)
         }
         AuthMode::Local => {
-            anyhow::ensure!(args.auth_token.is_none(),"local mode generates its own private capability; use --auth static for process-supplied tokens");
+            anyhow::ensure!(
+                args.auth_token.is_none(),
+                "local mode generates a private capability; use --auth static for process-supplied tokens"
+            );
             osdl_server::auth::ListenerAuth::Local
         }
         AuthMode::PublicKey => {
@@ -342,6 +367,9 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
             )
         }
         AuthMode::Static => match &args.auth_token {
+            Some(token) if args.local_capability => {
+                osdl_server::auth::ListenerAuth::LocalCapability(token.clone())
+            }
             Some(token) => osdl_server::auth::ListenerAuth::Bearer(token.clone()),
             None => return Err(anyhow!("--auth static requires OSDL_AUTH_TOKEN")),
         },
@@ -350,6 +378,19 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
         .map_err(anyhow::Error::msg)?;
 
     let advertise_mqtt = !matches!(args.auth, AuthMode::Local);
+    let worker = match args.cluster_worker.as_deref() {
+        Some(path) => Some(lab_cli::cluster::Worker::bind(path).await?),
+        None => None,
+    };
+    let mode = if worker.is_some() {
+        EngineMode::WorkPlane { advertise_mqtt }
+    } else {
+        EngineMode::Standalone { advertise_mqtt }
+    };
+    let engine_instance = worker
+        .as_ref()
+        .map_or(args.instance.as_str(), |worker| worker.name())
+        .to_owned();
     let serve_cfg = ServeConfig {
         instance: args.instance.clone(),
         listen: ListenConfig {
@@ -361,11 +402,18 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
     };
     run_engine(
         args.engine,
-        &args.instance,
+        &engine_instance,
         paths.state_dir,
-        EngineMode::Standalone { advertise_mqtt },
+        mode,
         |handle| async {
-            osdl_server::serve(handle, serve_cfg)
+            let (listener, _probes) = match worker {
+                Some(worker) => {
+                    let (listener, probes) = worker.start(&handle).await?;
+                    (Some(listener), Some(probes))
+                }
+                None => (None, None),
+            };
+            osdl_server::serve_with_worker(handle, serve_cfg, listener, args.name.as_deref())
                 .await
                 .map_err(Into::into)
         },

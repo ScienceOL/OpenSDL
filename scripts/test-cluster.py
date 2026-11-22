@@ -2,6 +2,7 @@
 """Exercise labadm with real etcd quorum, TLS, and simulated OpenSDL workers."""
 
 import argparse
+import base64
 import concurrent.futures
 import contextlib
 import json
@@ -14,6 +15,7 @@ import sqlite3
 import ssl
 import statistics
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -186,10 +188,10 @@ def cli(binary, config, *args):
     return run(binary, "--cluster-config", config, *args, env=LABADM_ENV)
 
 
-def start(stack, binary, config, *args):
+def start(stack, binary, config, *args, env=LABADM_ENV):
     process = subprocess.Popen(
         [binary, "--cluster-config", config, *args],
-        stdout=subprocess.DEVNULL, env=LABADM_ENV,
+        stdout=subprocess.DEVNULL, env=env,
     )
     stack.callback(terminate, process)
     return process
@@ -233,11 +235,232 @@ def initialize(pki, binary, controls, endpoints):
     return control_configs
 
 
+def gateway_fixture(stack, pki, controllers, gateway_ports):
+    root = pki.root
+    client_env = LABADM_ENV.copy()
+    if sys.platform == "linux":
+        client_env.update(
+            XDG_CONFIG_HOME=str(root / "gateway-config"),
+            XDG_CACHE_HOME=str(root / "gateway-cache"),
+            XDG_STATE_HOME=str(root / "gateway-state"),
+            XDG_RUNTIME_DIR=str(root / "gateway-runtime"),
+        )
+        Path(client_env["XDG_RUNTIME_DIR"]).mkdir(mode=0o700)
+        instances = Path(client_env["XDG_CONFIG_HOME"]) / "osdl" / "instances"
+    elif sys.platform == "win32":
+        # ProjectDirs uses Windows Known Folders. An isolated, unique binding
+        # directory leaves existing laboratory instances untouched.
+        instances = Path(os.environ["APPDATA"]) / "scienceol" / "osdl" / "config" / "instances"
+    else:
+        return None
+    instances.mkdir(parents=True, exist_ok=True)
+    instance_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="gateway-qa-", dir=instances)))
+
+    def b64(data):
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    key = pki.file("account-signing.key")
+    run(pki.openssl, "genpkey", "-algorithm", "ED25519", "-out", key)
+    spki = subprocess.check_output([pki.openssl, "pkey", "-in", key, "-pubout", "-outform", "DER"], timeout=10)
+    assert spki[:12] == bytes.fromhex("302a300506032b6570032100") and len(spki) == 44
+    binding = {
+        "issuer": "https://liyanlabs.local", "channel": "dev", "account_id": "cluster-fixture",
+        "lab_id": str(uuid.uuid4()), "instance": instance_dir.name, "key_id": "fixture",
+        "public_key": b64(spki[-32:]),
+    }
+    write_config(instance_dir, "account", **binding)
+
+    def token(scope):
+        now = int(time.time())
+        claims = {
+            "iss": binding["issuer"], "sub": binding["account_id"], "aud": binding["lab_id"],
+            "channel": binding["channel"], "device_id": str(uuid.uuid4()), "device_generation": 1,
+            "installation_id": str(uuid.uuid4()), "iat": now, "exp": now + 300, "scope": scope,
+        }
+        header = {"alg": "EdDSA", "typ": "liyanlabs.opensdl.identity+jwt", "kid": binding["key_id"]}
+        signing_input = f"{b64(json.dumps(header).encode())}.{b64(json.dumps(claims).encode())}"
+        message = pki.file("account-claims.txt")
+        message.write_text(signing_input, encoding="ascii")
+        signature = subprocess.check_output(
+            [pki.openssl, "pkeyutl", "-sign", "-rawin", "-inkey", key, "-in", message], timeout=10,
+        )
+        return f"{signing_input}.{b64(signature)}"
+
+    for path, port in zip(controllers, gateway_ports):
+        config = json.loads(path.read_text())
+        config["account_gateway"] = {"listen": f"{LOOPBACK}:{port}", "instance": binding["instance"]}
+        path.write_text(json.dumps(config), encoding="utf-8")
+    return client_env, token("opensdl:read"), token("opensdl:read opensdl:operate")
+
+
+def check_gateway_inventory_and_dispatch(binary, root, port, fixture, home, peer):
+    env, read_token, operate_token = fixture
+    lab = binary.with_name("lab" + binary.suffix)
+    endpoint = f"http://{LOOPBACK}:{port}"
+    read_env = {**env, "OSDL_AUTH_TOKEN": read_token}
+    operate_env = {**env, "OSDL_AUTH_TOKEN": operate_token}
+    arg = (lab, "--endpoint", endpoint)
+    home_id = f"{home}:{DEVICE}"
+    peer_id = f"{peer}:{DEVICE}"
+    listing = wait_for(lambda: run(*arg, "device", "list", "--json", env=read_env))
+    anonymous = subprocess.run((*arg, "device", "list"), env=env, capture_output=True, timeout=10)
+    assert anonymous.returncode != 0
+    assert {home_id, peer_id} <= {device["id"] for device in json.loads(listing)}
+    device = json.loads(run(*arg, "device", "get", home_id, "--json", env=read_env))
+    assert device["id"] == home_id and not device["transport_id"]
+    waited = json.loads(run(*arg, "device", "wait", f"id:{home_id}", "--timeout", "3s", "--json", env=read_env))
+    assert waited["id"] == home_id
+
+    blocked = subprocess.run(
+        (*arg, "send", peer_id, "start", "--command-id", "gateway-read-only"),
+        env=read_env, capture_output=True, timeout=10,
+    )
+    assert blocked.returncode != 0
+    assert command_count(root, peer, "gateway-read-only") == 0
+    result = json.loads(run(*arg, "send", peer_id, "start", "--command-id", "gateway-routed",
+                            "--json", env=operate_env))
+    assert result["device_id"] == peer_id and result["command_id"] == "gateway-routed"
+    assert command_count(root, home, "gateway-routed") == 0
+    assert command_count(root, peer, "gateway-routed") == 1
+
+
+def check_gateway_event_capacity(binary, port, fixture, worker):
+    env, read_token, operate_token = fixture
+    lab = binary.with_name("lab" + binary.suffix)
+    endpoint = f"http://{LOOPBACK}:{port}"
+    events_cmd = (lab, "--endpoint", endpoint, "events", "--json", "--kinds", "command_result")
+    reader_env = {**env, "OSDL_AUTH_TOKEN": read_token}
+    with contextlib.ExitStack() as cleanup, concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        streams = []
+        try:
+            for _ in range(8):
+                process = subprocess.Popen(events_cmd, stdout=subprocess.PIPE, text=True, env=reader_env)
+                cleanup.callback(process.stdout.close)
+                cleanup.callback(terminate, process)
+                streams.append(process)
+            first_events = [executor.submit(process.stdout.readline) for process in streams]
+            end = time.monotonic() + 8
+            while time.monotonic() < end and not all(event.done() for event in first_events):
+                run(lab, "--endpoint", endpoint, "send", f"{worker}:{DEVICE}", "start",
+                    env={**env, "OSDL_AUTH_TOKEN": operate_token})
+                time.sleep(0.1)
+            for event in first_events:
+                assert json.loads(event.result(timeout=2))["kind"] == "command_result"
+            denied = subprocess.run(events_cmd, capture_output=True, text=True, env=reader_env, timeout=5)
+            assert denied.returncode != 0 and "cluster event subscriptions are busy" in denied.stderr
+        finally:
+            for process in streams:
+                terminate(process)
+
+
+def check_gateway_worker_loss(binary, port, fixture, home, peer, stopped_worker, rejoin):
+    env, read_token, operate_token = fixture
+    lab = binary.with_name("lab" + binary.suffix)
+    endpoint = f"http://{LOOPBACK}:{port}"
+    read_env = {**env, "OSDL_AUTH_TOKEN": read_token}
+    operate_env = {**env, "OSDL_AUTH_TOKEN": operate_token}
+    arg = (lab, "--endpoint", endpoint)
+    events = subprocess.Popen(
+        (*arg, "events", "--json", "--kinds", "command_result,worker_unavailable"),
+        stdout=subprocess.PIPE, text=True, env=read_env,
+    )
+
+    def await_event(kind, field, expected):
+        for line in events.stdout:
+            event = json.loads(line)
+            if event["kind"] == kind and event["payload"].get(field) == expected:
+                return event
+        raise AssertionError(f"gateway event stream closed before {kind}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            primed = executor.submit(await_event, "command_result", "device_id", f"{home}:{DEVICE}")
+            for attempt in range(10):
+                run(*arg, "send", f"{home}:{DEVICE}", "start",
+                    "--command-id", f"gateway-prime-{attempt}", env=operate_env)
+                if primed.done():
+                    break
+                time.sleep(0.1)
+            primed.result(timeout=3)
+            down = executor.submit(await_event, "worker_unavailable", "worker", home)
+            terminate(stopped_worker)
+            down.result(timeout=5)
+
+            # The same subscriber still receives events for another worker.
+            retained = executor.submit(await_event, "command_result", "command_id", "gateway-survivor")
+            run(*arg, "send", f"{peer}:{DEVICE}", "start", "--command-id", "gateway-survivor",
+                env=operate_env)
+            assert retained.result(timeout=5)["payload"]["device_id"] == f"{peer}:{DEVICE}"
+
+            recovered = executor.submit(await_event, "command_result", "device_id", f"{home}:{DEVICE}")
+            restored = rejoin()
+            try:
+                end = time.monotonic() + 8
+                while time.monotonic() < end and not recovered.done():
+                    run(*arg, "send", f"{home}:{DEVICE}", "start", env=operate_env)
+                    time.sleep(0.1)
+                recovered.result(timeout=2)
+            finally:
+                terminate(restored)
+        finally:
+            terminate(events)
+            events.stdout.close()
+
+    listing = run(*arg, "device", "list", "--json", env=read_env)
+    available = {device["id"] for device in json.loads(listing)}
+    assert f"{peer}:{DEVICE}" in available and f"{home}:{DEVICE}" not in available
+    print("account gateway verified: routed IDs, exact dispatch, scopes and worker-loss isolation", flush=True)
+
+
 def assert_local_inventory(binary, config, workers):
     listing = cli(binary, config, "devices")
     for worker in workers:
         assert f"{worker}\t{DEVICE}\t" in listing, listing
     return len(listing.encode())
+
+
+def check_shared_worker(stack, pki, binary, lab, operator, admin):
+    worker = "shared-worker"
+    instance = "shared-lab"
+    worker_port, direct_port = ports(2)
+    pki.issue(worker, "worker", "serverAuth", f"DNS:{worker}.lab.worker.opensdl.internal")
+    worker_config = write_config(
+        pki.root, worker, cluster="lab", worker=worker, listen=f"{LOOPBACK}:{worker_port}",
+        incoming=pki.tls(worker, "control"),
+    )
+    endpoint = f"http://{LOOPBACK}:{direct_port}"
+    env = {**LABADM_ENV, "OSDL_AUTH_TOKEN": "fixture-" + uuid.uuid4().hex}
+    data = pki.root / worker
+    process = subprocess.Popen(
+        [lab, "serve", "--cluster-worker", worker_config, "--instance", instance,
+         "--listen", f"{LOOPBACK}:{direct_port}", "--socket=disabled",
+         "--auth", "static", "--simulation", "--data-dir", data],
+        stdout=subprocess.DEVNULL, env=env,
+    )
+    stack.callback(terminate, process)
+
+    def read():
+        return json.loads(run(lab, "--endpoint", endpoint, "device", "get", DEVICE, "--json", env=env))
+
+    wait_for(read)
+    wait_for(lambda: cli(binary, admin, "admit", worker, f"{LOOPBACK}:{worker_port}"))
+    result = cli(binary, operator, "send", worker, DEVICE, "start", "--command-id", "shared-engine")
+    assert "SUCCEEDED" in result, result
+    wait_for(lambda: read()["properties"]["running"] is True)
+    with contextlib.closing(sqlite3.connect(data / f"{worker}.db")) as db:
+        count = db.execute(
+            "SELECT count(*) FROM command_log WHERE command_id = ?", ("shared-engine",),
+        ).fetchone()[0]
+    assert count == 1
+
+    unauthenticated = subprocess.run(
+        [lab, "--endpoint", endpoint, "device", "get", DEVICE],
+        capture_output=True, text=True, timeout=8, env=LABADM_ENV,
+    )
+    assert unauthenticated.returncode != 0 and "missing authorization header" in unauthenticated.stderr, unauthenticated
+    cli(binary, admin, "forget", worker)
+    terminate(process)
+    print("direct lab and mTLS worker share live engine state and one command log", flush=True)
 
 
 def etcd_metrics(pki, endpoints):
@@ -288,12 +511,12 @@ def measure(binary, config, pki, endpoints, gate, expected_workers, history):
     )
 
 
-def exercise(binary, openssl):
+def exercise(binary, lab, openssl):
     with tempfile.TemporaryDirectory(prefix="osdl-cluster-") as tmp, contextlib.ExitStack() as stack:
         root = Path(tmp).resolve()
         pki = Pki(root, openssl)
         names, endpoints = start_etcd(pki, stack)
-        first, second, *worker_ports = ports(12)
+        first, second, first_gateway, second_gateway, *worker_ports = ports(14)
         client_paths = []
         for endpoint in endpoints[:2]:
             port = int(endpoint.rsplit(":", 1)[1])
@@ -302,7 +525,9 @@ def exercise(binary, openssl):
             client_paths.append(path)
         routed_endpoints = [f"https://{LOOPBACK}:{path.server_address[1]}" for path in client_paths]
         controls = initialize(pki, binary, (first, second), routed_endpoints + endpoints[2:])
-        daemons = [start(stack, binary, path, "serve") for path in controls]
+        fixture = gateway_fixture(stack, pki, controls, (first_gateway, second_gateway))
+        control_env = fixture[0] if fixture else LABADM_ENV
+        daemons = [start(stack, binary, path, "serve", env=control_env) for path in controls]
         control_endpoints = [f"https://{LOOPBACK}:{port}" for port in (first, second)]
         config = write_config(root, "client", cluster="lab", endpoints=control_endpoints,
                               tls=pki.tls("operator", "control"))
@@ -313,6 +538,7 @@ def exercise(binary, openssl):
         wait_for(lambda: cli(binary, config, "status"))
         wait_for(lambda: cli(binary, standby, "status"))
         rejected(binary, wrong_role, "status")
+        check_shared_worker(stack, pki, binary, lab, config, controls[0])
 
         gate = ResponseGate((LOOPBACK, worker_ports[1]))
         gate.start(stack)
@@ -333,6 +559,13 @@ def exercise(binary, openssl):
         names_in_order = sorted(workers)
         assert cli(binary, standby, "workers").splitlines() == names_in_order
         home, peer = names_in_order[:2]
+        if fixture:
+            before = etcd_metrics(pki, endpoints)
+            check_gateway_inventory_and_dispatch(binary, root, first_gateway, fixture, home, peer)
+            # One membership range, one GetDevice route, one WaitForDevice
+            # route and one SendCommand route. Denied requests never read etcd.
+            assert etcd_metrics(pki, endpoints) - before == 4
+            check_gateway_event_capacity(binary, first_gateway, fixture, home)
         with contextlib.closing(sqlite3.connect(root / peer / f"{peer}.db")) as db:
             db.execute("""
                 WITH RECURSIVE sequence(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM sequence WHERE i < 100000)
@@ -391,7 +624,21 @@ def exercise(binary, openssl):
                 terminate(events)
                 events.stdout.close()
 
-        terminate(workers[home])
+        if fixture:
+            def rejoin():
+                cli(binary, controls[1], "forget", home)
+                before = etcd_metrics(pki, endpoints)
+                # Observe the disconnected feed query the missing route
+                # before restoring it, so a terminal NotFound loses the test.
+                wait_for(lambda: etcd_metrics(pki, endpoints) > before, timeout=8)
+                process = start(stack, binary, root / f"{home}.json", "join", "--simulation",
+                                "--data-dir", root / home)
+                wait_for(lambda: cli(binary, controls[1], "admit", home, f"{LOOPBACK}:{worker_ports[0]}"))
+                return process
+
+            check_gateway_worker_loss(binary, second_gateway, fixture, home, peer, workers[home], rejoin)
+        else:
+            terminate(workers[home])
         assert f"{home}\tunavailable\t" in cli(binary, config, "devices")
         rejected(binary, config, "send", home, DEVICE, "start", "--command-id", "offline")
         assert command_count(root, peer, "offline") == 0
@@ -425,9 +672,11 @@ def exercise(binary, openssl):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--labadm", type=Path, default=Path("target/debug/labadm" + (".exe" if os.name == "nt" else "")))
+    parser.add_argument("--lab", type=Path, help="Direct lab binary adjacent to labadm by default")
     parser.add_argument("--openssl", default=shutil.which("openssl") or "openssl")
     options = parser.parse_args()
-    exercise(options.labadm.resolve(), options.openssl)
+    lab = options.lab or options.labadm.with_name("lab" + options.labadm.suffix)
+    exercise(options.labadm.resolve(), lab.resolve(), options.openssl)
 
 
 if __name__ == "__main__":

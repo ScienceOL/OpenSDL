@@ -14,11 +14,17 @@ import "google/protobuf/timestamp.proto";
 // ===== Service =====
 
 service Osdl {
+  rpc PrepareScene(PrepareSceneRequest) returns (PrepareSceneResponse);
+  rpc ApplyScene(ApplySceneRequest) returns (ApplySceneResponse);
+
   // Read a bounded snapshot under this server's private snapshot root.
   rpc ReadSnapshot(ReadSnapshotRequest) returns (ReadSnapshotResponse);
 
   // Server identity + connection counts. Cheap to call; clients can poll.
   rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Change this instance's display profile if the supplied revision still matches.
+  rpc UpdateLabProfile(UpdateLabProfileRequest) returns (LabProfile);
 
   // Nodes (MQTT-serial bridge boards). Devices sit on top of these for
   // that transport — for ESP-NOW / direct serial there are no nodes.
@@ -54,6 +60,11 @@ service Osdl {
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
+message PrepareSceneRequest { uint64 revision = 1; }
+message PrepareSceneResponse { string ticket = 1; }
+message ApplySceneRequest { string ticket = 1; }
+message ApplySceneResponse {}
+
 message PublishMediaRequest {
   string source_id = 1;
   string publish_url = 2;
@@ -81,6 +92,22 @@ message StatusResponse {
   // Engine status (mirrors osdl_core::OsdlStatus).
   EngineStatus engine = 6;
   google.protobuf.Timestamp started_at = 7;
+  LabProfile laboratory = 8;
+}
+
+message LabProfile {
+  string name = 1;
+  string description = 2;
+  // Opaque revision of this instance's current display profile.
+  string revision = 3;
+  // Whether the current request's authority can edit this profile.
+  bool writable = 4;
+}
+
+message UpdateLabProfileRequest {
+  string name = 1;
+  string description = 2;
+  string revision = 3;
 }
 
 message EngineStatus {
@@ -214,12 +241,16 @@ message Event {
     MediaSourceOnlineEvent media_source_online = 7;
     MediaGatewayDownEvent media_gateway_down = 8;
     LaggedEvent lagged = 9;
+    SimulationSceneChangedEvent simulation_scene_changed = 10;
+    WorkerUnavailableEvent worker_unavailable = 11;
   }
 }
 
 message DeviceOnlineEvent {
   Device device = 1;
 }
+
+message SimulationSceneChangedEvent { uint64 revision = 1; }
 
 message DeviceOfflineEvent {
   string device_id = 1;
@@ -254,6 +285,12 @@ message MediaSourceOnlineEvent {
 
 message MediaGatewayDownEvent {
   string reason = 1;
+  // When present, only camera IDs prefixed with this namespace and ":" are affected.
+  optional string source_namespace = 2;
+}
+
+message WorkerUnavailableEvent {
+  string worker = 1;
 }
 
 // Synthetic — emitted when the server-side broadcast buffer dropped events

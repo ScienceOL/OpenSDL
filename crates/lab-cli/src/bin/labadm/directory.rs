@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 
 use osdl_proto::etcd::{
     compare::{Operand, Target},
-    request_op, Compare, DeleteRangeRequest, KeyValue, PutRequest, RangeRequest, RequestOp,
-    TxnRequest,
+    request_op, Compare, DeleteRangeRequest, KeyValue, PutRequest, RangeRequest, RangeResponse,
+    RequestOp, TxnRequest,
 };
 use tonic::Status;
 
@@ -121,9 +121,6 @@ impl Directory {
     }
 
     pub async fn page(&self, after: Option<Id>) -> Result<Page, Status> {
-        // The byte immediately after '/' ends the prefix range. etcd's default
-        // key order is ascending and can apply the limit at the storage layer.
-        let range_end = format!("{}0", self.worker_prefix.trim_end_matches('/')).into_bytes();
         let key = match after {
             Some(id) => {
                 let mut key = self.worker_key(&id);
@@ -132,14 +129,7 @@ impl Directory {
             }
             None => self.worker_prefix.as_bytes().to_vec(),
         };
-        let page = self
-            .etcd
-            .range(RangeRequest {
-                key,
-                range_end,
-                limit: PAGE_SIZE as i64,
-            })
-            .await?;
+        let page = self.worker_range(key, PAGE_SIZE).await?;
         let workers = page
             .kvs
             .into_iter()
@@ -154,6 +144,35 @@ impl Directory {
             workers,
             next_after,
         })
+    }
+
+    pub async fn snapshot(&self, max_workers: usize) -> Result<Vec<Worker>, Status> {
+        let snapshot = self
+            .worker_range(self.worker_prefix.as_bytes().to_vec(), max_workers)
+            .await?;
+        if snapshot.more {
+            return Err(Status::resource_exhausted(
+                "cluster has too many workers for the account gateway",
+            ));
+        }
+        snapshot
+            .kvs
+            .into_iter()
+            .map(|record| self.decode_worker(record))
+            .collect()
+    }
+
+    async fn worker_range(&self, key: Vec<u8>, limit: usize) -> Result<RangeResponse, Status> {
+        // The byte immediately after '/' ends the prefix range. etcd's default
+        // key order is ascending and can apply the limit at the storage layer.
+        let range_end = format!("{}0", self.worker_prefix.trim_end_matches('/')).into_bytes();
+        self.etcd
+            .range(RangeRequest {
+                key,
+                range_end,
+                limit: limit as i64,
+            })
+            .await
     }
 
     async fn get(&self, key: Vec<u8>) -> Result<Option<KeyValue>, Status> {

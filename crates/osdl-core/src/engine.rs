@@ -1,3 +1,4 @@
+mod simulation;
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
@@ -23,6 +24,8 @@ use rumqttc::AsyncClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
+
+mod observations;
 
 /// Buffer size for the broadcast events channel. Slow subscribers that fall
 /// further behind than this start receiving `RecvError::Lagged(n)` so they
@@ -68,6 +71,7 @@ pub struct EngineHandle {
     transport_rx_tx: mpsc::UnboundedSender<TransportRx>,
     /// Factory for the physics runtime used by configured simulation worlds.
     simulation_backend_factory: Arc<dyn SimulationBackendFactory>,
+    simulation_world: Arc<RwLock<Option<Arc<crate::simulation::world::WorldRuntime>>>>,
     /// External command injection — drop a `DeviceCommand` in here and the
     /// engine's main loop dispatches it via `send_command`.
     cmd_inject_tx: mpsc::UnboundedSender<DeviceCommand>,
@@ -99,14 +103,17 @@ pub struct MediaSourceState {
     pub endpoints: Vec<MediaEndpoint>,
 }
 
+const READ_ONLY_ADAPTER: &str = "read_only";
+
 impl EngineHandle {
     // === Inspection ===
 
+    pub fn data_dir(&self) -> Option<&std::path::Path> {
+        self.config.data_dir.as_deref()
+    }
+
     pub fn snapshot_root(&self) -> Option<std::path::PathBuf> {
-        self.config
-            .data_dir
-            .as_ref()
-            .map(|path| path.join("snapshots"))
+        self.data_dir().map(|path| path.join("snapshots"))
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {
@@ -182,6 +189,10 @@ impl EngineHandle {
         self.stop_tx.send_replace(true);
     }
 
+    pub fn is_stop_requested(&self) -> bool {
+        *self.stop_tx.borrow()
+    }
+
     /// Resolve once a stop has been requested, including a request made
     /// before this call.
     pub async fn stop_requested(&self) {
@@ -217,18 +228,8 @@ impl EngineHandle {
             ));
         }
 
-        self.devices
-            .write()
-            .await
-            .insert(device_id.clone(), device.clone());
-
-        log::info!(
-            "Device registered: {} ({}) on transport {}",
-            device_id,
-            device.device_type,
-            transport_id
-        );
-        self.emit(OsdlEvent::DeviceOnline(device));
+        self.publish_device(device).await?;
+        log::info!("Device registered: {device_id} on transport {transport_id}");
         self.broadcast_status().await;
         Ok(())
     }
@@ -244,6 +245,9 @@ impl EngineHandle {
             .get(&cmd.device_id)
             .ok_or_else(|| format!("unknown device: {}", cmd.device_id))?;
 
+        if device.adapter == READ_ONLY_ADAPTER {
+            return Err(format!("device {} is read-only", device.id));
+        }
         let transport_id = device.transport_id.clone();
         let device_type = device.device_type.clone();
         let adapter_name = device.adapter.clone();
@@ -340,6 +344,12 @@ impl OsdlEngine {
     /// don't fail construction — that matches the previous in-`run()`
     /// behavior.
     pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        if !config.qx96m_instruments.is_empty() {
+            adapters.push(Box::new(crate::qx96m::Adapter));
+        }
+        if !config.sc9300_instruments.is_empty() {
+            adapters.push(Box::new(crate::sc9300::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -372,6 +382,7 @@ impl OsdlEngine {
             devices: Arc::new(RwLock::new(HashMap::new())),
             transports: Arc::new(RwLock::new(HashMap::new())),
             transport_rx_tx,
+            simulation_world: Default::default(),
             simulation_backend_factory: Arc::new(BuiltinSimulationBackendFactory),
             cmd_inject_tx,
             events_tx,
@@ -500,18 +511,7 @@ impl OsdlEngine {
             None
         };
 
-        // Emit initial Connected status (broker description reflects MQTT mode).
-        let _ = self.handle.status_tx.send(OsdlStatus::Connected {
-            broker: self
-                .handle
-                .config
-                .mqtt
-                .as_ref()
-                .map(|c| format!("{}:{}", c.host, c.port))
-                .unwrap_or_else(|| "mqtt-disabled".into()),
-            node_count: 0,
-            device_count: 0,
-        });
+        self.handle.broadcast_status().await;
 
         if let Err(error) = self.start_simulation().await {
             log::error!("Failed to start simulation world: {error}");
@@ -522,6 +522,34 @@ impl OsdlEngine {
                 .send(OsdlStatus::Error { message: error });
             return;
         }
+
+        let qx96m = match crate::qx96m::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to configure QX96M devices: {error}");
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+        let sc9300 = match crate::sc9300::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to register SC9300 workstations: {error}");
+                if let Some(qx96m) = qx96m {
+                    qx96m.stop().await;
+                }
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
 
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
@@ -698,6 +726,12 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
+        if let Some(qx96m) = qx96m {
+            qx96m.stop().await;
+        }
+        if let Some(sc9300) = sc9300 {
+            sc9300.stop().await;
+        }
         self.stop_simulation().await;
 
         if let Some(p) = media_proc.take() {
@@ -708,119 +742,6 @@ impl OsdlEngine {
         }
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
-    }
-
-    /// Register the configured local simulation world before entering the
-    /// event loop. Virtual devices use the same transport and adapter path as
-    /// physical devices, which keeps the Agent/UI contract identical.
-    async fn start_simulation(&self) -> Result<(), String> {
-        let Some(config) = self.handle.config.simulation.clone() else {
-            return Ok(());
-        };
-        config.validate()?;
-
-        let world = crate::simulation::world::WorldRuntime::new(
-            &config,
-            self.handle.transport_rx_tx.clone(),
-            self.handle.simulation_backend_factory.as_ref(),
-        )?;
-        for device_config in &config.devices {
-            let transport_id = simulation_transport_id(&config.world_id, &device_config.id);
-            let backend_engine = config.engine.clone();
-            let transport = Arc::new(SimulationTransport::for_device(
-                world.clone(),
-                device_config.id.clone(),
-            ));
-            transport.start().await?;
-            self.handle
-                .register_transport(transport_id.clone(), transport)
-                .await;
-
-            let device_id = simulation_device_id(&config.world_id, &device_config.id);
-            let mut properties = device_config.properties.clone();
-            properties.insert("simulation".into(), serde_json::Value::Bool(true));
-            properties.insert(
-                "simulation_engine".into(),
-                serde_json::Value::String(backend_engine),
-            );
-            properties.insert(
-                "simulation_world".into(),
-                serde_json::Value::String(config.world_id.clone()),
-            );
-            if let Some(asset_ref) = &device_config.asset_ref {
-                properties.insert(
-                    "simulation_asset".into(),
-                    serde_json::json!({
-                        "namespace": asset_ref.namespace,
-                        "name": asset_ref.name,
-                        "version": asset_ref.version,
-                    }),
-                );
-            }
-            properties.insert("position".into(), serde_json::json!(device_config.position));
-
-            let description = if device_config.description.is_empty() {
-                format!("Virtual {}", device_config.device_type)
-            } else {
-                device_config.description.clone()
-            };
-            let mut actions = device_config.actions.clone();
-            if actions.iter().all(|action| action.name != "reset") {
-                actions.push(ActionSchema {
-                    name: "reset".into(),
-                    description: "Restore this virtual device to its configured initial state"
-                        .into(),
-                    params: serde_json::json!({"type":"object","properties":{}}),
-                });
-            }
-            self.handle
-                .register_device(Device {
-                    id: device_id,
-                    transport_id,
-                    device_type: device_config.device_type.clone(),
-                    adapter: crate::adapter::simulation::PLATFORM.into(),
-                    description,
-                    online: true,
-                    properties,
-                    properties_timestamp_ms: now_millis(),
-                    actions,
-                    role: device_config.role.clone(),
-                })
-                .await?;
-        }
-
-        log::info!(
-            "Simulation world '{}' started with '{}' backend ({} devices)",
-            config.world_id,
-            config.engine,
-            config.devices.len()
-        );
-        Ok(())
-    }
-
-    async fn stop_simulation(&self) {
-        let Some(config) = self.handle.config.simulation.as_ref() else {
-            return;
-        };
-        let transport_list = {
-            let transports = self.handle.transports.read().await;
-            config
-                .devices
-                .iter()
-                .filter_map(|device| {
-                    let id = simulation_transport_id(&config.world_id, &device.id);
-                    transports
-                        .get(&id)
-                        .cloned()
-                        .map(|transport| (id, transport))
-                })
-                .collect::<Vec<_>>()
-        };
-        for (id, transport) in transport_list {
-            if let Err(error) = transport.stop().await {
-                log::warn!("Failed to stop simulation transport {id}: {error}");
-            }
-        }
     }
 
     /// Spawn mediamtx if any media sources are configured. Emits
@@ -985,12 +906,7 @@ impl OsdlEngine {
                 transport_id,
                 ctrl.onvif_url,
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device.id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
         }
         self.handle.broadcast_status().await;
     }
@@ -1083,12 +999,7 @@ impl OsdlEngine {
                 device.device_type
             );
 
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
             self.handle.broadcast_status().await;
         } else {
             log::warn!(
@@ -1180,11 +1091,22 @@ impl OsdlEngine {
                     };
                     let mut devices_w = self.handle.devices.write().await;
                     if let Some(dev) = devices_w.get_mut(device_id) {
-                        dev.properties_timestamp_ms = status.timestamp;
-                        for (k, v) in &status.properties {
-                            dev.properties.insert(k.clone(), v.clone());
+                        if adapter_name == crate::adapter::simulation::PLATFORM {
+                            // Ignore observations queued before this device's layout was replaced.
+                            if dev.properties.get("scene_revision")
+                                != status.properties.get("scene_revision")
+                            {
+                                return;
+                            }
+                            dev.properties.clone_from(&status.properties);
+                        } else {
+                            dev.properties.extend(status.properties.clone());
                         }
+                        dev.properties_timestamp_ms = status.timestamp;
+                    } else if adapter_name == crate::adapter::simulation::PLATFORM {
+                        return;
                     }
+                    drop(devices_w);
                     self.handle.emit(OsdlEvent::DeviceStatus(status));
                 }
                 break;
@@ -1388,12 +1310,7 @@ impl OsdlEngine {
                 device.device_type,
                 mac_hex_flat(&mac),
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id.clone(), device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
             self.handle.broadcast_status().await;
         } else {
             log::warn!(
@@ -1480,14 +1397,15 @@ impl OsdlEngine {
                     .map(|r| format!(" role={}", r))
                     .unwrap_or_default(),
             );
-            self.handle
-                .devices
-                .write()
-                .await
-                .insert(device_id, device.clone());
-            self.handle.emit(OsdlEvent::DeviceOnline(device));
+            self.publish_discovered_device(device).await;
         }
         self.handle.broadcast_status().await;
+    }
+
+    async fn publish_discovered_device(&self, device: Device) {
+        if let Err(error) = self.handle.publish_device(device).await {
+            log::warn!("{error}");
+        }
     }
 }
 
@@ -1505,7 +1423,7 @@ fn mac_hex_flat(mac: &Mac) -> String {
     )
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

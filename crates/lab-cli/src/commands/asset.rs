@@ -1,12 +1,20 @@
 use clap::Subcommand;
 use opensdl_assets::{
     daemon::{execute, Operation},
-    AssetCache, AssetSummary, PackageDescriptor, PruneReport,
+    AssetCache, AssetReference, AssetSummary, PackageDescriptor, PruneReport,
 };
 use std::path::PathBuf;
 
 #[derive(Debug, Subcommand)]
 pub enum AssetCmd {
+    /// Populate the local asset library before launching a scene.
+    Prepare {
+        #[arg(required_unless_present = "check_scene")]
+        references: Vec<String>,
+        /// Validate the scene on stdin against its cached packages before saving it.
+        #[arg(long, value_name = "WORLD")]
+        check_scene: Option<String>,
+    },
     /// List locally admitted packages and their references.
     List {
         #[arg(long)]
@@ -43,6 +51,30 @@ pub async fn run(command: AssetCmd, root: Option<PathBuf>) -> anyhow::Result<()>
         None => AssetCache::discover()?,
     };
     match command {
+        AssetCmd::Prepare {
+            references,
+            check_scene,
+        } => {
+            let refs = references
+                .iter()
+                .map(|value| AssetReference::parse(value))
+                .collect::<Result<Vec<_>, _>>()?;
+            let digests = lab_cli::assets::acquire(&cache, refs).await?;
+            if let Some(world) = check_scene {
+                let scene: osdl_server::simulation_asset::SceneDefinition =
+                    serde_json::from_reader(std::io::stdin().lock())?;
+                let directory = tempfile::tempdir_in(cache.root())?;
+                osdl_server::simulation_asset::compose(
+                    &cache,
+                    &scene.instruments,
+                    directory.path(),
+                    &world,
+                )?;
+            }
+            for digest in digests {
+                cache.pin(&format!("scene:{digest}"), &digest)?;
+            }
+        }
         AssetCmd::List { json } => {
             let assets: Vec<AssetSummary> = execute(&cache, Operation::List).await?;
             if json {

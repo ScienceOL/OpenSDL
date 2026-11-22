@@ -22,6 +22,9 @@ pub async fn run(opts: client::ClientOpts) -> anyhow::Result<()> {
         .unwrap_or("UNKNOWN");
 
     println!("instance:    {}", resp.instance);
+    if let Some(profile) = resp.laboratory {
+        println!("lab:         {}", profile.name);
+    }
     println!("version:     {}", resp.version);
     println!("pid:         {}", resp.pid);
     if let Some(s) = resp.socket_path {

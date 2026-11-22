@@ -6,8 +6,7 @@ use crate::{
     OsdlService,
 };
 use osdl_proto::v1 as pb;
-use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 pub(crate) enum TcpAccess {
     Remote,
     LocalCapability(String),
@@ -24,7 +23,7 @@ pub(crate) async fn tcp(
     policy: ListenerAuth,
     instance: String,
     access: TcpAccess,
-    shutdown: Arc<Notify>,
+    stopped: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let key = match &policy {
         ListenerAuth::PublicKey(a) => Some(a.clone()),
@@ -38,14 +37,11 @@ pub(crate) async fn tcp(
             _ => None,
         },
     };
-    let authorizer = if local {
-        Authorizer::Local
-    } else {
-        match &policy {
-            ListenerAuth::Account(a) => Authorizer::Account(a.clone()),
-            ListenerAuth::PublicKey(a) => Authorizer::PublicKey(a.clone()),
-            _ => Authorizer::Local,
-        }
+    let authorizer = match (local, &policy) {
+        (true, _) => Authorizer::ProtectedLocal,
+        (false, ListenerAuth::Account(a)) => Authorizer::Account(a.clone()),
+        (false, ListenerAuth::PublicKey(a)) => Authorizer::PublicKey(a.clone()),
+        _ => Authorizer::Local,
     };
     let service = pb::osdl_server::OsdlServer::new(service.with_authorizer(authorizer));
     let interceptor = move |req| {
@@ -94,7 +90,7 @@ pub(crate) async fn tcp(
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::TcpListenerStream::new(listener),
-            async move { shutdown.notified().await },
+            crate::listener_stopped(stopped),
         )
         .await
 }
@@ -103,7 +99,7 @@ pub(crate) async fn unix(
     listener: tokio::net::UnixListener,
     service: OsdlService,
     policy: ListenerAuth,
-    shutdown: Arc<Notify>,
+    stopped: watch::Receiver<bool>,
 ) -> Result<(), tonic::transport::Error> {
     let grants = match policy {
         ListenerAuth::PublicKey(auth) => Some(
@@ -114,11 +110,13 @@ pub(crate) async fn unix(
         _ => None,
     };
     tonic::transport::Server::builder()
-        .add_service(pb::osdl_server::OsdlServer::new(service))
+        .add_service(pb::osdl_server::OsdlServer::new(
+            service.with_authorizer(Authorizer::ProtectedLocal),
+        ))
         .add_optional_service(grants)
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::UnixListenerStream::new(listener),
-            async move { shutdown.notified().await },
+            crate::listener_stopped(stopped),
         )
         .await
 }

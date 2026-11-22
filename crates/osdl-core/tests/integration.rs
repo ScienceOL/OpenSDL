@@ -177,6 +177,110 @@ async fn test_simulation_world_uses_the_device_contract() {
         serde_json::json!(80.0)
     );
 
+    // A fresh snapshot must lose a property that the simulator stopped reporting.
+    for (action, params) in [
+        (
+            "set_asset",
+            serde_json::json!({"namespace":"lab","name":"heater"}),
+        ),
+        ("clear_asset", serde_json::json!({})),
+    ] {
+        handle
+            .send_command(DeviceCommand {
+                command_id: action.into(),
+                device_id: device.id.clone(),
+                action: action.into(),
+                params,
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                if let Ok(OsdlEvent::DeviceStatus(s)) = events.recv().await {
+                    if s.device_id == device.id && s.properties["last_action"] == action {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            handle
+                .get_device(&device.id)
+                .await
+                .unwrap()
+                .properties
+                .contains_key("simulation_asset"),
+            action == "set_asset"
+        );
+    }
+
+    // One cutover changes membership and poses together; a delete-only edit also updates Status.
+    let mut next = SimulationConfig::default();
+    next.devices.truncate(1);
+    let mut still = next.devices[0].clone();
+    still.id = "bench".into();
+    still.device_type = "simulation.static".into();
+    still.actions.clear();
+    next.devices.push(still);
+    let poses: Vec<_> = next
+        .devices
+        .iter()
+        .enumerate()
+        .map(|(i, d)| osdl_core::simulation::world::DevicePose {
+            id: d.id.clone(),
+            position: [i as f64 + 1., 0., 0.],
+            rotation: [0.; 3],
+            parent: None,
+        })
+        .collect();
+    handle
+        .apply_simulation_scene(2, Some(&next), &poses)
+        .await
+        .unwrap();
+    for pose in &poses {
+        let d = handle
+            .get_device(&format!("sim:lab-sim:{}", pose.id))
+            .await
+            .unwrap();
+        assert_eq!(d.properties["position"], serde_json::json!(pose.position));
+        assert_eq!(d.properties["scene_revision"], 2);
+    }
+    assert!(handle
+        .get_device("sim:lab-sim:bench")
+        .await
+        .unwrap()
+        .actions
+        .is_empty());
+    let reset = handle
+        .send_command(DeviceCommand {
+            command_id: "reset-static".into(),
+            device_id: "sim:lab-sim:bench".into(),
+            action: "reset".into(),
+            params: serde_json::json!({}),
+        })
+        .await
+        .unwrap();
+    assert_eq!(reset.status, osdl_core::protocol::CommandStatus::Failed);
+    next.devices.pop();
+    handle
+        .apply_simulation_scene(3, Some(&next), &poses[..1])
+        .await
+        .unwrap();
+    assert!(handle.get_device("sim:lab-sim:bench").await.is_none());
+    assert!(handle
+        .apply_simulation_scene(2, None, &poses[..1])
+        .await
+        .is_err());
+    assert!(matches!(
+        handle.status(),
+        osdl_core::OsdlStatus::Connected {
+            device_count: 1,
+            ..
+        }
+    ));
+
     handle.request_stop();
     task.await.expect("engine task");
 }

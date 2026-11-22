@@ -83,11 +83,30 @@ export function bindInstrument(root, { predictionWindowSeconds = 0.25 } = {}) {
         .copy(initial.quaternion)
         .multiply(initial.rotation.setFromAxisAngle(initial.axis, value));
   }
+  function present(values) {
+    for (const j of definition.joints) {
+      const value = values[j.state];
+      const node = parts.get(j.component);
+      node.visible = finite(value);
+      if (node.visible) pose(j, value);
+    }
+    for (const {node,binding,rest} of scaling) {
+      const value = values[binding.state];
+      node.visible = finite(value);
+      if (node.visible) {
+        requireValue(value >= binding.min && value <= binding.max, "component scale state");
+        node.scale[binding.axis] = rest[binding.axis] * value;
+      }
+    }
+    for (const b of definition.visibility)
+      parts.get(b.component).visible = values[b.state] === true;
+  }
   let elapsed = 0,
     observation = null;
   return {
     definition,
     parts,
+    present,
     apply(state) {
       requireValue(
         parseModelState(state) && state.model_id === definition.model_id,
@@ -128,14 +147,7 @@ export function bindInstrument(root, { predictionWindowSeconds = 0.25 } = {}) {
         );
       observation = state;
       elapsed = 0;
-      for (const s of scaling) {
-        s.node.scale.copy(s.rest);
-        s.node.scale[s.binding.axis] =
-          s.rest[s.binding.axis] * state.values[s.binding.state];
-      }
-      for (const j of definition.joints) pose(j, state.values[j.state]);
-      for (const b of definition.visibility)
-        parts.get(b.component).visible = state.values[b.state];
+      present(state.values);
     },
     animate(dt) {
       if (!observation || !finite(dt) || dt <= 0) return;

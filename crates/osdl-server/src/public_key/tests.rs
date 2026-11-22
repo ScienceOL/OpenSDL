@@ -106,17 +106,20 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
             socket_path: None,
             listen_addr: None,
         },
-    );
+    )
+    .with_lab_profile(Some(
+        crate::lab_profile::Store::open(temp.path(), "test", Some("Paired Lab")).unwrap(),
+    ));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let (_stop, stopped) = tokio::sync::watch::channel(false);
     let server = tokio::spawn(crate::listeners::tcp(
         listener,
         service,
         crate::auth::ListenerAuth::PublicKey(auth.clone()),
         "test".into(),
         crate::listeners::TcpAccess::Remote,
-        shutdown,
+        stopped,
     ));
     let cold = std::time::Instant::now();
     let unauthenticated = channel(address, &auth, None).await;
@@ -347,6 +350,26 @@ async fn real_tls_grant_scope_revoke_and_remote_admin_boundary() {
     let identity = Identity::from_pem(&cert, key.serialize_pem());
     let authenticated = channel(address, &auth, Some(identity.clone())).await;
     let mut expiring = pb::osdl_client::OsdlClient::new(authenticated);
+    let profile = expiring
+        .status(pb::StatusRequest {})
+        .await
+        .unwrap()
+        .into_inner()
+        .laboratory
+        .unwrap();
+    assert!(!profile.writable);
+    assert_eq!(
+        expiring
+            .update_lab_profile(pb::UpdateLabProfileRequest {
+                name: "Paired Lab Edit".into(),
+                description: String::new(),
+                revision: profile.revision,
+            })
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::PermissionDenied
+    );
     let mut waiter_client = expiring.clone();
     let waiter = tokio::spawn(async move {
         waiter_client
