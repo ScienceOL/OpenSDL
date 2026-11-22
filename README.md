@@ -70,6 +70,11 @@ on Linux/macOS or loopback TCP on Windows. `lab` discovers the local server
 automatically. On Linux/macOS, use `lab serve --detach` to run it in the
 background.
 
+Set the laboratory display name with `lab serve --name "Microscopy Lab"` or
+`OSDL_LAB_NAME`. The server uses its host name by default. Edits made through
+the laboratory profile API persist per instance in the server data directory
+and take precedence over the startup default.
+
 To connect laboratory hardware, download the matching source archive from the
 release page (or clone this repository) for its `registry/unilabos` device
 schemas and [recipe configurations](docs/recipes/README.md). The CLI installer

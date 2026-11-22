@@ -17,7 +17,12 @@ Transport:                                  ▼            (HOW bytes travel)
   Tcp          → TCP socket → device
 ```
 
-**Transport** handles byte delivery. **ProtocolAdapter** handles byte encoding/decoding. The engine connects them: looks up the device's transport, encodes the command via the adapter, sends via the transport, and decodes responses back.
+For byte-oriented devices, **Transport** handles delivery and **ProtocolAdapter**
+encodes commands and decodes response bytes. The engine resolves both from the
+device registry. Native request/reply instruments own the local session and
+wire codec. Their adapter validates the action and encodes a typed request for
+`Transport::execute`. The session returns the correlated terminal result and
+publishes the projected observation to the engine.
 
 ### System Overview
 
@@ -55,7 +60,12 @@ Mother (RPi / PC)                          Node (ESP32, ~$5)
 
 **Command**: `send_command(cmd)` → adapter encodes → transport sends → device executes
 
-**Response**: device responds → transport receives → `handle_transport_rx()` → adapter decodes → `OsdlEvent::DeviceStatus` emitted
+**Byte-oriented responses** go through `handle_transport_rx()`. The engine
+decodes them with the adapter and emits `OsdlEvent::DeviceStatus`.
+
+**Native responses** are validated by the instrument session. The owning
+transport updates engine inventory and the engine emits observation events.
+A typed request also returns its terminal result through the command path.
 
 **Registration** (MQTT serial): node publishes register → engine creates `MqttSerialTransport` → matches hardware via adapters → creates `Device` → `OsdlEvent::DeviceOnline`
 

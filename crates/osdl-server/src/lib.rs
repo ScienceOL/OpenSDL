@@ -12,9 +12,11 @@
 //! `expose-it-via-gRPC` keeps that mode simple.
 
 pub mod account;
+mod account_endpoint;
 pub mod auth;
 pub mod background;
 pub mod convert;
+mod lab_profile;
 pub mod lockfile;
 pub mod managed;
 mod media_publish;
@@ -32,6 +34,7 @@ mod listeners;
 pub mod local_access;
 use tokio::sync::Notify;
 
+pub use account_endpoint::{serve_account_endpoint, MediaRelay};
 pub use lockfile::{InstanceRecord, LockfileGuard};
 pub use paths::Paths;
 pub use service::{OsdlService, ServerIdentity};
@@ -88,6 +91,8 @@ pub enum ServeError {
     NoListener,
     #[error("authentication configuration: {0}")]
     Auth(String),
+    #[error("laboratory profile: {0:#}")]
+    LabProfile(#[source] anyhow::Error),
     #[error("lockfile error: {0}")]
     Lock(String),
     #[error("io error: {0}")]
@@ -100,6 +105,15 @@ pub enum ServeError {
 /// receives a Ctrl-C, or the listener fails. Cleans up the lockfile and
 /// any UDS file on the way out.
 pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeError> {
+    serve_with_lab_name(engine, cfg, None).await
+}
+
+/// Serve the engine with a display-name default for an instance without saved settings.
+pub async fn serve_with_lab_name(
+    engine: EngineHandle,
+    cfg: ServeConfig,
+    initial_lab_name: Option<&str>,
+) -> Result<(), ServeError> {
     if cfg.listen.is_empty() {
         return Err(ServeError::NoListener);
     }
@@ -163,6 +177,11 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
         listen_addr_str.clone(),
     );
     let _lock = lockfile::write(&cfg.lock_dir, &record).map_err(ServeError::Lock)?;
+    let lab_profile = engine
+        .data_dir()
+        .map(|dir| lab_profile::Store::open(dir, &cfg.instance, initial_lab_name))
+        .transpose()
+        .map_err(ServeError::LabProfile)?;
 
     // Now safe to unlink the UDS path (it's stale by definition — no
     // live server has the lock), then bind. Failures here propagate
@@ -204,7 +223,8 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
     // (which would otherwise hold the RPC open until its broadcast
     // sender closes — i.e. forever, since the service still owns it).
     let shutdown = Arc::new(Notify::new());
-    let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone());
+    let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone())
+        .with_lab_profile(lab_profile);
 
     let mut joins: Vec<tokio::task::JoinHandle<Result<(), tonic::transport::Error>>> = Vec::new();
 
@@ -220,6 +240,9 @@ pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeEr
                     .save(&cfg.lock_dir, &cfg.instance)
                     .map_err(|e| ServeError::Auth(e.to_string()))?;
                 listeners::TcpAccess::LocalCapability(access.token)
+            }
+            auth::ListenerAuth::LocalCapability(token) => {
+                listeners::TcpAccess::LocalCapability(token.clone())
             }
             _ => listeners::TcpAccess::Remote,
         };

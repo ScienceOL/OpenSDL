@@ -20,6 +20,9 @@ service Osdl {
   // Server identity + connection counts. Cheap to call; clients can poll.
   rpc Status(StatusRequest) returns (StatusResponse);
 
+  // Change this instance's display profile if the supplied revision still matches.
+  rpc UpdateLabProfile(UpdateLabProfileRequest) returns (LabProfile);
+
   // Nodes (MQTT-serial bridge boards). Devices sit on top of these for
   // that transport — for ESP-NOW / direct serial there are no nodes.
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
@@ -81,6 +84,22 @@ message StatusResponse {
   // Engine status (mirrors osdl_core::OsdlStatus).
   EngineStatus engine = 6;
   google.protobuf.Timestamp started_at = 7;
+  LabProfile laboratory = 8;
+}
+
+message LabProfile {
+  string name = 1;
+  string description = 2;
+  // Opaque revision of this instance's current display profile.
+  string revision = 3;
+  // Whether the current request's authority can edit this profile.
+  bool writable = 4;
+}
+
+message UpdateLabProfileRequest {
+  string name = 1;
+  string description = 2;
+  string revision = 3;
 }
 
 message EngineStatus {
@@ -214,6 +233,7 @@ message Event {
     MediaSourceOnlineEvent media_source_online = 7;
     MediaGatewayDownEvent media_gateway_down = 8;
     LaggedEvent lagged = 9;
+    WorkerUnavailableEvent worker_unavailable = 10;
   }
 }
 
@@ -254,6 +274,12 @@ message MediaSourceOnlineEvent {
 
 message MediaGatewayDownEvent {
   string reason = 1;
+  // When present, only camera IDs prefixed with this namespace and ":" are affected.
+  optional string source_namespace = 2;
+}
+
+message WorkerUnavailableEvent {
+  string worker = 1;
 }
 
 // Synthetic — emitted when the server-side broadcast buffer dropped events

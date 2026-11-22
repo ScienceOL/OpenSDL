@@ -113,6 +113,9 @@ fn print_human(ev: &pb::Event) {
         Some(pb::event::Kind::MediaGatewayDown(e)) => {
             println!("[{ts}] media_gateway_down  {}", e.reason);
         }
+        Some(pb::event::Kind::WorkerUnavailable(e)) => {
+            println!("[{ts}] worker_unavailable  {}", e.worker);
+        }
         Some(pb::event::Kind::Lagged(e)) => {
             println!("[{ts}] lagged           dropped={}", e.dropped);
         }
@@ -183,7 +186,11 @@ fn event_to_jsonl(ev: &pb::Event) -> String {
         ),
         Some(pb::event::Kind::MediaGatewayDown(e)) => (
             "media_gateway_down",
-            serde_json::json!({"reason": e.reason}),
+            serde_json::json!({"reason": e.reason, "source_namespace": e.source_namespace}),
+        ),
+        Some(pb::event::Kind::WorkerUnavailable(e)) => (
+            "worker_unavailable",
+            serde_json::json!({"worker": e.worker}),
         ),
         Some(pb::event::Kind::Lagged(e)) => ("lagged", serde_json::json!({"dropped": e.dropped})),
         None => ("unknown", serde_json::Value::Null),

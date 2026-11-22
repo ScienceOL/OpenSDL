@@ -153,6 +153,7 @@ pub fn event_to_pb(ev: &CoreEvent) -> pb::Event {
         CoreEvent::MediaGatewayDown { reason } => {
             Kind::MediaGatewayDown(pb::MediaGatewayDownEvent {
                 reason: reason.clone(),
+                source_namespace: None,
             })
         }
     };

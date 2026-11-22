@@ -36,12 +36,16 @@ pub struct Paths {
 }
 
 impl Paths {
+    /// Resolve the platform's configuration directory without creating runtime state.
+    pub fn config_directory() -> Result<PathBuf, String> {
+        Ok(project_dirs()?.config_dir().to_path_buf())
+    }
+
     /// Compute default paths for the current user, creating directories
     /// as needed. The runtime dir is created with mode 0700 on Unix so
     /// other users on the host can't connect to our sockets.
     pub fn discover() -> Result<Self, String> {
-        let dirs = ProjectDirs::from(QUALIFIER, ORG, APP)
-            .ok_or_else(|| "no valid home directory for current user".to_string())?;
+        let dirs = project_dirs()?;
 
         let config_dir = dirs.config_dir().to_path_buf();
         let state_dir = dirs
@@ -91,6 +95,11 @@ impl Paths {
     pub fn default_socket_path(&self, instance: &str) -> PathBuf {
         self.runtime_dir.join(format!("{instance}.sock"))
     }
+}
+
+fn project_dirs() -> Result<ProjectDirs, String> {
+    ProjectDirs::from(QUALIFIER, ORG, APP)
+        .ok_or_else(|| "no valid home directory for current user".to_string())
 }
 
 #[cfg(unix)]

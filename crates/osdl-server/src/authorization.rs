@@ -10,6 +10,8 @@ use tonic::{Request, Status};
 pub enum Authorizer {
     #[default]
     Local,
+    /// Filesystem- or capability-protected local administrator endpoint.
+    ProtectedLocal,
     /// The caller must terminate mutually authenticated control-plane TLS.
     ControlPlane,
     Account(AccountAuth),
@@ -27,27 +29,56 @@ impl Authorizer {
         request: &Request<T>,
         permission: Permission,
     ) -> Result<Option<Resource>, Status> {
+        self.evaluate(request, permission).map(|(lease, _)| lease)
+    }
+
+    pub(crate) fn lab_profile_writable<T>(&self, request: &Request<T>) -> Result<bool, Status> {
+        self.evaluate(request, Permission::Read)
+            .map(|(_, writable)| writable)
+    }
+
+    pub(crate) fn authorize_lab_profile_update<T>(
+        &self,
+        request: &Request<T>,
+    ) -> Result<Option<Resource>, Status> {
+        let (lease, writable) = self.evaluate(request, Permission::Read)?;
+        if !writable {
+            return Err(Status::permission_denied(
+                "laboratory profile update denied",
+            ));
+        }
+        Ok(lease)
+    }
+
+    fn evaluate<T>(
+        &self,
+        request: &Request<T>,
+        permission: Permission,
+    ) -> Result<(Option<Resource>, bool), Status> {
         match self {
-            Self::Local => Ok(None),
+            Self::Local => Ok((None, false)),
+            Self::ProtectedLocal => Ok((None, true)),
             Self::ControlPlane => match permission {
                 Permission::Shutdown => {
                     Err(Status::permission_denied("local_administrator_required"))
                 }
-                _ => Ok(None),
+                _ => Ok((None, false)),
             },
-            Self::PublicKey(auth) => auth.authorize(request, permission).map(Some),
+            Self::PublicKey(auth) => Ok((Some(auth.authorize(request, permission)?), false)),
             Self::Account(auth) => {
                 let identity = auth.verifier.authenticate(request)?;
+                let can_operate = identity.scope == crate::account::Scope::Operate;
                 match permission {
                     Permission::Shutdown => {
                         return Err(Status::permission_denied("local_administrator_required"))
                     }
-                    Permission::Operate if identity.scope != crate::account::Scope::Operate => {
+                    Permission::Operate if !can_operate => {
                         return Err(Status::permission_denied("operate_required"))
                     }
                     _ => {}
                 }
-                auth.leases.acquire(&identity).resource().map(Some)
+                let lease = auth.leases.acquire(&identity).resource()?;
+                Ok((Some(lease), can_operate))
             }
         }
     }

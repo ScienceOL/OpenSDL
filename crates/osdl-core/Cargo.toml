@@ -15,7 +15,7 @@ espnow = ["dep:tokio-serial", "dep:osdl-firmware-protocol"]
 osdl-firmware-protocol = { path = "../osdl-firmware-protocol", optional = true }
 uuid.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 serde_yaml.workspace = true
 tokio.workspace = true
 rumqttc.workspace = true
@@ -32,6 +32,10 @@ reqwest.workspace = true
 sha1.workspace = true
 base64.workspace = true
 quick-xml.workspace = true
+cbc = { version = "0.1", features = ["alloc"] }
+des = "0.8"
+encoding_rs = "0.8"
+hex = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

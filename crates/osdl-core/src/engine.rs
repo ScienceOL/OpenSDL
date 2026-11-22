@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 
+mod observations;
+
 /// Buffer size for the broadcast events channel. Slow subscribers that fall
 /// further behind than this start receiving `RecvError::Lagged(n)` so they
 /// can resync rather than wedging the engine.
@@ -102,11 +104,12 @@ pub struct MediaSourceState {
 impl EngineHandle {
     // === Inspection ===
 
+    pub fn data_dir(&self) -> Option<&std::path::Path> {
+        self.config.data_dir.as_deref()
+    }
+
     pub fn snapshot_root(&self) -> Option<std::path::PathBuf> {
-        self.config
-            .data_dir
-            .as_ref()
-            .map(|path| path.join("snapshots"))
+        self.data_dir().map(|path| path.join("snapshots"))
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {
@@ -217,10 +220,18 @@ impl EngineHandle {
             ));
         }
 
-        self.devices
-            .write()
-            .await
-            .insert(device_id.clone(), device.clone());
+        {
+            let mut devices = self.devices.write().await;
+            if devices
+                .get(&device_id)
+                .is_some_and(|current| current.transport_id != transport_id)
+            {
+                return Err(format!(
+                    "device ID '{device_id}' is already registered with another transport"
+                ));
+            }
+            devices.insert(device_id.clone(), device.clone());
+        }
 
         log::info!(
             "Device registered: {} ({}) on transport {}",
@@ -228,7 +239,9 @@ impl EngineHandle {
             device.device_type,
             transport_id
         );
-        self.emit(OsdlEvent::DeviceOnline(device));
+        if device.online {
+            self.emit(OsdlEvent::DeviceOnline(device));
+        }
         self.broadcast_status().await;
         Ok(())
     }
@@ -340,6 +353,12 @@ impl OsdlEngine {
     /// don't fail construction — that matches the previous in-`run()`
     /// behavior.
     pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        if !config.qx96m_instruments.is_empty() {
+            adapters.push(Box::new(crate::qx96m::Adapter));
+        }
+        if !config.sc9300_instruments.is_empty() {
+            adapters.push(Box::new(crate::sc9300::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -523,6 +542,34 @@ impl OsdlEngine {
             return;
         }
 
+        let qx96m = match crate::qx96m::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to configure QX96M devices: {error}");
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+        let sc9300 = match crate::sc9300::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to register SC9300 workstations: {error}");
+                if let Some(qx96m) = qx96m {
+                    qx96m.stop().await;
+                }
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
@@ -698,6 +745,12 @@ impl OsdlEngine {
         #[cfg(feature = "espnow")]
         self.stop_espnow_dongles().await;
 
+        if let Some(qx96m) = qx96m {
+            qx96m.stop().await;
+        }
+        if let Some(sc9300) = sc9300 {
+            sc9300.stop().await;
+        }
         self.stop_simulation().await;
 
         if let Some(p) = media_proc.take() {

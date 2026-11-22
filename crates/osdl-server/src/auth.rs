@@ -66,6 +66,8 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[derive(Clone)]
 pub enum ListenerAuth {
     Local,
+    /// A supervisor provisions this private capability for a loopback listener.
+    LocalCapability(String),
     Bearer(String),
     Account(crate::account::AccountAuth),
     PublicKey(crate::public_key::PublicKeyAuth),
@@ -117,6 +119,11 @@ impl ListenerAuth {
             Self::Local if address.is_some_and(|address| !address.ip().is_loopback()) => {
                 return Err("non-loopback TCP listener requires authentication".into())
             }
+            Self::LocalCapability(token)
+                if token.is_empty() || !address.is_some_and(|a| a.ip().is_loopback()) =>
+            {
+                return Err("a provisioned local capability requires a nonempty token and an explicit loopback TCP listener".into())
+            }
             Self::Bearer(token) if token.is_empty() => {
                 return Err("static bearer must not be empty".into())
             }
@@ -126,7 +133,7 @@ impl ListenerAuth {
     }
     pub fn mode(&self) -> &'static str {
         match self {
-            Self::Local => "local",
+            Self::Local | Self::LocalCapability(_) => "local",
             Self::Bearer(_) => "bearer",
             Self::Account(_) => "account",
             Self::PublicKey(_) => "public_key",

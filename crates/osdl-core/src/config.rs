@@ -2,7 +2,7 @@ use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
 use crate::protocol::ActionSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{net::SocketAddrV4, path::PathBuf};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OsdlConfig {
@@ -18,6 +18,9 @@ pub struct OsdlConfig {
     /// owns one serial port and routes frames to/from its ESP-NOW nodes.
     #[serde(default)]
     pub espnow_dongles: Vec<EspNowDongleConfig>,
+    /// Explicit local serial endpoints for SC9300 identity and status reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sc9300_instruments: Vec<Sc9300Config>,
     /// Bus manifests: declares which devices hang off a single transport
     /// (shared RS-485 bus, etc.) when one node announces one hardware_id
     /// but physically bridges multiple addressed devices.
@@ -52,11 +55,57 @@ pub struct OsdlConfig {
     /// will fall back to the system temp directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_dir: Option<PathBuf>,
+    /// Locally owned QX96M equipment status readers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub qx96m_instruments: Vec<Qx96mConfig>,
     /// Optional local simulation world. Simulation devices use the same
     /// Device/Transport/ProtocolAdapter path as physical hardware, so an
     /// Agent and the UI can develop against them without a connected lab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub simulation: Option<SimulationConfig>,
+}
+
+/// An explicitly provisioned QX96M on the owner's instrument network.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Qx96mConfig {
+    pub id: String,
+    pub endpoint: SocketAddrV4,
+    /// Path to the exact eight-byte instrument credential, accessible to the service user.
+    pub key_file: PathBuf,
+}
+
+impl Qx96mConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.id.is_empty()
+            || self.id.len() > 128
+            || !self
+                .id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+        {
+            return Err(
+                "QX96M device ID must contain 1–128 ASCII letters, digits, '-' or '_'".into(),
+            );
+        }
+        if !self.endpoint.ip().is_private() || self.endpoint.port() == 0 {
+            return Err(
+                "QX96M endpoint must be an explicit private IPv4 address and nonzero port".into(),
+            );
+        }
+        if self.key_file.as_os_str().is_empty() {
+            return Err("QX96M key_file is required".into());
+        }
+        Ok(())
+    }
+}
+
+/// A locally owned SC9300 serial instrument.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Sc9300Config {
+    pub id: String,
+    pub port: String,
 }
 
 /// Configuration for a local simulation world.
