@@ -175,6 +175,18 @@ message ListDevicesRequest {
 }
 message ListDevicesResponse {
   repeated Device devices = 1;
+  // Cluster inventories include unavailable workers even when they contribute no devices.
+  repeated WorkerStatus workers = 2;
+}
+
+message WorkerStatus {
+  string id = 1;
+  bool available = 2;
+  // Missing values indicate that the worker could not measure that resource.
+  optional uint64 sampled_at_ms = 3;
+  optional float cpu_percent = 4;
+  optional uint64 memory_used_bytes = 5;
+  optional uint64 memory_total_bytes = 6;
 }
 
 message GetDeviceRequest {

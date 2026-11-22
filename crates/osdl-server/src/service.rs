@@ -35,6 +35,7 @@ pub struct OsdlService {
     engine: EngineHandle,
     identity: ServerIdentity,
     lab_profile: Option<Arc<crate::lab_profile::Store>>,
+    worker_telemetry: Option<Arc<crate::cluster::telemetry::WorkerTelemetry>>,
     /// Stops the media publisher when the server shuts down.
     shutdown: Arc<Notify>,
     media_publishers: crate::media_publish::Publishers,
@@ -62,6 +63,11 @@ impl OsdlService {
         self
     }
 
+    pub(crate) fn with_worker_telemetry(mut self) -> Self {
+        self.worker_telemetry = Some(Arc::default());
+        self
+    }
+
     pub fn new(engine: EngineHandle, identity: ServerIdentity) -> Self {
         Self::with_shutdown(engine, identity, Arc::new(Notify::new()))
     }
@@ -75,6 +81,7 @@ impl OsdlService {
             authorizer: Authorizer::Local,
             engine,
             identity,
+            worker_telemetry: None,
             lab_profile: None,
             shutdown,
             prepared_scene: Default::default(),
@@ -226,7 +233,12 @@ impl pb::osdl_server::Osdl for OsdlService {
             })
             .map(|d| device_to_pb(&d))
             .collect();
-        Ok(Response::new(pb::ListDevicesResponse { devices }))
+        let workers = self
+            .worker_telemetry
+            .iter()
+            .map(|telemetry| telemetry.sample(&self.identity.instance))
+            .collect();
+        Ok(Response::new(pb::ListDevicesResponse { devices, workers }))
     }
 
     async fn get_device(
