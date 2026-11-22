@@ -23,6 +23,7 @@ pub const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
 
 pub mod mediamtx;
 pub mod onvif_camera;
+pub mod v4l2;
 
 use serde::{Deserialize, Serialize};
 

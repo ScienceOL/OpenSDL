@@ -38,6 +38,7 @@ impl EngineHandle {
         id: &str,
         device_type: &str,
         description: &str,
+        role: Option<&str>,
     ) -> Result<(), String> {
         self.publish_device(Device {
             id: id.into(),
@@ -49,7 +50,7 @@ impl EngineHandle {
             properties: HashMap::new(),
             properties_timestamp_ms: 0,
             actions: Vec::new(),
-            role: None,
+            role: role.map(str::to_owned),
         })
         .await?;
         self.emit(OsdlEvent::DeviceOffline {

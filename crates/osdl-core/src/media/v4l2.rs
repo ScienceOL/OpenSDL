@@ -1,0 +1,117 @@
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind, Result},
+    path::{Component, Path, PathBuf},
+};
+
+use serde::Deserialize;
+use serde_json::Value;
+
+/// The capture interfaces of one operator-configured USB depth camera.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DepthCamera {
+    depth_device: PathBuf,
+    color_device: Option<PathBuf>,
+}
+
+impl DepthCamera {
+    pub fn validate(&self) -> Result<()> {
+        let valid = |path: &Path| {
+            path.starts_with("/dev")
+                && path != Path::new("/dev")
+                && !path.components().any(|part| part == Component::ParentDir)
+        };
+        if valid(&self.depth_device)
+            && self.color_device.as_deref().is_none_or(valid)
+            && self.color_device.as_ref() != Some(&self.depth_device)
+        {
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "V4L2 depth and color paths must be distinct devices under /dev",
+            ))
+        }
+    }
+
+    /// Read capabilities without starting a capture stream.
+    pub fn observe(&self) -> Result<HashMap<String, Value>> {
+        if !supports_capture(&self.depth_device, &[*b"Z16 "])? {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "V4L2 device does not offer Z16 capture",
+            ));
+        }
+        let mut properties = HashMap::from([("depth_available".into(), Value::Bool(true))]);
+        if let Some(color) = &self.color_device {
+            let available = supports_capture(color, &[*b"MJPG", *b"YUYV"]).unwrap_or(false);
+            properties.insert("color_available".into(), Value::Bool(available));
+        }
+        Ok(properties)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn supports_capture(path: &Path, accepted_formats: &[[u8; 4]]) -> Result<bool> {
+    use std::fs::OpenOptions;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+
+    // Linux videodev2.h: VIDIOC_ENUM_FMT with a v4l2_fmtdesc of 64 bytes.
+    const VIDIOC_ENUM_FMT: u32 = 0xc040_5602;
+    const V4L2_BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
+    const V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE: u32 = 9;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct FormatDescription {
+        index: u32,
+        buffer_type: u32,
+        flags: u32,
+        description: [u8; 32],
+        pixel_format: u32,
+        mbus_code: u32,
+        reserved: [u32; 3],
+    }
+    const _: () = assert!(std::mem::size_of::<FormatDescription>() == 64);
+
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.file_type().is_char_device() {
+        return Ok(false);
+    }
+
+    for buffer_type in [
+        V4L2_BUF_TYPE_VIDEO_CAPTURE,
+        V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
+    ] {
+        for index in 0..64 {
+            let mut format = FormatDescription {
+                index,
+                buffer_type,
+                ..FormatDescription::default()
+            };
+            // SAFETY: the file remains open and the initialized descriptor
+            // has the exact C layout and lifetime required by the ioctl.
+            if unsafe { libc::ioctl(file.as_raw_fd(), VIDIOC_ENUM_FMT as _, &mut format) } < 0 {
+                let error = Error::last_os_error();
+                match error.raw_os_error() {
+                    Some(libc::EINVAL | libc::ENOTTY) => break,
+                    _ => return Err(error),
+                }
+            }
+            if accepted_formats.contains(&format.pixel_format.to_le_bytes()) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn supports_capture(_: &Path, _: &[[u8; 4]]) -> Result<bool> {
+    Err(Error::new(ErrorKind::Unsupported, "V4L2 requires Linux"))
+}
