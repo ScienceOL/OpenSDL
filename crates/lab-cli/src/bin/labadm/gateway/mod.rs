@@ -118,8 +118,7 @@ impl Osdl for Gateway {
         &self,
         req: Request<pb::ListDevicesRequest>,
     ) -> Result<Response<pb::ListDevicesResponse>, Status> {
-        let devices = self.devices(req.into_inner()).await?;
-        Ok(Response::new(pb::ListDevicesResponse { devices }))
+        Ok(Response::new(self.devices(req.into_inner()).await?))
     }
 
     async fn get_device(

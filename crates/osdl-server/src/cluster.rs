@@ -1,5 +1,7 @@
 //! The cluster listener authenticates the control plane before serving engine RPCs.
 
+pub(crate) mod telemetry;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -87,7 +89,8 @@ impl WorkerListener {
     ) -> Result<(), tonic::transport::Error> {
         let service = service
             .with_identity(self.identity())
-            .with_authorizer(Authorizer::ControlPlane);
+            .with_authorizer(Authorizer::ControlPlane)
+            .with_worker_telemetry();
         self.server
             .add_service(OsdlServer::new(service))
             .add_service(api::work_plane_server::WorkPlaneServer::new(Inventory(
