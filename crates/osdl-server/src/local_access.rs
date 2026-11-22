@@ -58,9 +58,10 @@ mod tests {
             lock_dir: locks.clone(),
             auth: crate::auth::ListenerAuth::Local,
         };
-        let service = tokio::spawn(crate::serve_with_lab_name(
+        let service = tokio::spawn(crate::serve_with_worker(
             handle,
             config,
+            None,
             Some("Local Lab"),
         ));
         let access = tokio::time::timeout(std::time::Duration::from_secs(3), async {

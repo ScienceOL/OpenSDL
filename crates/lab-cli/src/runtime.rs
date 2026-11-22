@@ -76,14 +76,14 @@ impl EngineArgs {
 
 pub enum EngineMode {
     Standalone { advertise_mqtt: bool },
-    WorkPlane,
+    WorkPlane { advertise_mqtt: bool },
 }
 
 impl EngineMode {
     fn broker_addr(&self, config: &MqttConfig) -> anyhow::Result<SocketAddr> {
         let ip = match self {
             Self::Standalone { .. } => Ipv4Addr::UNSPECIFIED,
-            Self::WorkPlane => {
+            Self::WorkPlane { .. } => {
                 let ip = config.host.parse::<Ipv4Addr>().context(
                     "work-plane MQTT requires an explicit instrument interface IP in mqtt.host",
                 )?;
@@ -95,6 +95,14 @@ impl EngineMode {
             }
         };
         Ok((ip, config.port).into())
+    }
+
+    fn advertise_mqtt(&self) -> bool {
+        match *self {
+            Self::Standalone { advertise_mqtt } | Self::WorkPlane { advertise_mqtt } => {
+                advertise_mqtt
+            }
+        }
     }
 }
 
@@ -113,7 +121,7 @@ where
         osdl_auth::valid_instance_name(instance),
         "invalid engine instance name"
     );
-    if matches!(mode, EngineMode::WorkPlane) {
+    if matches!(mode, EngineMode::WorkPlane { .. }) {
         anyhow::ensure!(
             args.config.is_some() || args.simulation,
             "work-plane nodes require --config or --simulation"
@@ -193,18 +201,9 @@ where
     let _broker = broker_addr
         .map(|addr| EmbeddedBroker::bind(addr).map_err(|e| anyhow!("broker: {e}")))
         .transpose()?;
-    let _mdns = config
-        .mqtt
-        .as_ref()
-        .filter(|_| {
-            matches!(
-                mode,
-                EngineMode::Standalone {
-                    advertise_mqtt: true
-                }
-            )
-        })
-        .map(|c| MdnsAdvertiser::start(c.port).map_err(|e| anyhow!("mdns: {e}")))
+    let _mdns = broker_addr
+        .filter(|_| mode.advertise_mqtt())
+        .map(|addr| MdnsAdvertiser::start(addr).map_err(|e| anyhow!("mdns: {e}")))
         .transpose()?;
 
     if config.mqtt.is_some() {
@@ -417,12 +416,15 @@ mod tests {
     #[test]
     fn worker_broker_requires_specific_interface() {
         let mut mqtt = MqttConfig::default();
-        assert!(EngineMode::WorkPlane.broker_addr(&mqtt).is_err());
+        let mode = EngineMode::WorkPlane {
+            advertise_mqtt: false,
+        };
+        assert!(mode.broker_addr(&mqtt).is_err());
         mqtt.host = "0.0.0.0".into();
-        assert!(EngineMode::WorkPlane.broker_addr(&mqtt).is_err());
+        assert!(mode.broker_addr(&mqtt).is_err());
         mqtt.host = "192.168.50.4".into();
         assert_eq!(
-            EngineMode::WorkPlane.broker_addr(&mqtt).unwrap(),
+            mode.broker_addr(&mqtt).unwrap(),
             "192.168.50.4:1883".parse().unwrap()
         );
     }

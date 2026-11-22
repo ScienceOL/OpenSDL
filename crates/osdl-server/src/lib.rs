@@ -15,6 +15,7 @@ pub mod account;
 mod account_endpoint;
 pub mod auth;
 pub mod background;
+pub mod cluster;
 pub mod convert;
 mod lab_profile;
 pub mod lockfile;
@@ -32,7 +33,12 @@ use std::sync::Arc;
 use osdl_core::EngineHandle;
 mod listeners;
 pub mod local_access;
-use tokio::sync::Notify;
+use tokio::{
+    sync::{watch, Notify},
+    task::JoinSet,
+};
+
+use cluster::WorkerListener;
 
 pub use account_endpoint::{serve_account_endpoint, MediaRelay};
 pub use lockfile::{InstanceRecord, LockfileGuard};
@@ -99,19 +105,24 @@ pub enum ServeError {
     Io(#[from] std::io::Error),
     #[error("transport error: {0}")]
     Transport(#[from] tonic::transport::Error),
+    #[error("gRPC listener task: {0}")]
+    ListenerTask(#[from] tokio::task::JoinError),
+    #[error("gRPC listener stopped before shutdown")]
+    ListenerExited,
 }
 
 /// Run the gRPC server until the engine is asked to stop, the process
 /// receives a Ctrl-C, or the listener fails. Cleans up the lockfile and
 /// any UDS file on the way out.
 pub async fn serve(engine: EngineHandle, cfg: ServeConfig) -> Result<(), ServeError> {
-    serve_with_lab_name(engine, cfg, None).await
+    serve_with_worker(engine, cfg, None, None).await
 }
 
-/// Serve the engine with a display-name default for an instance without saved settings.
-pub async fn serve_with_lab_name(
+/// Attach the cluster ingress to the same engine and publisher registry.
+pub async fn serve_with_worker(
     engine: EngineHandle,
     cfg: ServeConfig,
+    worker: Option<WorkerListener>,
     initial_lab_name: Option<&str>,
 ) -> Result<(), ServeError> {
     if cfg.listen.is_empty() {
@@ -218,15 +229,12 @@ pub async fn serve_with_lab_name(
         listen_addr: listen_addr_str,
     };
 
-    // One Notify drives all shutdown wake-ups: both the per-listener
-    // graceful-shutdown futures *and* every active StreamEvents stream
-    // (which would otherwise hold the RPC open until its broadcast
-    // sender closes — i.e. forever, since the service still owns it).
+    let (stop, stopped) = watch::channel(false);
     let shutdown = Arc::new(Notify::new());
     let service = OsdlService::with_shutdown(engine.clone(), identity, shutdown.clone())
         .with_lab_profile(lab_profile);
 
-    let mut joins: Vec<tokio::task::JoinHandle<Result<(), tonic::transport::Error>>> = Vec::new();
+    let mut joins = JoinSet::new();
 
     if let Some(listener) = tcp_listener {
         let access = match &cfg.auth {
@@ -246,14 +254,14 @@ pub async fn serve_with_lab_name(
             }
             _ => listeners::TcpAccess::Remote,
         };
-        joins.push(tokio::spawn(listeners::tcp(
+        joins.spawn(listeners::tcp(
             listener,
             service.clone(),
             cfg.auth.clone(),
             cfg.instance.clone(),
             access,
-            shutdown.clone(),
-        )));
+            stopped.clone(),
+        ));
     }
     #[cfg(windows)]
     if matches!(
@@ -267,47 +275,28 @@ pub async fn serve_with_lab_name(
         access
             .save(&cfg.lock_dir, &cfg.instance)
             .map_err(|e| ServeError::Auth(e.to_string()))?;
-        joins.push(tokio::spawn(listeners::tcp(
+        joins.spawn(listeners::tcp(
             listener,
             service.clone(),
             cfg.auth.clone(),
             cfg.instance.clone(),
             listeners::TcpAccess::LocalCapability(access.token),
-            shutdown.clone(),
-        )));
+            stopped.clone(),
+        ));
     }
     #[cfg(unix)]
     if let Some(listener) = unix_listener {
-        joins.push(tokio::spawn(listeners::unix(
+        joins.spawn(listeners::unix(
             listener,
             service.clone(),
             cfg.auth.clone(),
-            shutdown.clone(),
-        )));
+            stopped.clone(),
+        ));
     }
-    // Wait for stop signal — engine stop OR Ctrl-C.
-    tokio::select! {
-        _ = engine.stop_requested() => log::info!("engine stop requested, shutting down listeners"),
-        _ = wait_for_console_signal(tokio::signal::ctrl_c()) => log::info!("Ctrl-C received, shutting down"),
+    if let Some(worker) = worker {
+        joins.spawn(worker.listen(engine.clone(), service, stopped));
     }
-
-    // Notify both listeners. `notify_waiters` would only wake currently-
-    // waiting tasks; we use `notify_one` per listener instead so the wake
-    // is delivered even if the listener task hasn't reached `notified()`
-    // yet (each listener has its own Arc<Notify> clone — wait, they
-    // share. So `notify_waiters` works because each listener calls
-    // `notified()` immediately after spawn. Use it.).
-    shutdown.notify_waiters();
-    // Some listeners may not have reached notified() yet; permit storage
-    // ensures the next call also wakes.
-    shutdown.notify_one();
-
-    // Drain listener tasks. They each return Ok(()) on graceful shutdown.
-    for j in joins {
-        if let Ok(Err(e)) = j.await {
-            log::error!("gRPC listener error during shutdown: {e}");
-        }
-    }
+    let stopped = supervise_listeners(engine, shutdown, stop, joins).await;
 
     // Best-effort cleanup of UDS file (Unix only).
     #[cfg(unix)]
@@ -320,7 +309,43 @@ pub async fn serve_with_lab_name(
     }
 
     // _lock drops here, removing the lockfile.
-    Ok(())
+    stopped
+}
+
+pub(crate) async fn listener_stopped(mut stopped: watch::Receiver<bool>) {
+    let _ = stopped.wait_for(|value| *value).await;
+}
+
+pub(crate) async fn supervise_listeners(
+    engine: EngineHandle,
+    shutdown: Arc<Notify>,
+    stop: watch::Sender<bool>,
+    mut listeners: JoinSet<Result<(), tonic::transport::Error>>,
+) -> Result<(), ServeError> {
+    let mut result = tokio::select! {
+        biased;
+        _ = engine.stop_requested() => Ok(()),
+        _ = wait_for_console_signal(tokio::signal::ctrl_c()) => Ok(()),
+        finished = listeners.join_next() => match finished {
+            Some(Ok(Err(error))) => Err(error.into()),
+            Some(Err(error)) => Err(error.into()),
+            _ => Err(ServeError::ListenerExited),
+        },
+    };
+    // Stop accepting RPCs even if a listener has yet to poll its stop signal.
+    stop.send_replace(true);
+    engine.request_stop();
+    shutdown.notify_waiters();
+    shutdown.notify_one();
+    while let Some(finished) = listeners.join_next().await {
+        let finished = finished
+            .map_err(ServeError::from)
+            .and_then(|result| result.map_err(Into::into));
+        if result.is_ok() {
+            result = finished;
+        }
+    }
+    result
 }
 
 async fn wait_for_console_signal(signal: impl std::future::Future<Output = std::io::Result<()>>) {

@@ -419,6 +419,50 @@ def assert_local_inventory(binary, config, workers):
     return len(listing.encode())
 
 
+def check_shared_worker(stack, pki, binary, lab, operator, admin):
+    worker = "shared-worker"
+    instance = "shared-lab"
+    worker_port, direct_port = ports(2)
+    pki.issue(worker, "worker", "serverAuth", f"DNS:{worker}.lab.worker.opensdl.internal")
+    worker_config = write_config(
+        pki.root, worker, cluster="lab", worker=worker, listen=f"{LOOPBACK}:{worker_port}",
+        incoming=pki.tls(worker, "control"),
+    )
+    endpoint = f"http://{LOOPBACK}:{direct_port}"
+    env = {**LABADM_ENV, "OSDL_AUTH_TOKEN": "fixture-" + uuid.uuid4().hex}
+    data = pki.root / worker
+    process = subprocess.Popen(
+        [lab, "serve", "--cluster-worker", worker_config, "--instance", instance,
+         "--listen", f"{LOOPBACK}:{direct_port}", "--socket=disabled",
+         "--auth", "static", "--simulation", "--data-dir", data],
+        stdout=subprocess.DEVNULL, env=env,
+    )
+    stack.callback(terminate, process)
+
+    def read():
+        return json.loads(run(lab, "--endpoint", endpoint, "device", "get", DEVICE, "--json", env=env))
+
+    wait_for(read)
+    wait_for(lambda: cli(binary, admin, "admit", worker, f"{LOOPBACK}:{worker_port}"))
+    result = cli(binary, operator, "send", worker, DEVICE, "start", "--command-id", "shared-engine")
+    assert "SUCCEEDED" in result, result
+    wait_for(lambda: read()["properties"]["running"] is True)
+    with contextlib.closing(sqlite3.connect(data / f"{worker}.db")) as db:
+        count = db.execute(
+            "SELECT count(*) FROM command_log WHERE command_id = ?", ("shared-engine",),
+        ).fetchone()[0]
+    assert count == 1
+
+    unauthenticated = subprocess.run(
+        [lab, "--endpoint", endpoint, "device", "get", DEVICE],
+        capture_output=True, text=True, timeout=8, env=LABADM_ENV,
+    )
+    assert unauthenticated.returncode != 0 and "missing authorization header" in unauthenticated.stderr, unauthenticated
+    cli(binary, admin, "forget", worker)
+    terminate(process)
+    print("direct lab and mTLS worker share live engine state and one command log", flush=True)
+
+
 def etcd_metrics(pki, endpoints):
     tls = ssl.create_default_context(cafile=str(pki.file("etcd-ca.crt")))
     tls.load_cert_chain(str(pki.file("etcd-client.crt")), str(pki.file("etcd-client.key")))
@@ -467,7 +511,7 @@ def measure(binary, config, pki, endpoints, gate, expected_workers, history):
     )
 
 
-def exercise(binary, openssl):
+def exercise(binary, lab, openssl):
     with tempfile.TemporaryDirectory(prefix="osdl-cluster-") as tmp, contextlib.ExitStack() as stack:
         root = Path(tmp).resolve()
         pki = Pki(root, openssl)
@@ -494,6 +538,7 @@ def exercise(binary, openssl):
         wait_for(lambda: cli(binary, config, "status"))
         wait_for(lambda: cli(binary, standby, "status"))
         rejected(binary, wrong_role, "status")
+        check_shared_worker(stack, pki, binary, lab, config, controls[0])
 
         gate = ResponseGate((LOOPBACK, worker_ports[1]))
         gate.start(stack)
@@ -627,9 +672,11 @@ def exercise(binary, openssl):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--labadm", type=Path, default=Path("target/debug/labadm" + (".exe" if os.name == "nt" else "")))
+    parser.add_argument("--lab", type=Path, help="Direct lab binary adjacent to labadm by default")
     parser.add_argument("--openssl", default=shutil.which("openssl") or "openssl")
     options = parser.parse_args()
-    exercise(options.labadm.resolve(), options.openssl)
+    lab = options.lab or options.labadm.with_name("lab" + options.labadm.suffix)
+    exercise(options.labadm.resolve(), lab.resolve(), options.openssl)
 
 
 if __name__ == "__main__":

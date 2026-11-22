@@ -45,6 +45,11 @@ pub struct OsdlService {
 }
 
 impl OsdlService {
+    pub(crate) fn with_identity(mut self, identity: ServerIdentity) -> Self {
+        self.identity = identity;
+        self
+    }
+
     pub fn with_account(mut self, account: crate::account::AccountAuth) -> Self {
         self.authorizer = Authorizer::Account(account);
         self
@@ -271,7 +276,7 @@ impl pb::osdl_server::Osdl for OsdlService {
         // broadcast buffer; clients are expected to dedupe by id (the
         // runner already does this via its `media_sources` cache).
         let mut rx = self.engine.subscribe_events();
-        let shutdown = self.shutdown.clone();
+        let engine = self.engine.clone();
 
         // Replay the current media-source snapshot so a subscriber
         // that connects after engine startup learns about cameras —
@@ -297,15 +302,12 @@ impl pb::osdl_server::Osdl for OsdlService {
                 }
                 yield Ok(pb_event);
             }
-            // Pre-allocate a `Notified` future so the select! loop can
-            // be polled across iterations. `Notified` resets after each
-            // wake; we re-arm it at the top of every iteration.
+            let stopped = engine.stop_requested();
+            tokio::pin!(stopped);
             loop {
-                let notified = shutdown.notified();
-                tokio::pin!(notified);
                 tokio::select! {
                     biased;
-                    _ = &mut notified => {
+                    _ = &mut stopped => {
                         // Server is shutting down. Cleanly end the
                         // stream so tonic's graceful shutdown can
                         // finish draining this RPC.

@@ -4,7 +4,9 @@
 //! can find the MQTT broker IP:port without any hardcoded configuration.
 //! This is the same mechanism used by AirPlay, Chromecast, and Home Assistant.
 
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+use std::net::SocketAddr;
+
+use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
 
 /// Advertises the OpenSDL MQTT broker via mDNS.
 ///
@@ -21,8 +23,16 @@ impl MdnsAdvertiser {
     ///
     /// The service is visible as `_osdl._tcp.local.` on the local network.
     /// ESP32 nodes query this to discover the mother node's IP.
-    pub fn start(mqtt_port: u16) -> Result<Self, String> {
+    pub fn start(mqtt: SocketAddr) -> Result<Self, String> {
         let daemon = ServiceDaemon::new().map_err(|e| format!("mDNS daemon: {}", e))?;
+        if !mqtt.ip().is_unspecified() {
+            daemon
+                .disable_interface(IfKind::All)
+                .map_err(|e| e.to_string())?;
+            daemon
+                .enable_interface(IfKind::Addr(mqtt.ip()))
+                .map_err(|e| e.to_string())?;
+        }
 
         let hostname = std::env::var("HOSTNAME")
             .or_else(|_| {
@@ -41,25 +51,33 @@ impl MdnsAdvertiser {
             })
             .unwrap_or_else(|_| "osdl-mother".into());
 
-        Self::register(daemon, &hostname, mqtt_port)
+        Self::register(daemon, &hostname, mqtt)
     }
 
-    fn register(daemon: ServiceDaemon, hostname: &str, mqtt_port: u16) -> Result<Self, String> {
+    fn register(daemon: ServiceDaemon, hostname: &str, mqtt: SocketAddr) -> Result<Self, String> {
         let instance_name = format!("OpenSDL on {}", hostname);
 
         let host_label = hostname.trim_end_matches(".local").trim_end_matches('.');
         let fqdn = format!("{}.local.", host_label);
 
-        let service = ServiceInfo::new(
+        let automatic = mqtt.ip().is_unspecified();
+        let addresses = if automatic {
+            String::new()
+        } else {
+            mqtt.ip().to_string()
+        };
+        let mut service = ServiceInfo::new(
             SERVICE_TYPE,
             &instance_name,
             &fqdn,
-            "", // empty = auto-detect IP
-            mqtt_port,
+            addresses.as_str(),
+            mqtt.port(),
             None,
         )
-        .map_err(|e| format!("mDNS service info: {}", e))?
-        .enable_addr_auto();
+        .map_err(|e| format!("mDNS service info: {}", e))?;
+        if automatic {
+            service = service.enable_addr_auto();
+        }
 
         let fullname = service.get_fullname().to_string();
 
@@ -70,7 +88,7 @@ impl MdnsAdvertiser {
         log::info!(
             "mDNS advertising: {} → port {} (service: {})",
             instance_name,
-            mqtt_port,
+            mqtt.port(),
             SERVICE_TYPE
         );
 
@@ -107,7 +125,9 @@ mod tests {
 
         let port = 18830;
         let hostname = format!("osdl-mdns-test-{}", std::process::id());
-        let advertisement = MdnsAdvertiser::register(loopback_daemon(), &hostname, port).unwrap();
+        let advertisement =
+            MdnsAdvertiser::register(loopback_daemon(), &hostname, ([127, 0, 0, 1], port).into())
+                .unwrap();
 
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut discovered = false;
