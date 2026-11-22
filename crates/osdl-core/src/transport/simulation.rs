@@ -105,6 +105,7 @@ impl SimulationTransport {
             devices: vec![device.clone()],
             samples: Vec::new(),
             seed: 0,
+            scene_revision: 0,
         };
         let world = WorldRuntime::new(&config, rx_tx, &BuiltinSimulationBackendFactory)?;
         Ok(Self::for_device(world, device.id.clone()))
