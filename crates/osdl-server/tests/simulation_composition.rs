@@ -205,8 +205,8 @@ fn scene_definition_rejects_missing_and_cyclic_parents() {
         let instruments = parents
             .into_iter()
             .map(|(id, parent)| {
-                serde_json::json!({"id":id, "asset":"asset", "version":"1", "position":[0; 3],
-                "rotation":[0; 3], "parent":parent})
+                serde_json::json!({"id":id, "asset":"asset", "version":"1", "position":[0, 0, 0],
+                "rotation":[0, 0, 0], "parent":parent})
             })
             .collect::<Vec<_>>();
         std::fs::write(
