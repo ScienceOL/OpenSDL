@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{ensure, Result};
-use osdl_core::EngineHandle;
+use osdl_core::{media::v4l2::DepthCamera, EngineHandle};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
@@ -33,6 +33,7 @@ pub struct DeviceProbe {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum Probe {
     Tcp { address: SocketAddr },
+    V4l2DepthCamera(DepthCamera),
 }
 
 pub fn validate(configs: &[DeviceProbe]) -> Result<()> {
@@ -48,8 +49,12 @@ pub fn validate(configs: &[DeviceProbe]) -> Result<()> {
             "device type is empty for {}",
             config.id
         );
-        let Probe::Tcp { address } = config.probe;
-        worker_address(address)?;
+        match &config.probe {
+            Probe::Tcp { address } => {
+                worker_address(*address)?;
+            }
+            Probe::V4l2DepthCamera(camera) => camera.validate()?,
+        }
     }
     Ok(())
 }
@@ -58,7 +63,12 @@ pub async fn start(configs: Vec<DeviceProbe>, engine: &EngineHandle) -> Result<J
     let mut probes = JoinSet::new();
     for config in configs {
         engine
-            .register_read_only_device(config.id.as_str(), &config.device_type, &config.description)
+            .register_read_only_device(
+                config.id.as_str(),
+                &config.device_type,
+                &config.description,
+                config.probe.role(),
+            )
             .await
             .map_err(anyhow::Error::msg)?;
         probes.spawn(config.monitor(engine.clone()));
@@ -95,10 +105,24 @@ impl DeviceProbe {
 }
 
 impl Probe {
+    fn role(&self) -> Option<&'static str> {
+        match self {
+            Self::Tcp { .. } => None,
+            Self::V4l2DepthCamera(_) => Some("camera"),
+        }
+    }
+
     async fn sample(&self) -> std::io::Result<Properties> {
-        let Self::Tcp { address } = self;
-        TcpStream::connect(address).await?;
-        Ok(HashMap::from([("tcp_reachable".into(), Value::Bool(true))]))
+        match self {
+            Self::Tcp { address } => {
+                TcpStream::connect(address).await?;
+                Ok(HashMap::from([("tcp_reachable".into(), Value::Bool(true))]))
+            }
+            Self::V4l2DepthCamera(camera) => {
+                let camera = camera.clone();
+                tokio::task::spawn_blocking(move || camera.observe()).await?
+            }
+        }
     }
 }
 
@@ -135,12 +159,35 @@ probe:
     }
 
     #[tokio::test]
+    async fn configured_depth_camera_is_visible_when_depth_capture_is_unavailable() {
+        let config = serde_yaml::from_str::<DeviceProbe>(
+            "id: gemini
+device_type: v4l2.depth_camera
+description: Orbbec Gemini 335
+probe:
+  type: v4l2_depth_camera
+  depth_device: /dev/null
+",
+        )
+        .unwrap();
+        validate(std::slice::from_ref(&config)).unwrap();
+        assert!(config.probe.sample().await.is_err());
+        let engine = OsdlEngine::new(Default::default(), vec![]).handle();
+        let _probes = start(vec![config], &engine).await.unwrap();
+        let device = engine.get_device("gemini").await.unwrap();
+        assert_eq!(device.role.as_deref(), Some("camera"));
+        assert_eq!(device.description, "Orbbec Gemini 335");
+        assert!(!device.online);
+        assert!(device.actions.is_empty());
+    }
+
+    #[tokio::test]
     async fn device_observations_update_inventory_and_cannot_dispatch() {
         let engine = OsdlEngine::new(Default::default(), vec![]).handle();
         let id = "configured-reader";
         let update = |properties| engine.observe_read_only_device(id, properties);
         engine
-            .register_read_only_device(id, "example.reader", "")
+            .register_read_only_device(id, "example.reader", "", None)
             .await
             .unwrap();
         assert!(!engine.get_device(id).await.unwrap().online);

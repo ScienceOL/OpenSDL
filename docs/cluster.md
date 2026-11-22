@@ -136,6 +136,23 @@ read_only_devices:
 
 `tcp` 建立 TCP 连接后关闭。在线表示指定端口可达，设备详情会包含 `tcp_reachable`。仪器身份和实验运行状态需要由本机驱动确认。
 
+Linux 工作节点可通过 `v4l2_depth_camera` 登记本机 USB 深度相机。使用设备的
+`/dev/v4l/by-id` 或 `/dev/v4l/by-path` 路径，并确保运行工作节点的用户有读取权限。
+
+~~~yaml
+read_only_devices:
+  - id: depth-camera
+    device_type: v4l2.depth_camera
+    description: USB depth camera
+    probe:
+      type: v4l2_depth_camera
+      depth_device: /dev/v4l/by-id/usb-depth-camera-video-index0
+      color_device: /dev/v4l/by-path/usb-color-camera-video-index0
+~~~
+
+工作节点确认深度接口提供 `Z16` 时标记相机在线。可选的彩色接口会分别报告
+`color_available`。这个探测只读取相机能力，实时视频仍由媒体源配置提供。
+
 ## 操作设备
 
 ~~~yaml
