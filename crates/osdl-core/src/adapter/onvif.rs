@@ -164,17 +164,14 @@ fn normalize_ptz_move(params: &Value) -> Result<Value, String> {
     // `direction` shorthand: up/down/left/right/in/out, with optional `speed`
     // (0..=1, default 0.5) and `duration_ms` (default 500). Falls back to
     // explicit pan/tilt/zoom vector when `direction` is absent. Either way
-    // the on-wire ONVIF call is ContinuousMove + a delayed Stop; the
-    // transport handles the timing.
+    // the transport sets the ONVIF ContinuousMove timeout and backs it up
+    // with a delayed Stop.
     let speed = params
         .get("speed")
         .and_then(Value::as_f64)
         .unwrap_or(0.5)
         .clamp(0.0, 1.0);
-    let duration_ms = params
-        .get("duration_ms")
-        .and_then(Value::as_u64)
-        .unwrap_or(500);
+    let duration_ms = ptz_move_duration_ms(params)?;
 
     if let Some(direction) = params.get("direction").and_then(Value::as_str) {
         let (pan, tilt, zoom) = match direction.to_ascii_lowercase().as_str() {
@@ -212,6 +209,16 @@ fn normalize_ptz_move(params: &Value) -> Result<Value, String> {
     }))
 }
 
+pub(crate) fn ptz_move_duration_ms(params: &Value) -> Result<u64, String> {
+    match params.get("duration_ms") {
+        None => Ok(500),
+        Some(value) => value
+            .as_u64()
+            .filter(|duration| *duration > 0)
+            .ok_or_else(|| "ptz_move: duration_ms must be a positive integer".into()),
+    }
+}
+
 fn normalize_preset(params: &Value) -> Result<Value, String> {
     let preset = params
         .get("preset")
@@ -226,7 +233,8 @@ fn ptz_move_schema() -> ActionSchema {
         description: "Pan/tilt/zoom the camera. Shorthand: \
             `direction=up|down|left|right|in|out`. Explicit vector: \
             `pan`/`tilt`/`zoom` in [-1, 1]. Optional `speed` (0..1, \
-            default 0.5) and `duration_ms` (default 500)."
+            default 0.5) and `duration_ms` (default 500, must be within the \
+            camera's supported timeout range)."
             .into(),
         params: json!({
             "type": "object",
@@ -236,7 +244,7 @@ fn ptz_move_schema() -> ActionSchema {
                 "tilt": {"type": "number", "minimum": -1, "maximum": 1},
                 "zoom": {"type": "number", "minimum": -1, "maximum": 1},
                 "speed": {"type": "number", "minimum": 0, "maximum": 1},
-                "duration_ms": {"type": "integer", "minimum": 0}
+                "duration_ms": {"type": "integer", "minimum": 1}
             }
         }),
     }
