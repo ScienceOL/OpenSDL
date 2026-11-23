@@ -30,12 +30,29 @@ command result includes these fields.
 | `tcp_pose` | TCP pose in `robot_base`. `position_m` is `[x, y, z]` in metres. `rotation_vector_rad` is `[rx, ry, rz]` in radians. |
 | `joint_positions_rad` | Actual joint angles in radians, in J1–J6 order |
 
-Motion requires a dedicated controller task with exclusive ownership of the
-arm and a verifiable terminal outcome for each request. The ScienceOL ES66
-reported RTSI firmware `2.14.5.1236` with the task stopped and no task file
-loaded. The teleoperation program runs a continuous reverse-control session.
-The SDK trajectory script also reports success after a timed-out point read.
-The current driver exposes `status` as its sole action.
+## XYZ motion
+
+To expose `move_xyz`, add `motion_task: opensdl-xyz.task` to the robot's worker
+configuration. At the teach pendant, create a dedicated task named
+`opensdl-xyz.task` with one Script node. Insert the contents of
+[`opensdl-xyz.script`](configs/opensdl-xyz.script), save the task, and start it
+from the controller. The Script node enters the interpreter and waits for a
+command.
+
+Use this task only with the OpenSDL worker. The worker checks the loaded task
+name and operating state before sending a move to the controller's existing
+TCP port 30020. It does not start the robot, change safety modes, or load tasks.
+The worker advertises the action through the existing cluster connection.
+
+`move_xyz` takes absolute `x_m`, `y_m`, and `z_m` in the same base frame as
+`status`. It keeps the current TCP orientation and commands a straight-line
+move at up to 0.05 m/s with zero blend radius. Read `status` before choosing
+your target. Long moves may require increasing the caller's command timeout.
+
+The controller assigns an ID when it queues the move. OpenSDL verifies that a
+subsequent instruction has started and that a newer RTSI sample is within
+1 mm of the requested XYZ. A timed-out or disconnected move has an unconfirmed
+outcome. Check the controller and actual position before issuing another move.
 
 The reference is the bundled Elite CS SDK 1.3.0 under
 `cpp/Elite_Robots_CS_SDK` in ScienceOL/Robots at commit
@@ -43,6 +60,10 @@ The reference is the bundled Elite CS SDK 1.3.0 under
 `RtsiClient.cpp`, `RtsiRecipeInternal.cpp`, `RtsiIOInterface.cpp`, and
 `DataType.hpp` define the read path. The vendor's [RTSI instructions][rtsi]
 confirm the field types and [pose reference][pose] specifies the base frame.
+The [Elite interpreter guide][interpreter] defines the acknowledgements and
+execution-state queries. The SDK trajectory implementation in
+`example/example/external_control.script` demonstrates Cartesian `movel`.
 
 [rtsi]: https://www.elibot.com/service/articles/list/106
 [pose]: https://www.elibot.com/service/articles/list/83
+[interpreter]: https://www.elibot.com/service/articles/list/113
