@@ -1,6 +1,25 @@
 # OpenSDL
 
-**Open Self-Drive Lab** — A mesh-based system for laboratory hardware control with pluggable transports.
+**Open Self-Drive Lab** is a distributed laboratory management and device
+control system. It connects instruments across worker nodes and exposes their
+inventory, status, and commands through a common API and CLI.
+
+## Features
+
+1. **Control-plane high availability.** Ready control-plane replicas share an
+   etcd-backed worker directory. With multiple replicas and a healthy etcd
+   quorum, new requests can reach a surviving replica and continue to operate
+   devices on healthy workers. An instrument stays with its owning worker. If
+   that worker goes offline, access resumes when the worker recovers or an
+   operator explicitly transfers ownership. Verify device state before
+   retrying a command interrupted in transit.
+   [Cluster deployment](docs/cluster.md)
+2. **Role-based access control (RBAC).** Built-in read and operate scopes are
+   available through LiyanLabs account and paired-device authentication.
+   Cluster membership administration requires separate directory credentials.
+   Access grants are scoped to the laboratory.
+   [Paired-device permissions](docs/paired-authentication.md) ·
+   [Cluster trust roles](docs/architecture/cluster.md)
 
 ## Install the CLI
 

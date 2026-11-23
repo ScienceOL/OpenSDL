@@ -1,6 +1,10 @@
 # OpenSDL Developer Guide
 
-OpenSDL (Open Self-Drive Lab) is a mesh-based system for laboratory hardware control. A mother node (Rust) manages devices through pluggable transports (MQTT serial, direct serial, TCP), with an embedded MQTT broker, mDNS discovery, and SQLite event store.
+OpenSDL (Open Self-Drive Lab) is a distributed laboratory management and device
+control system. Each device host runs a Rust engine with pluggable transports
+(MQTT serial, direct serial, TCP), an embedded MQTT broker, mDNS discovery,
+and a SQLite event store. In cluster mode, the control plane routes requests
+to the worker that owns the instrument.
 
 For detailed architecture diagrams and data flow, see [`docs/architecture.md`](docs/architecture.md).
 
