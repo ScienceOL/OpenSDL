@@ -1,0 +1,371 @@
+[
+  {
+    "name": "device_info",
+    "description": "Read the SC9300 workstation identity and firmware version.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "status",
+    "description": "Read the controller status register: the command serial number and command code currently executing, whether it completed, and any latched hardware fault such as an opened door, an axis limit, or missing tips.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "position",
+    "description": "Read the carriage coordinate (X, Y) and the Z height of one head in millimetres, plus the raw step pulses and both liquid plunger counters.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right", "gripper"]}
+      },
+      "required": ["axis"]
+    }
+  },
+  {
+    "name": "telemetry",
+    "description": "Read the controller status and the coordinates of every head in one call.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "check_limit",
+    "description": "Send a coordinate limit probe. Controller reachability may be unavailable.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right", "gripper"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "z": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "plungerPulses": {"type": "integer", "minimum": 0, "maximum": 4194304}
+      },
+      "required": ["axis", "x", "y", "z"]
+    }
+  },
+  {
+    "name": "wait_idle",
+    "description": "Read status until the controller is idle, reports a fault, or reaches the timeout.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 20}
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "stop",
+    "description": "Request a stop of the running operation.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "reset",
+    "description": "Home the carriage and both pipetting heads using the factory reset sequence. Homing moves the full travel; make sure the deck is clear and tips are removed before calling it. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "clear_error",
+    "description": "Clear a latched controller fault after its cause has been removed, for example after closing the door or freeing an axis limit.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "set_motors",
+    "description": "Engage or release the servo drives. Release them before moving a head by hand; engage them before any commanded motion.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"}
+      },
+      "required": ["enabled"]
+    }
+  },
+  {
+    "name": "move",
+    "description": "Move one head to an absolute coordinate in millimetres at the factory motion profile. The controller coordinates X and Y across the carriage and keeps Z per head. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right", "gripper"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "z": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "method": {"type": "string", "enum": ["lift", "together"], "description": "lift raises Z before travelling in X and Y; together moves all three axes at once."}
+      },
+      "required": ["axis", "x", "y", "z"]
+    }
+  },
+  {
+    "name": "jog",
+    "description": "Step one motor by a distance in millimetres from its current position. Use it for manual alignment; use move for absolute positioning. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {"type": "string", "enum": ["x_left", "x_right", "y_forward", "y_backward", "z_left_up", "z_left_down", "z_right_up", "z_right_down", "gripper_up", "gripper_down", "left_plunger_aspirate", "left_plunger_dispense", "right_plunger_aspirate", "right_plunger_dispense"], "description": "The motor and direction to step."},
+        "distanceMm": {"type": "number", "minimum": 0, "maximum": 200}
+      },
+      "required": ["direction", "distanceMm"]
+    }
+  },
+  {
+    "name": "jaw",
+    "description": "Clamp or release the gripper jaw to an explicit opening in step pulses. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {"type": "string", "enum": ["clamp", "release"]},
+        "openingPulses": {"type": "integer", "minimum": 0, "maximum": 65535}
+      },
+      "required": ["action", "openingPulses"]
+    }
+  },
+  {
+    "name": "pick_up_tips",
+    "description": "Run a tip pickup cycle on one head: travel to the tip box position, descend, seat the tips, and lift. Provide the tip box coordinate and the seat depth. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zSeat": {"type": "number", "description": "Head Z at which the tips are seated, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zDescent": {"type": "number", "description": "Head Z above the tips before the final descent, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zUp": {"type": "number", "description": "Head Z after seating the tips, in millimetres.", "minimum": -500000, "maximum": 500000}
+      },
+      "required": ["axis", "x", "y", "zSeat"]
+    }
+  },
+  {
+    "name": "set_back_tips",
+    "description": "Run a tip ejection cycle on one head: travel to the waste position, descend, release the tips into the box, and lift. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zSeat": {"type": "number", "description": "Head Z at which the tips are released, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zUp": {"type": "number", "description": "Head Z after releasing the tips, in millimetres.", "minimum": -500000, "maximum": 500000}
+      },
+      "required": ["axis", "x", "y", "zSeat"]
+    }
+  },
+  {
+    "name": "aspirate",
+    "description": "Aspirate a liquid volume with one head at an absolute deck coordinate. The volume is converted to plunger pulses with the factory liquid-compensation table for the mounted pipette size and pipetting mode. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zBottom": {"type": "number", "description": "Head Z at the vessel bottom, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zDecline": {"type": "number", "description": "Head Z where the tip stops descending, in millimetres. Defaults to the bottom coordinate.", "minimum": -500000, "maximum": 500000},
+        "volumeUl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1050},
+        "pipette": {"type": "integer", "enum": [10, 20, 50, 300, 1000]},
+        "mode": {"type": "string", "enum": ["single", "six", "twelve"]},
+        "method": {"type": "string", "enum": ["dive", "detect"], "description": "dive descends to the bottom coordinate; detect stops on the liquid-level sensor."},
+        "liquidLevelDetection": {"type": "boolean"},
+        "postPauseSeconds": {"type": "integer", "minimum": 0, "maximum": 65}
+      },
+      "required": ["axis", "x", "y", "zBottom", "volumeUl", "pipette", "mode"]
+    }
+  },
+  {
+    "name": "dispense",
+    "description": "Dispense a liquid volume with one head at an absolute deck coordinate, with an optional blow-out and post-dispense mixing. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zBottom": {"type": "number", "description": "Head Z at the vessel bottom, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zDecline": {"type": "number", "description": "Head Z where the tip stops descending, in millimetres. Defaults to the bottom coordinate.", "minimum": -500000, "maximum": 500000},
+        "volumeUl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1050},
+        "pipette": {"type": "integer", "enum": [10, 20, 50, 300, 1000]},
+        "mode": {"type": "string", "enum": ["single", "six", "twelve"]},
+        "method": {"type": "string", "enum": ["bottom", "bottle_neck", "offset"]},
+        "blowOut": {"type": "boolean", "description": "Blow out the residual volume after dispensing."},
+        "mixCount": {"type": "integer", "minimum": 0, "maximum": 255},
+        "postPauseSeconds": {"type": "integer", "minimum": 0, "maximum": 65}
+      },
+      "required": ["axis", "x", "y", "zBottom", "volumeUl", "pipette", "mode"]
+    }
+  },
+  {
+    "name": "homogenize",
+    "description": "Mix a liquid in a vessel by repeating aspiration and dispense with one head. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {"type": "string", "enum": ["left", "right"]},
+        "x": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "y": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zBottom": {"type": "number", "description": "Head Z at the vessel bottom, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zDecline": {"type": "number", "description": "Head Z where the tip stops descending, in millimetres. Defaults to the bottom coordinate.", "minimum": -500000, "maximum": 500000},
+        "volumeUl": {"type": "number", "exclusiveMinimum": 0, "maximum": 1050, "description": "Mixing volume per stroke."},
+        "pipette": {"type": "integer", "enum": [10, 20, 50, 300, 1000]},
+        "mode": {"type": "string", "enum": ["single", "six", "twelve"]},
+        "mixCount": {"type": "integer", "minimum": 1, "maximum": 255},
+        "postPauseSeconds": {"type": "integer", "minimum": 0, "maximum": 65}
+      },
+      "required": ["axis", "x", "y", "zBottom", "volumeUl", "pipette", "mode", "mixCount"]
+    }
+  },
+  {
+    "name": "clamp_plate",
+    "description": "Run one gripper plate-handling cycle: travel to the plate, clamp it, move it to the placement coordinate, release it, and lift. Call wait_idle to observe when the controller settles.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "xClamp": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "yClamp": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zClamp": {"type": "number", "description": "Gripper Z at the clamped plate height, in millimetres.", "minimum": -500000, "maximum": 500000},
+        "zApproach": {"type": "number", "description": "Gripper Z above the plate before clamping, in millimetres. Defaults to the clamp height.", "minimum": -500000, "maximum": 500000},
+        "xPlace": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "yPlace": {"type": "number", "minimum": -500000, "maximum": 500000},
+        "zPlace": {"type": "number", "description": "Gripper Z where the plate is released, in millimetres. Defaults to the clamp height.", "minimum": -500000, "maximum": 500000},
+        "jawOpening": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "Jaw opening in step pulses used while travelling."},
+        "force": {"type": "integer", "minimum": 0, "maximum": 255}
+      },
+      "required": ["xClamp", "yClamp", "zClamp", "xPlace", "yPlace"]
+    }
+  },
+  {
+    "name": "set_temperature",
+    "description": "Hold one heating or cooling module at a target temperature for a bounded duration.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "module": {"type": "integer", "minimum": 0, "maximum": 15},
+        "celsius": {"type": "number", "minimum": -20, "maximum": 120},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767}
+      },
+      "required": ["module", "celsius", "seconds"]
+    }
+  },
+  {
+    "name": "oscillate",
+    "description": "Shake one module at a rotation speed for a bounded duration.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "module": {"type": "integer", "minimum": 0, "maximum": 15},
+        "rpm": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767}
+      },
+      "required": ["module", "rpm", "seconds"]
+    }
+  },
+  {
+    "name": "temperature_and_oscillate",
+    "description": "Hold one combined module at a target temperature while shaking it for a bounded duration.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "module": {"type": "integer", "minimum": 0, "maximum": 15},
+        "celsius": {"type": "number", "minimum": -20, "maximum": 120},
+        "rpm": {"type": "integer", "minimum": 0, "maximum": 3000},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767}
+      },
+      "required": ["module", "celsius", "rpm", "seconds"]
+    }
+  },
+  {
+    "name": "magnetic_stand",
+    "description": "Move one magnetic stand module to a height and hold it there for a bounded duration.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "module": {"type": "integer", "minimum": 0, "maximum": 15},
+        "heightMm": {"type": "number", "minimum": 0, "maximum": 100},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767}
+      },
+      "required": ["module", "heightMm", "seconds"]
+    }
+  },
+  {
+    "name": "set_light",
+    "description": "Switch the enclosure work light on or off.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on": {"type": "boolean"}
+      },
+      "required": ["on"]
+    }
+  },
+  {
+    "name": "set_ultraviolet",
+    "description": "Switch the ultraviolet lamp on or off. An on command carries its own bounded duration.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on": {"type": "boolean"},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767}
+      },
+      "required": ["on"]
+    }
+  },
+  {
+    "name": "set_filter_fan",
+    "description": "Switch the HEPA filter fan on or off at a rotation speed.",
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on": {"type": "boolean"},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 32767},
+        "rpm": {"type": "integer", "minimum": 0, "maximum": 10000}
+      },
+      "required": ["on"]
+    }
+  }
+]

@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
@@ -13,63 +12,60 @@ use tokio::time::{self, MissedTickBehavior};
 
 use crate::adapter::{DeviceMatch, ProtocolAdapter};
 use crate::config::Sc9300Config;
-use crate::protocol::{ActionSchema, CommandResult, CommandStatus, Device, DeviceCommand};
+use crate::protocol::{CommandResult, CommandStatus, Device, DeviceCommand};
 use crate::transport::Transport;
 use crate::EngineHandle;
 
+mod actions;
+mod calibration;
 mod wire;
 
 #[cfg(test)]
 mod tests;
 
-use wire::{Client, Error, Identity};
+use actions::{Axis, Operation, Request};
+use wire::{Client, Command, Dispatch, Error, Identity, Position, Status};
 
 const ADAPTER: &str = "sc9300";
 const DEVICE_TYPE: &str = "prcxi.sc9300";
 const OBSERVATION_INTERVAL: Duration = Duration::from_secs(30);
-const REQUEST_DEADLINE: Duration = Duration::from_secs(5);
+const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(120);
+const EXCHANGE_BUDGET: Duration = Duration::from_secs(5);
+const TELEMETRY_BUDGET: Duration = Duration::from_secs(12);
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Operation {
-    DeviceInfo,
-    Status,
+enum Reply {
+    Identity(Identity),
+    Status(Status),
+    Position(Position),
+    Telemetry(Status, Vec<Position>),
+    Dispatched(Dispatch),
+    Limit(Dispatch),
 }
 
-impl Operation {
-    fn parse(command: &DeviceCommand) -> Result<Self, String> {
-        if !command.params.is_null() && !command.params.as_object().is_some_and(|p| p.is_empty()) {
-            return Err("SC9300 reads do not accept arguments".into());
-        }
-        match command.action.as_str() {
-            "device_info" => Ok(Self::DeviceInfo),
-            "status" => Ok(Self::Status),
-            _ => Err("unsupported SC9300 read".into()),
-        }
-    }
-
-    fn schema(self) -> ActionSchema {
-        let (name, description) = match self {
-            Self::DeviceInfo => ("device_info", "Read the workstation identity and firmware"),
-            Self::Status => (
-                "status",
-                "Read the workstation execution state and fault code",
-            ),
+impl Reply {
+    fn outcome(self) -> (CommandStatus, &'static str, Value) {
+        let data = match self {
+            Self::Identity(identity) => json!(identity.info()),
+            Self::Status(status) => json!(status),
+            Self::Position(position) => json!(position),
+            Self::Telemetry(status, heads) => json!({ "status": status, "heads": heads }),
+            Self::Dispatched(dispatch) => {
+                return (
+                    CommandStatus::Pending,
+                    "SC9300 command sent; check status or wait_idle for the controller state",
+                    json!(dispatch),
+                );
+            }
+            Self::Limit(dispatch) => {
+                return (
+                    CommandStatus::Pending,
+                    "SC9300 limit probe sent; the controller did not confirm reachability",
+                    json!({ "reachable": Value::Null, "dispatch": dispatch }),
+                );
+            }
         };
-        ActionSchema {
-            name: name.into(),
-            description: description.into(),
-            params: json!({"type":"object","properties":{},"additionalProperties":false}),
-        }
+        (CommandStatus::Succeeded, "SC9300 read completed", data)
     }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReadCommand {
-    command_id: String,
-    device_id: String,
-    operation: Operation,
 }
 
 pub(crate) struct Adapter;
@@ -92,12 +88,7 @@ impl ProtocolAdapter for Adapter {
         _device_type: &str,
         command: &DeviceCommand,
     ) -> Result<Vec<u8>, String> {
-        serde_json::to_vec(&ReadCommand {
-            command_id: command.command_id.clone(),
-            device_id: command.device_id.clone(),
-            operation: Operation::parse(command)?,
-        })
-        .map_err(|_| "could not encode SC9300 read".into())
+        serde_json::to_vec(command).map_err(|_| "could not encode SC9300 action".into())
     }
 
     fn decode_response(&self, _device_type: &str, _bytes: &[u8]) -> Option<HashMap<String, Value>> {
@@ -119,6 +110,48 @@ impl Session {
         let discovered = client.identify(None).await?;
         let identity = client.identify(Some(discovered)).await?;
         Ok(Self { client, identity })
+    }
+
+    async fn execute(
+        &mut self,
+        operation: Operation,
+        already_open: bool,
+        deadline: time::Instant,
+    ) -> Result<Reply, Error> {
+        match operation {
+            Operation::DeviceInfo => {
+                if already_open {
+                    self.identity = self.client.identify(Some(self.identity)).await?;
+                }
+                Ok(Reply::Identity(self.identity))
+            }
+            Operation::Status => Ok(Reply::Status(self.client.status(self.identity).await?)),
+            Operation::Position(axis) => Ok(Reply::Position(
+                self.client.position(self.identity, axis).await?,
+            )),
+            Operation::Telemetry => {
+                let status = self.client.status(self.identity).await?;
+                let mut heads = Vec::with_capacity(Axis::ALL.len());
+                for axis in Axis::ALL {
+                    heads.push(self.client.position(self.identity, axis).await?);
+                }
+                Ok(Reply::Telemetry(status, heads))
+            }
+            Operation::CheckLimit(payload) => {
+                let dispatch = self
+                    .client
+                    .dispatch(self.identity, Command::CheckLimit, &payload, deadline)
+                    .await?;
+                Ok(Reply::Limit(dispatch))
+            }
+            Operation::Dispatch(command, payload) => {
+                let dispatch = self
+                    .client
+                    .dispatch(self.identity, command, &payload, deadline)
+                    .await?;
+                Ok(Reply::Dispatched(dispatch))
+            }
+        }
     }
 }
 
@@ -159,30 +192,75 @@ impl Station {
             online: false,
             properties: HashMap::new(),
             properties_timestamp_ms: 0,
-            actions: [Operation::DeviceInfo, Operation::Status]
-                .into_iter()
-                .map(Operation::schema)
-                .collect(),
+            actions: actions::schemas(),
             role: None,
         }
     }
 
-    async fn read(&self, operation: Operation) -> Result<Value, Error> {
-        let mut state = self.state.lock().await;
+    async fn exchange(
+        &self,
+        operation: Operation,
+        deadline: time::Instant,
+    ) -> Result<Reply, Error> {
+        let mut state = time::timeout_at(deadline, self.state.lock())
+            .await
+            .map_err(|_| Error::Timeout)?;
         if state.stopped {
             return Err(Error::Unavailable);
         }
-        // Removing the session before awaiting I/O also closes it on cancellation.
-        // A later request then starts by identifying the serial peer again.
-        let mut session = state.session.take();
-        let result = self.sample(operation, &mut session).await;
+        // Do not start a new frame once a queued request has expired.
+        if time::Instant::now() >= deadline {
+            return Err(Error::Timeout);
+        }
+        // Removing the session before awaiting I/O closes it on cancellation.
+        let previous = state.session.take();
+        let already_open = previous.is_some();
+        let dispatch = matches!(
+            operation,
+            Operation::Dispatch(..) | Operation::CheckLimit(_)
+        );
+        let result = async {
+            let mut session = match previous {
+                Some(session) => session,
+                None => time::timeout_at(deadline, Session::open(&self.port))
+                    .await
+                    .map_err(|_| Error::Timeout)??,
+            };
+            let exchange = session.execute(operation, already_open, deadline);
+            // Dispatch bounds its write and response independently so a timeout
+            // observing the reply cannot discard a command already on the wire.
+            let reply = if dispatch {
+                exchange.await?
+            } else {
+                time::timeout_at(deadline, exchange)
+                    .await
+                    .map_err(|_| Error::Timeout)??
+            };
+            Ok((session, reply))
+        }
+        .await;
         match result {
-            Ok((value, properties)) => {
-                state.session = session;
-                if let Some(properties) = properties {
+            Ok((session, reply)) => {
+                if matches!(&reply, Reply::Dispatched(dispatch) | Reply::Limit(dispatch) if dispatch.connection_lost())
+                {
+                    drop(session);
+                    self.record(None).await;
+                    return Ok(reply);
+                }
+                let status = match &reply {
+                    Reply::Status(status) | Reply::Telemetry(status, _) => Some(status),
+                    _ => None,
+                };
+                if status.is_some() || !already_open {
+                    let mut properties =
+                        HashMap::from([("identity".into(), json!(session.identity.info()))]);
+                    if let Some(status) = status {
+                        properties.insert("status".into(), json!(status));
+                    }
                     self.record(Some(properties)).await;
                 }
-                Ok(value)
+                state.session = Some(session);
+                Ok(reply)
             }
             Err(error) => {
                 self.record(None).await;
@@ -191,37 +269,46 @@ impl Station {
         }
     }
 
-    async fn sample(
+    async fn wait_idle(
         &self,
-        operation: Operation,
-        session: &mut Option<Session>,
-    ) -> Result<(Value, Option<HashMap<String, Value>>), Error> {
-        let already_open = session.is_some();
-        let session = match session {
-            Some(session) => session,
-            None => session.insert(Session::open(&self.port).await?),
-        };
-        match operation {
-            Operation::DeviceInfo => {
-                if already_open {
-                    session.identity = session.client.identify(Some(session.identity)).await?;
+        budget: Duration,
+    ) -> Result<(CommandStatus, &'static str, Value), Error> {
+        let deadline = time::Instant::now() + budget;
+        let mut latest = None;
+        let (outcome, message, status) = loop {
+            match self.exchange(Operation::Status, deadline).await {
+                Ok(Reply::Status(status)) if status.idle() => {
+                    break (
+                        CommandStatus::Succeeded,
+                        "SC9300 controller is idle",
+                        status,
+                    );
                 }
-                let identity = json!(session.identity.info());
-                // An identity-only read on the same connection cannot renew
-                // the timestamp of a previously sampled status or erase it.
-                let properties =
-                    (!already_open).then(|| HashMap::from([("identity".into(), identity.clone())]));
-                Ok((identity, properties))
+                Ok(Reply::Status(status)) if status.faulted() => {
+                    break (
+                        CommandStatus::Failed,
+                        "SC9300 controller reported a fault",
+                        status,
+                    );
+                }
+                Ok(Reply::Status(status)) => latest = Some(status),
+                Err(Error::Timeout) if time::Instant::now() >= deadline => {
+                    break (
+                        CommandStatus::Running,
+                        "SC9300 controller has not settled",
+                        latest.ok_or(Error::Timeout)?,
+                    );
+                }
+                Err(error) => return Err(error),
+                Ok(_) => unreachable!("status operation returns status"),
             }
-            Operation::Status => {
-                let status = json!(session.client.status(session.identity).await?);
-                let properties = HashMap::from([
-                    ("identity".into(), json!(session.identity.info())),
-                    ("status".into(), status.clone()),
-                ]);
-                Ok((status, Some(properties)))
-            }
-        }
+            time::sleep_until((time::Instant::now() + STATUS_POLL_INTERVAL).min(deadline)).await;
+        };
+        Ok((
+            outcome,
+            message,
+            json!({ "settled": status.idle(), "status": status }),
+        ))
     }
 
     async fn monitor(&self) {
@@ -229,7 +316,10 @@ impl Station {
         observations.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             observations.tick().await;
-            if let Err(error) = self.read(Operation::Status).await {
+            if let Err(error) = self
+                .exchange(Operation::Status, time::Instant::now() + EXCHANGE_BUDGET)
+                .await
+            {
                 log::debug!("SC9300 workstation {}: {error}", self.id);
             }
         }
@@ -260,11 +350,11 @@ impl Transport for Station {
     }
 
     fn description(&self) -> String {
-        "PRCXI SC9300 serial reader".into()
+        "PRCXI SC9300 serial instrument".into()
     }
 
     async fn send(&self, _bytes: &[u8]) -> Result<(), String> {
-        Err("SC9300 accepts only typed reads".into())
+        Err("SC9300 accepts only typed actions".into())
     }
 
     fn is_connected(&self) -> bool {
@@ -272,20 +362,30 @@ impl Transport for Station {
     }
 
     async fn execute(&self, bytes: &[u8]) -> Result<Option<CommandResult>, String> {
-        let request: ReadCommand =
-            serde_json::from_slice(bytes).map_err(|_| "invalid SC9300 read")?;
-        if request.device_id != self.id {
-            return Err("SC9300 read targets another device".into());
+        let command: DeviceCommand =
+            serde_json::from_slice(bytes).map_err(|_| "invalid SC9300 action")?;
+        if command.device_id != self.id {
+            return Err("SC9300 action targets another device".into());
         }
-        let data = time::timeout(REQUEST_DEADLINE, self.read(request.operation))
-            .await
-            .map_err(|_| Error::Timeout.to_string())?
-            .map_err(|error| error.to_string())?;
+        let (status, message, data) = match Request::parse(&command)? {
+            Request::Exchange(operation) => {
+                let budget = if matches!(operation, Operation::Telemetry) {
+                    TELEMETRY_BUDGET
+                } else {
+                    EXCHANGE_BUDGET
+                };
+                self.exchange(operation, time::Instant::now() + budget)
+                    .await
+                    .map(Reply::outcome)
+            }
+            Request::WaitIdle(budget) => self.wait_idle(budget).await,
+        }
+        .map_err(|error| error.to_string())?;
         Ok(Some(CommandResult {
-            device_id: request.device_id,
-            command_id: request.command_id,
-            status: CommandStatus::Succeeded,
-            message: "SC9300 read completed".into(),
+            device_id: command.device_id,
+            command_id: command.command_id,
+            status,
+            message: message.into(),
             data: Some(data),
         }))
     }
