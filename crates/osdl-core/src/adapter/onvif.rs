@@ -84,7 +84,7 @@ impl ProtocolAdapter for OnvifAdapter {
     }
 
     fn encode_command(&self, device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
-        let envelope = match device_type {
+        let mut envelope = match device_type {
             DEVICE_TYPE_PTZ | DEVICE_TYPE_CAMERA | DEVICE_TYPE_COMBINED => {
                 build_envelope(&cmd.action, &cmd.params)?
             }
@@ -100,6 +100,10 @@ impl ProtocolAdapter for OnvifAdapter {
             ));
         }
 
+        if cmd.action == "snapshot" {
+            envelope["command_id"] = json!(cmd.command_id);
+            envelope["device_id"] = json!(cmd.device_id);
+        }
         serde_json::to_vec(&envelope).map_err(|e| format!("onvif adapter: serialize envelope: {e}"))
     }
 

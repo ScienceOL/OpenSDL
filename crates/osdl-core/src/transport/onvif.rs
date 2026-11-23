@@ -29,6 +29,7 @@
 
 use super::{Transport, TransportRx};
 use crate::adapter::onvif::ptz_move_duration_ms;
+use crate::protocol::{CommandResult, CommandStatus};
 use async_trait::async_trait;
 use base64::Engine as _;
 use quick_xml::events::Event;
@@ -38,6 +39,7 @@ use sha1::{Digest, Sha1};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex, OnceCell};
 use tokio::task::JoinHandle;
 
@@ -341,14 +343,29 @@ impl OnvifTransport {
         let resp = req.send().await.map_err(|e| format!("snapshot GET: {e}"))?;
         let bytes = read_snapshot_response(resp).await?;
 
-        let now_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
         let cam_dir = self.inner.snapshot_root.join(&self.inner.camera_id);
-        std::fs::create_dir_all(&cam_dir).map_err(|e| format!("create snapshot dir: {e}"))?;
-        let path = cam_dir.join(format!("{now_ms}.jpg"));
-        std::fs::write(&path, &bytes).map_err(|e| format!("write snapshot: {e}"))?;
+        tokio::fs::create_dir_all(&cam_dir)
+            .await
+            .map_err(|e| format!("create snapshot dir: {e}"))?;
+        let capture_id = uuid::Uuid::new_v4().as_u128() as u64;
+        let path = cam_dir.join(format!("{capture_id}.jpg"));
+        let mut file = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .await
+            .map_err(|e| format!("create snapshot: {e}"))?;
+        let written = async {
+            file.write_all(&bytes).await?;
+            file.flush().await
+        }
+        .await;
+        if let Err(error) = written {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(format!("write snapshot: {error}"));
+        }
+        drop(file);
 
         let path_str = path.display().to_string();
         let url = match &self.inner.snapshot_url_base {
@@ -366,7 +383,6 @@ impl OnvifTransport {
             "path": path_str,
             "url": url,
             "bytes": bytes.len(),
-            "source_uri": snap_uri,
         }))
     }
 }
@@ -382,6 +398,46 @@ impl Transport for OnvifTransport {
             "ONVIF camera {} ({})",
             self.inner.camera_id, self.inner.onvif_url
         )
+    }
+
+    async fn execute(&self, bytes: &[u8]) -> Result<Option<CommandResult>, String> {
+        let envelope: Value =
+            serde_json::from_slice(bytes).map_err(|_| "invalid ONVIF envelope")?;
+        if envelope["op"] != "snapshot" {
+            self.send(bytes).await?;
+            return Ok(None);
+        }
+        let command_id = envelope["command_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("missing ONVIF snapshot command ID")?;
+        if envelope["device_id"] != self.inner.camera_id {
+            return Err("ONVIF snapshot device mismatch".into());
+        }
+        let reply = self.dispatch("snapshot", &Value::Null).await;
+        let path = reply["data"]["path"]
+            .as_str()
+            .ok_or("ONVIF snapshot capture failed")?;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_millis())
+            .unwrap_or(0);
+        let device_id = &self.inner.camera_id;
+        let _ = self.inner.rx_tx.send(TransportRx {
+            transport_id: self.inner.transport_id.clone(),
+            data: serde_json::to_vec(&reply).unwrap_or_default(),
+        });
+        Ok(Some(CommandResult {
+            command_id: command_id.into(),
+            device_id: device_id.clone(),
+            status: CommandStatus::Succeeded,
+            message: "ONVIF snapshot captured".into(),
+            data: Some(json!({
+                "device_id": device_id,
+                "timestamp": timestamp,
+                "properties": {"snapshot_ok": true, "snapshot_path": path}
+            })),
+        }))
     }
 
     /// `bytes` is a JSON envelope from `OnvifAdapter::encode_command`.

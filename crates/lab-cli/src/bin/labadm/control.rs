@@ -13,7 +13,9 @@ use crate::{
 
 // An inventory page can contain eight worker responses, each bounded by tonic.
 pub const INVENTORY_RESPONSE_LIMIT: usize = PAGE_SIZE * 4 * 1024 * 1024 + 4096;
-pub const COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+// Relay the full command budget supported by the Runner. Inventory still
+// uses its short RPC timeout and commands are never retried after dispatch.
+pub const COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Clone)]
 pub struct Control {

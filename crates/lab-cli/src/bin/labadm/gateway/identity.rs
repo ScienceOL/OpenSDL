@@ -39,6 +39,12 @@ pub(super) fn node(worker: &Id, node: &mut pb::Node) {
 pub(super) fn command_result(worker: &Id, result: &mut pb::CommandResult) {
     properties(worker, &result.device_id, &mut result.data);
     if let Some(fields) = result.data.as_mut().map(|data| &mut data.fields) {
+        if let Some(Kind::StructValue(observation)) = fields
+            .get_mut("properties")
+            .and_then(|value| value.kind.as_mut())
+        {
+            project_properties(worker, &result.device_id, observation);
+        }
         if let Some(Kind::StringValue(id)) = fields
             .get_mut("device_id")
             .and_then(|value| value.kind.as_mut())
@@ -56,6 +62,10 @@ pub(super) fn properties(worker: &Id, id: &str, properties: &mut Option<Struct>)
     let Some(properties) = properties.as_mut() else {
         return;
     };
+    project_properties(worker, id, properties);
+}
+
+fn project_properties(worker: &Id, id: &str, properties: &mut Struct) {
     for key in [
         "snapshot_url",
         "snapshot_source_uri",
@@ -77,7 +87,7 @@ pub(super) fn properties(worker: &Id, id: &str, properties: &mut Option<Struct>)
 }
 
 fn snapshot_relative(camera: &str, path: &str) -> Option<String> {
-    // The worker snapshot layout is snapshots/<camera>/<epoch-ms>.jpg.
+    // The worker snapshot layout is snapshots/<camera>/<capture-id>.jpg.
     // Retain only the worker-relative locator even when the worker reports
     // an absolute Unix or Windows path.
     let mut parts = path.rsplit(['/', '\\']);
@@ -171,6 +181,35 @@ mod tests {
                 json!({"snapshot_path": "scienceol:cam131/1234.jpg", "snapshot_ok": true})
             );
         }
+    }
+
+    #[test]
+    fn snapshot_command_receipt_keeps_only_the_routed_locator() {
+        let worker = "scienceol".parse().unwrap();
+        let mut result = pb::CommandResult {
+            command_id: "capture-1".into(),
+            device_id: "cam131".into(),
+            data: Some(json_to_struct(&json!({
+                "device_id": "cam131",
+                "timestamp": 1234,
+                "properties": {
+                    "snapshot_path": "/var/lib/opensdl/snapshots/cam131/1234.jpg",
+                    "snapshot_url": "file:///private",
+                    "snapshot_ok": true
+                }
+            }))),
+            ..Default::default()
+        };
+        command_result(&worker, &mut result);
+        assert_eq!(result.command_id, "capture-1");
+        assert_eq!(
+            struct_to_json(result.data.as_ref().unwrap()),
+            json!({
+                "device_id": "scienceol:cam131",
+                "timestamp": 1234,
+                "properties": {"snapshot_path": "scienceol:cam131/1234.jpg", "snapshot_ok": true}
+            })
+        );
     }
 
     #[test]
