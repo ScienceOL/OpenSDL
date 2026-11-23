@@ -1,5 +1,6 @@
-//! Native observation of Elite ES66 robot controllers.
+//! Native telemetry and typed Cartesian control of Elite ES66 robot controllers.
 
+mod motion;
 mod state;
 mod wire;
 
@@ -31,9 +32,17 @@ const READ_DEADLINE: Duration = Duration::from_secs(3);
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StatusRequest {
+struct Request {
     command_id: String,
     device_id: String,
+    operation: Operation,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Operation {
+    Status,
+    MoveXyz(motion::Target),
 }
 
 pub(crate) struct Adapter;
@@ -52,22 +61,30 @@ impl ProtocolAdapter for Adapter {
     }
 
     fn encode_command(&self, _device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
-        if cmd.action != STATUS {
-            return Err("Elite ES66 supports only the status action".into());
-        }
-        if !cmd.params.is_null()
-            && !cmd
-                .params
-                .as_object()
-                .is_some_and(|params| params.is_empty())
-        {
-            return Err("Elite ES66 status does not accept arguments".into());
-        }
-        serde_json::to_vec(&StatusRequest {
+        let operation = match cmd.action.as_str() {
+            STATUS => {
+                if !cmd.params.is_null()
+                    && !cmd
+                        .params
+                        .as_object()
+                        .is_some_and(|params| params.is_empty())
+                {
+                    return Err("Elite ES66 status does not accept arguments".into());
+                }
+                Operation::Status
+            }
+            motion::ACTION => Operation::MoveXyz(
+                serde_json::from_value(cmd.params.clone())
+                    .map_err(|_| "Elite ES66 move_xyz requires numeric x_m, y_m and z_m")?,
+            ),
+            _ => return Err("unsupported Elite ES66 action".into()),
+        };
+        serde_json::to_vec(&Request {
             command_id: cmd.command_id.clone(),
             device_id: cmd.device_id.clone(),
+            operation,
         })
-        .map_err(|_| "could not encode Elite ES66 status request".into())
+        .map_err(|_| "could not encode Elite ES66 request".into())
     }
 
     fn decode_response(&self, _device_type: &str, _bytes: &[u8]) -> Option<HashMap<String, Value>> {
@@ -79,6 +96,8 @@ struct Robot {
     id: String,
     transport_id: String,
     host: Ipv4Addr,
+    motion_task: Option<String>,
+    motion_active: Mutex<()>,
     stopped: Mutex<bool>,
     connected: AtomicBool,
     engine: Weak<EngineHandle>,
@@ -99,7 +118,10 @@ impl Robot {
                 name: STATUS.into(),
                 description: "Read the robot and safety state, base-frame TCP pose, and six joint angles from a single controller sample".into(),
                 params: json!({"type":"object","properties":{},"additionalProperties":false}),
-            }],
+            }]
+            .into_iter()
+            .chain(self.motion_task.as_deref().map(motion::schema))
+            .collect(),
             role: None,
         }
     }
@@ -156,26 +178,46 @@ impl Transport for Robot {
     }
 
     fn description(&self) -> String {
-        "Elite ES66 controller reader".into()
+        "Elite ES66 controller".into()
     }
 
     async fn send(&self, _bytes: &[u8]) -> Result<(), String> {
-        Err("Elite ES66 accepts only typed status requests".into())
+        Err("Elite ES66 accepts only typed requests".into())
     }
 
     async fn execute(&self, bytes: &[u8]) -> Result<Option<CommandResult>, String> {
-        let request: StatusRequest =
-            serde_json::from_slice(bytes).map_err(|_| "invalid Elite ES66 status request")?;
+        let request: Request =
+            serde_json::from_slice(bytes).map_err(|_| "invalid Elite ES66 request")?;
         if request.device_id != self.id {
-            return Err("Elite ES66 status request targets another device".into());
+            return Err("Elite ES66 request targets another device".into());
         }
-        let sample = self.sample().await?;
+        let (message, data) = match request.operation {
+            Operation::Status => (
+                "Elite ES66 status read completed",
+                json!(self.sample().await?),
+            ),
+            Operation::MoveXyz(target) => {
+                let task = self
+                    .motion_task
+                    .as_deref()
+                    .ok_or("Elite ES66 XYZ control is disabled")?;
+                let _active = self
+                    .motion_active
+                    .try_lock()
+                    .map_err(|_| "Elite ES66 already has an active XYZ request")?;
+                if *self.stopped.lock().await {
+                    return Err("Elite ES66 transport stopped".into());
+                }
+                let result = motion::execute(self.host, task, target).await?;
+                ("Elite ES66 XYZ target reached", json!(result))
+            }
+        };
         Ok(Some(CommandResult {
             command_id: request.command_id,
             device_id: request.device_id,
             status: CommandStatus::Succeeded,
-            message: "Elite ES66 status read completed".into(),
-            data: Some(json!(sample)),
+            message: message.into(),
+            data: Some(data),
         }))
     }
 
@@ -227,10 +269,19 @@ impl Runtime {
             {
                 return Err("Elite ES66 device IDs and hosts must be unique".into());
             }
+            if config
+                .motion_task
+                .as_deref()
+                .is_some_and(|name| !motion::valid_task_name(name))
+            {
+                return Err("Elite ES66 motion_task must be a .task filename".into());
+            }
             robots.push(Arc::new(Robot {
                 id: config.id.clone(),
                 transport_id: format!("{ADAPTER}:{}", config.id),
                 host: config.host,
+                motion_task: config.motion_task.clone(),
+                motion_active: Mutex::default(),
                 stopped: Mutex::default(),
                 connected: AtomicBool::new(false),
                 engine: Arc::downgrade(&engine),

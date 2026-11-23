@@ -157,6 +157,17 @@ async fn configured_elite_reads_one_vendor_snapshot_without_sending_control() {
 }
 
 async fn mock_rtsi(stream: &mut TcpStream, recipe_id: u8) {
+    mock_rtsi_pose(stream, recipe_id, 100.0, [0.3, -0.5, 0.77], 3, 3).await;
+}
+
+async fn mock_rtsi_pose(
+    stream: &mut TcpStream,
+    recipe_id: u8,
+    timestamp: f64,
+    [x, y, z]: [f64; 3],
+    safety: i32,
+    program: i32,
+) {
     let mut query = [0; 5];
     stream.read_exact(&mut query).await.unwrap();
     assert_eq!(&query, b"\0\x05V\0\x01");
@@ -181,11 +192,11 @@ async fn mock_rtsi(stream: &mut TcpStream, recipe_id: u8) {
     assert_eq!(read_frame(stream).await, (b'S', vec![]));
     let mut sample = vec![recipe_id];
     for value in [
-        100.0_f64, 0.3, -0.5, 0.77, 0.0, 0.0, 1.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
+        timestamp, x, y, z, 0.0, 0.0, 1.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
     ] {
         sample.extend(value.to_be_bytes());
     }
-    for code in [7_i32, 253, 253, 253, 253, 253, 0, 3, 3] {
+    for code in [7_i32, 253, 253, 253, 253, 253, 0, safety, program] {
         sample.extend(code.to_be_bytes());
     }
     write_frame(stream, b'S', &[1]).await;
@@ -209,4 +220,131 @@ async fn write_frame(stream: &mut TcpStream, kind: u8, payload: &[u8]) {
     // Exercise header and payload fragmentation over TCP.
     stream.write_all(&frame[..1]).await.unwrap();
     stream.write_all(&frame[1..]).await.unwrap();
+}
+
+#[tokio::test]
+async fn motion_requires_the_dedicated_task_and_a_later_fence_and_pose() {
+    use std::sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    };
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let host = Ipv4Addr::new(127, 0, 0, 2);
+    let dashboard = TcpListener::bind((host, 29999)).await.unwrap();
+    let rtsi = TcpListener::bind((host, 30004)).await.unwrap();
+    let interpreter = TcpListener::bind((host, 30020)).await.unwrap();
+    let phase = Arc::new(AtomicU8::new(0));
+
+    let active = phase.clone();
+    let dashboard_task = tokio::spawn(async move {
+        loop {
+            let (socket, _) = dashboard.accept().await.unwrap();
+            let mut socket = BufReader::new(socket);
+            socket
+                .get_mut()
+                .write_all(b"EliRobot dashboard shell, version 2.14.5.0.\r\n")
+                .await
+                .unwrap();
+            let mut query = String::new();
+            socket.read_line(&mut query).await.unwrap();
+            let reply: &[u8] = match query.as_str() {
+                "robot -t\n" => b"ES66\r\n",
+                "task\n" if active.load(Ordering::Relaxed) > 0 => {
+                    b"Loaded task: /programs/opensdl-xyz.task\r\n"
+                }
+                "task\n" => b"No task file loaded\r\n",
+                other => panic!("unexpected dashboard command {other:?}"),
+            };
+            socket.get_mut().write_all(reply).await.unwrap();
+        }
+    });
+
+    let completed = phase.clone();
+    let rtsi_task = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = rtsi.accept().await.unwrap();
+            let (stamp, x) = if completed.load(Ordering::Relaxed) == 2 {
+                (101.0, 0.31)
+            } else {
+                (100.0, 0.3)
+            };
+            mock_rtsi_pose(&mut stream, 1, stamp, [x, -0.5, 0.77], 1, 1).await;
+        }
+    });
+    let completed = phase.clone();
+    let interpreter_task = tokio::spawn(async move {
+        let (socket, _) = interpreter.accept().await.unwrap();
+        let mut socket = BufReader::new(socket);
+        let exchanges = [
+            ("state", "state: 0: running: state"),
+            ("sync()", "ack: 1: sync()"),
+            ("statelastexecuted", "state: 1: statelastexecuted"),
+            ("movel([0.310000,-0.500000,0.770000,0.000000,0.000000,1.500000],a=0.1,v=0.05,t=0,r=0)",
+                "ack: 2: movel([0.310000,-0.500000,0.770000,0.000000,0.000000,1.500000],a=0.1,v=0.05,t=0,r=0)"),
+            ("sync()", "ack: 3: sync()"),
+            ("statelastexecuted", "state: 2: statelastexecuted"),
+            ("statelastexecuted", "state: 3: statelastexecuted"),
+        ];
+        for (command, response) in exchanges {
+            let mut query = String::new();
+            socket.read_line(&mut query).await.unwrap();
+            assert_eq!(query, format!("{command}\n"));
+            if response.starts_with("state: 3:") {
+                completed.store(2, Ordering::Relaxed);
+            }
+            socket
+                .get_mut()
+                .write_all(format!("{response}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    let config: OsdlConfig = serde_yaml::from_str(concat!(
+        "elite_robots:\n  - id: test-motion\n    host: 127.0.0.2\n",
+        "    motion_task: opensdl-xyz.task\n",
+    ))
+    .unwrap();
+    let mut engine = OsdlEngine::new(config, vec![]);
+    let handle = engine.handle();
+    let job = tokio::spawn(async move { engine.run().await });
+    let device = timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(device) = handle.get_device("test-motion").await {
+                if device.online {
+                    break device;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(device
+        .actions
+        .iter()
+        .any(|action| action.name == "move_xyz"));
+    let command = DeviceCommand {
+        command_id: "motion".into(),
+        device_id: device.id,
+        action: "move_xyz".into(),
+        params: json!({"x_m":0.31,"y_m":-0.5,"z_m":0.77}),
+    };
+    let rejected = handle.send_command(command.clone()).await.unwrap_err();
+    assert!(rejected.contains("opensdl-xyz.task"), "{rejected}");
+    phase.store(1, Ordering::Relaxed);
+    let moved = handle.send_command(command).await.unwrap();
+    assert_eq!(moved.status, CommandStatus::Succeeded);
+    let data = moved.data.unwrap();
+    assert_eq!(data["controller_move_id"], 2);
+    assert_eq!(
+        data["observed"]["tcp_pose"]["position_m"],
+        json!([0.31, -0.5, 0.77])
+    );
+    assert_eq!(data["observed"]["controller_timestamp_s"], 101.0);
+    interpreter_task.await.unwrap();
+    job.abort();
+    dashboard_task.abort();
+    rtsi_task.abort();
 }

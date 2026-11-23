@@ -119,6 +119,9 @@ pub struct Sc9300Config {
 pub struct EliteRobotConfig {
     pub id: String,
     pub host: Ipv4Addr,
+    /// Exact controller task filename authorized to service OpenSDL XYZ moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_task: Option<String>,
 }
 
 /// Configuration for a local simulation world.

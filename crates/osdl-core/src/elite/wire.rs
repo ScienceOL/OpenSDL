@@ -38,18 +38,18 @@ pub(super) struct Identity {
 }
 
 #[derive(Serialize)]
-struct TcpPose {
+pub(super) struct TcpPose {
     frame: &'static str,
-    position_m: [f64; 3],
-    rotation_vector_rad: [f64; 3],
+    pub(super) position_m: [f64; 3],
+    pub(super) rotation_vector_rad: [f64; 3],
 }
 
 #[derive(Serialize)]
 pub(super) struct Snapshot {
     pub(super) identity: Identity,
     pub(super) state: RobotState,
-    controller_timestamp_s: f64,
-    tcp_pose: TcpPose,
+    pub(super) controller_timestamp_s: f64,
+    pub(super) tcp_pose: TcpPose,
     joint_positions_rad: [f64; 6],
 }
 
@@ -59,6 +59,17 @@ pub(super) async fn sample(host: Ipv4Addr) -> Result<Snapshot, Error> {
 }
 
 async fn identify(host: Ipv4Addr) -> Result<(), Error> {
+    if dashboard_request(host, b"robot -t\n").await? != MODEL {
+        return Err(Error::Identity);
+    }
+    Ok(())
+}
+
+pub(super) async fn loaded_task(host: Ipv4Addr) -> Result<String, Error> {
+    dashboard_request(host, b"task\n").await
+}
+
+async fn dashboard_request(host: Ipv4Addr, request: &[u8]) -> Result<String, Error> {
     let mut socket = BufReader::new(TcpStream::connect((host, DASHBOARD_PORT)).await?);
     if !dashboard_line(&mut socket)
         .await?
@@ -66,17 +77,14 @@ async fn identify(host: Ipv4Addr) -> Result<(), Error> {
     {
         return Err(Error::Identity);
     }
-    socket.write_all(b"robot -t\n").await?;
+    socket.write_all(request).await?;
     for _ in 0..4 {
         let line = dashboard_line(&mut socket).await?;
-        if line == MODEL {
-            return Ok(());
-        }
         if !["These shell commands ", "Type `help ", "Type `usage "]
             .iter()
             .any(|prefix| line.starts_with(prefix))
         {
-            break;
+            return Ok(line);
         }
     }
     Err(Error::Identity)
