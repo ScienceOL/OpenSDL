@@ -88,6 +88,31 @@ pub struct CommandResult {
     pub data: Option<serde_json::Value>,
 }
 
+/// Combine the correlated observation with the instrument's command output.
+/// The raw result must be an object without the observation's reserved keys.
+pub(crate) fn observed_command_data(
+    device_id: &str,
+    timestamp: i64,
+    properties: serde_json::Map<String, serde_json::Value>,
+    raw: impl Serialize,
+) -> serde_json::Value {
+    #[derive(Serialize)]
+    struct ObservedCommandData<'a, T> {
+        device_id: &'a str,
+        timestamp: i64,
+        properties: serde_json::Map<String, serde_json::Value>,
+        #[serde(flatten)]
+        raw: T,
+    }
+
+    serde_json::json!(ObservedCommandData {
+        device_id,
+        timestamp,
+        properties,
+        raw,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandStatus {

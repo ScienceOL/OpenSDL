@@ -91,7 +91,13 @@ async fn configured_elite_reads_one_vendor_snapshot_without_sending_control() {
     let result = result.unwrap();
     let concurrent = concurrent.unwrap();
     assert_eq!(concurrent.command_id, "concurrent-status");
-    assert_eq!(concurrent.data, result.data);
+    let mut concurrent_data = concurrent.data.unwrap();
+    let mut first_data = result.data.as_ref().unwrap().clone();
+    // Both commands sampled the same simulated controller state. Their worker
+    // receipt times are independent.
+    concurrent_data.as_object_mut().unwrap().remove("timestamp");
+    first_data.as_object_mut().unwrap().remove("timestamp");
+    assert_eq!(concurrent_data, first_data);
     assert_eq!(result.status, CommandStatus::Succeeded);
     assert_eq!(result.command_id, "status");
     assert_eq!(result.device_id, "test-elite");
@@ -131,6 +137,13 @@ async fn configured_elite_reads_one_vendor_snapshot_without_sending_control() {
         json!([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     );
     assert_eq!(data["controller_timestamp_s"], 100.0);
+
+    assert_eq!(data["device_id"], "test-elite");
+    assert!(data["timestamp"].as_i64().unwrap() > 0);
+    assert_eq!(data["properties"]["tcp_x_m"], 0.3);
+    assert_eq!(data["properties"]["tcp_rx_rad"], 0.0);
+    assert_eq!(data["properties"]["joint_6_rad"], 6.0);
+    assert_eq!(data["properties"]["safety_status_code"], 3);
 
     let invalid = handle.send_command(command("status", json!({}))).await;
     assert_eq!(
@@ -348,6 +361,10 @@ async fn motion_requires_the_dedicated_task_and_a_later_fence_and_pose() {
         json!([0.31, -0.5, 0.77])
     );
     assert_eq!(data["observed"]["controller_timestamp_s"], 101.0);
+
+    assert_eq!(data["properties"]["tcp_x_m"], 0.31);
+    assert_eq!(data["properties"]["controller_timestamp_s"], 101.0);
+    assert_eq!(data["properties"]["program_state_code"], 1);
     interpreter_task.await.unwrap();
     job.abort();
     dashboard_task.abort();

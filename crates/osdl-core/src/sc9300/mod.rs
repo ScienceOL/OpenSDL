@@ -12,7 +12,8 @@ use tokio::time::{self, MissedTickBehavior};
 
 use crate::adapter::{DeviceMatch, ProtocolAdapter};
 use crate::config::Sc9300Config;
-use crate::protocol::{CommandResult, CommandStatus, Device, DeviceCommand};
+use crate::engine::now_millis;
+use crate::protocol::{observed_command_data, CommandResult, CommandStatus, Device, DeviceCommand};
 use crate::transport::Transport;
 use crate::EngineHandle;
 
@@ -43,12 +44,16 @@ enum Reply {
 }
 
 impl Reply {
-    fn outcome(self) -> (CommandStatus, &'static str, Value) {
-        let data = match self {
-            Self::Identity(identity) => json!(identity.info()),
-            Self::Status(status) => json!(status),
-            Self::Position(position) => json!(position),
-            Self::Telemetry(status, heads) => json!({ "status": status, "heads": heads }),
+    fn outcome(self, device_id: &str) -> (CommandStatus, &'static str, Value) {
+        let (data, properties) = match self {
+            Self::Identity(identity) => (identity.info().command_data(), identity.observation()),
+            Self::Status(status) => (json!(status), status.observation()),
+            Self::Position(position) => (json!(position), position.observation().collect()),
+            Self::Telemetry(status, heads) => {
+                let mut properties = status.observation();
+                properties.extend(heads.iter().flat_map(Position::observation));
+                (json!({ "status": status, "heads": heads }), properties)
+            }
             Self::Dispatched(dispatch) => {
                 return (
                     CommandStatus::Pending,
@@ -64,7 +69,11 @@ impl Reply {
                 );
             }
         };
-        (CommandStatus::Succeeded, "SC9300 read completed", data)
+        (
+            CommandStatus::Succeeded,
+            "SC9300 read completed",
+            observed_command_data(device_id, now_millis(), properties, data),
+        )
     }
 }
 
@@ -304,11 +313,13 @@ impl Station {
             }
             time::sleep_until((time::Instant::now() + STATUS_POLL_INTERVAL).min(deadline)).await;
         };
-        Ok((
-            outcome,
-            message,
-            json!({ "settled": status.idle(), "status": status }),
-        ))
+        let data = json!({ "settled": status.idle(), "status": status });
+        let data = if outcome == CommandStatus::Succeeded {
+            observed_command_data(&self.id, now_millis(), status.observation(), data)
+        } else {
+            data
+        };
+        Ok((outcome, message, data))
     }
 
     async fn monitor(&self) {
@@ -376,7 +387,7 @@ impl Transport for Station {
                 };
                 self.exchange(operation, time::Instant::now() + budget)
                     .await
-                    .map(Reply::outcome)
+                    .map(|reply| reply.outcome(&self.id))
             }
             Request::WaitIdle(budget) => self.wait_idle(budget).await,
         }

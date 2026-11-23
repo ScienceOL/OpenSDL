@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use serde::Serialize;
+use serde_json::{json, Map, Value};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::{timeout, timeout_at, Instant};
 
@@ -85,7 +86,28 @@ pub(super) struct DeviceInfo {
     firmware: String,
 }
 
+impl DeviceInfo {
+    pub(super) fn command_data(&self) -> Value {
+        // device_id in the command envelope identifies the OpenSDL device.
+        json!({
+            "device_type": self.device_type,
+            "controller_device_id": self.device_id,
+            "firmware": self.firmware,
+        })
+    }
+}
+
 impl Identity {
+    pub(super) fn observation(&self) -> Map<String, Value> {
+        let [major, minor, patch, revision] = self.firmware;
+        Map::from_iter([
+            ("sc9300_firmware_major".into(), json!(major)),
+            ("sc9300_firmware_minor".into(), json!(minor)),
+            ("sc9300_firmware_patch".into(), json!(patch)),
+            ("sc9300_firmware_revision".into(), json!(revision)),
+        ])
+    }
+
     pub(super) fn info(self) -> DeviceInfo {
         let [major, minor, patch, revision] = self.firmware;
         DeviceInfo {
@@ -115,6 +137,15 @@ pub(super) struct Status {
 }
 
 impl Status {
+    pub(super) fn observation(&self) -> Map<String, Value> {
+        Map::from_iter([
+            ("sc9300_command_serial".into(), json!(self.command_serial)),
+            ("sc9300_command_code".into(), json!(self.command)),
+            ("sc9300_state_code".into(), json!(self.state_code)),
+            ("sc9300_fault_code".into(), json!(self.error_code)),
+        ])
+    }
+
     pub(super) fn idle(&self) -> bool {
         self.command == 0 && self.state == ExecutionState::Success && self.error_code == 0
     }
@@ -135,6 +166,27 @@ pub(super) struct Position {
     z_pulses: i32,
     aux_a_pulses: i32,
     aux_b_pulses: i32,
+}
+
+impl Position {
+    pub(super) fn observation(&self) -> impl Iterator<Item = (String, Value)> {
+        let keys = match self.axis {
+            Axis::Left => ["sc9300_left_x_mm", "sc9300_left_y_mm", "sc9300_left_z_mm"],
+            Axis::Right => [
+                "sc9300_right_x_mm",
+                "sc9300_right_y_mm",
+                "sc9300_right_z_mm",
+            ],
+            Axis::Gripper => [
+                "sc9300_gripper_x_mm",
+                "sc9300_gripper_y_mm",
+                "sc9300_gripper_z_mm",
+            ],
+        };
+        keys.into_iter()
+            .zip([self.x_mm, self.y_mm, self.z_mm])
+            .map(|(key, value)| (key.to_owned(), json!(value)))
+    }
 }
 
 #[derive(Serialize)]

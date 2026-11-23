@@ -20,7 +20,7 @@ use tokio::{sync::Mutex, task::JoinSet, time};
 
 use crate::{
     adapter::{DeviceMatch, ProtocolAdapter},
-    protocol::{ActionSchema, Device},
+    protocol::{observed_command_data, ActionSchema, Device},
     transport::Transport,
     CommandResult, CommandStatus, DeviceCommand, EngineHandle,
 };
@@ -192,10 +192,16 @@ impl Transport for Robot {
             return Err("Elite ES66 request targets another device".into());
         }
         let (message, data) = match request.operation {
-            Operation::Status => (
-                "Elite ES66 status read completed",
-                json!(self.sample().await?),
-            ),
+            Operation::Status => {
+                let sample = self.sample().await?;
+                let data = observed_command_data(
+                    &request.device_id,
+                    sample.observed_at_ms,
+                    sample.observation(),
+                    &sample,
+                );
+                ("Elite ES66 status read completed", data)
+            }
             Operation::MoveXyz(target) => {
                 let task = self
                     .motion_task
@@ -209,7 +215,13 @@ impl Transport for Robot {
                     return Err("Elite ES66 transport stopped".into());
                 }
                 let result = motion::execute(self.host, task, target).await?;
-                ("Elite ES66 XYZ target reached", json!(result))
+                let data = observed_command_data(
+                    &request.device_id,
+                    result.observed.observed_at_ms,
+                    result.observed.observation(),
+                    &result,
+                );
+                ("Elite ES66 XYZ target reached", data)
             }
         };
         Ok(Some(CommandResult {

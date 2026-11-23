@@ -3,6 +3,7 @@
 use std::{io, net::Ipv4Addr};
 
 use serde::Serialize;
+use serde_json::{json, Map, Value};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
@@ -49,8 +50,37 @@ pub(super) struct Snapshot {
     pub(super) identity: Identity,
     pub(super) state: RobotState,
     pub(super) controller_timestamp_s: f64,
+    #[serde(skip)]
+    pub(super) observed_at_ms: i64,
     pub(super) tcp_pose: TcpPose,
     joint_positions_rad: [f64; 6],
+}
+
+impl Snapshot {
+    pub(super) fn observation(&self) -> Map<String, Value> {
+        let [x, y, z] = self.tcp_pose.position_m;
+        let [rx, ry, rz] = self.tcp_pose.rotation_vector_rad;
+        let [j1, j2, j3, j4, j5, j6] = self.joint_positions_rad;
+        [
+            ("controller_timestamp_s", json!(self.controller_timestamp_s)),
+            ("tcp_x_m", json!(x)),
+            ("tcp_y_m", json!(y)),
+            ("tcp_z_m", json!(z)),
+            ("tcp_rx_rad", json!(rx)),
+            ("tcp_ry_rad", json!(ry)),
+            ("tcp_rz_rad", json!(rz)),
+            ("joint_1_rad", json!(j1)),
+            ("joint_2_rad", json!(j2)),
+            ("joint_3_rad", json!(j3)),
+            ("joint_4_rad", json!(j4)),
+            ("joint_5_rad", json!(j5)),
+            ("joint_6_rad", json!(j6)),
+        ]
+        .into_iter()
+        .chain(self.state.observation())
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect()
+    }
 }
 
 pub(super) async fn sample(host: Ipv4Addr) -> Result<Snapshot, Error> {
@@ -154,6 +184,7 @@ async fn rtsi_sample(host: Ipv4Addr) -> Result<Snapshot, Error> {
         identity,
         state: RobotState::from_codes(ints(&sample[13 * 8..])),
         controller_timestamp_s: timestamp,
+        observed_at_ms: crate::engine::now_millis(),
         tcp_pose: TcpPose {
             frame: "robot_base",
             position_m: [x, y, z],

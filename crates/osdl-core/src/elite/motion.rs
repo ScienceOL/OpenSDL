@@ -35,7 +35,7 @@ pub(super) struct Target {
 pub(super) struct Outcome {
     target_position_m: [f64; 3],
     controller_move_id: u64,
-    observed: Snapshot,
+    pub(super) observed: Snapshot,
 }
 
 pub(super) fn valid_task_name(name: &str) -> bool {

@@ -35,10 +35,16 @@ async fn identity_read_preserves_status_and_a_failed_follow_up_withdraws_it() {
     assert!(before.online);
     assert_eq!(before.properties["status"]["command_serial"], 100);
 
-    station
-        .exchange(Operation::DeviceInfo, deadline)
+    let identity = handle
+        .send_command(command("device_info", json!({})))
         .await
+        .unwrap()
+        .data
         .unwrap();
+    assert_eq!(identity["device_id"], "test-station");
+    assert_eq!(identity["controller_device_id"], "00000042");
+    assert_eq!(identity["firmware"], "1.3.1.0");
+    assert_eq!(identity["properties"]["sc9300_firmware_minor"], 3);
     let after = handle.get_device("test-station").await.unwrap();
     assert_eq!(after.properties, before.properties);
     assert_eq!(
@@ -154,7 +160,10 @@ async fn stop_can_dispatch_while_a_concurrent_wait_is_polling() {
     assert_eq!(stop.data.unwrap()["reply"], "matching_response");
     let settled = wait.await.unwrap().unwrap();
     assert_eq!(settled.status, CommandStatus::Succeeded);
-    assert_eq!(settled.data.unwrap()["settled"], true);
+    let data = settled.data.unwrap();
+    assert_eq!(data["settled"], true);
+    assert_eq!(data["device_id"], "test-station");
+    assert_eq!(data["properties"]["sc9300_fault_code"], 0);
     peer.await.unwrap();
 }
 
@@ -215,6 +224,13 @@ async fn telemetry_reads_exactly_one_status_and_each_matching_head() {
     );
     assert_eq!(data["heads"][0]["x_mm"], 60.0);
     assert_eq!(data["heads"][0]["y_mm"], -60.0);
+
+    assert_eq!(data["device_id"], "test-station");
+    assert!(data["timestamp"].as_i64().unwrap() > 0);
+    assert_eq!(data["properties"]["sc9300_left_y_mm"], -60.0);
+    assert_eq!(data["properties"]["sc9300_gripper_z_mm"], 38.1);
+    assert_eq!(data["properties"]["sc9300_command_serial"], 10000);
+    assert_eq!(data["properties"]["sc9300_fault_code"], 0);
     let device = handle.get_device("test-station").await.unwrap();
     assert_eq!(device.properties["status"], data["status"]);
     peer.await.unwrap();

@@ -1,4 +1,5 @@
 use serde::Serialize;
+use serde_json::{json, Value};
 
 #[derive(Serialize)]
 struct Mode<T> {
@@ -15,6 +16,14 @@ pub(super) struct RobotState {
 }
 
 impl RobotState {
+    pub(super) fn observation(&self) -> [(&'static str, Value); 3] {
+        [
+            ("robot_mode_code", json!(self.robot_mode.code)),
+            ("safety_status_code", json!(self.safety_status.code)),
+            ("program_state_code", json!(self.program_state.code)),
+        ]
+    }
+
     pub(super) fn permits_xyz(&self) -> bool {
         self.robot_mode.code == 7
             && matches!(self.safety_status.code, 1 | 2)
