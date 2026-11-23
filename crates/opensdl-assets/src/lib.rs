@@ -1,6 +1,7 @@
 mod cache;
 mod catalog;
 pub mod daemon;
+mod glb;
 mod layout;
 mod manifest;
 mod materialize;

@@ -1,8 +1,7 @@
 //! One admission path for managed instances and supervised foreground runtimes.
 use anyhow::{bail, Context};
 use opensdl_assets::{
-    model::{Control, ModelDefinition},
-    AssetCache, RuntimeEngine,
+    model::ModelDefinition, AssetCache, Capability, RuntimeEngine, ValidatedAsset,
 };
 use osdl_core::{
     config::SimulationConfig,
@@ -64,29 +63,47 @@ pub fn prepare(
 ) -> anyhow::Result<SimulationConfig> {
     let lease = cache.lock()?;
     let (asset, package) = lease.materialize_package(digest, destination)?;
-    let preview = &package
+    let preview = package
         .layers
         .iter()
         .find(|layer| layer.media_type == opensdl_assets::PREVIEW_MEDIA_TYPE)
         .context("missing preview layer")?
-        .digest;
+        .digest
+        .clone();
     drop(lease);
+    prepare_validated(&asset, Some(digest), Some(&preview))
+}
+
+/// Admits already validated portable paths without copying an OCI package.
+///
+/// Production preparation always supplies immutable content digests. The CLI
+/// dynamic validator uses the same function with no digests because an
+/// unpublished working directory has no content identity to project yet.
+pub(crate) fn prepare_validated(
+    asset: &ValidatedAsset,
+    digest: Option<&str>,
+    preview: Option<&str>,
+) -> anyhow::Result<SimulationConfig> {
     let Some(runtime) = asset.manifest.spec.runtime.as_ref() else {
-        let metadata = asset.manifest.metadata;
+        let metadata = &asset.manifest.metadata;
+        let mut properties = std::collections::HashMap::new();
+        if let Some(digest) = digest {
+            properties.insert("model_manifest_digest".into(), serde_json::json!(digest));
+        }
+        if let Some(preview) = preview {
+            properties.insert("model_preview_digest".into(), serde_json::json!(preview));
+        }
         return Ok(SimulationConfig {
             devices: vec![osdl_core::config::SimulationDeviceConfig {
-                id: metadata.name,
+                id: metadata.name.clone(),
                 device_type: "simulation.static".into(),
-                description: metadata.display_name,
+                description: metadata.display_name.clone(),
                 role: None,
                 model: None,
                 actions: Vec::new(),
                 asset_ref: None,
                 position: [0.; 3],
-                properties: std::collections::HashMap::from([
-                    ("model_manifest_digest".into(), serde_json::json!(digest)),
-                    ("model_preview_digest".into(), serde_json::json!(preview)),
-                ]),
+                properties,
             }],
             ..Default::default()
         });
@@ -97,8 +114,9 @@ pub fn prepare(
     let config = asset
         .paths
         .runtime_config
+        .as_ref()
         .context("runtime config is missing")?;
-    if fs::metadata(&config)?.len() > 1024 * 1024 {
+    if fs::metadata(config)?.len() > 1024 * 1024 {
         bail!("runtime config exceeds 1 MiB");
     }
     let mut simulation: SimulationConfig = serde_yaml::from_str(&fs::read_to_string(config)?)?;
@@ -108,12 +126,33 @@ pub fn prepare(
     }
     let definition = opensdl_assets::model::read_preview_model(&asset.paths.preview_model)?;
     for device in &mut simulation.devices {
-        device
-            .properties
-            .insert("model_preview_digest".into(), serde_json::json!(preview));
-        device
-            .properties
-            .insert("model_manifest_digest".into(), serde_json::json!(digest));
+        if asset
+            .manifest
+            .spec
+            .capabilities
+            .contains(&Capability::OpensdlDevice)
+            && !asset
+                .manifest
+                .spec
+                .bindings
+                .device_types
+                .contains(&device.device_type)
+        {
+            bail!(
+                "runtime device type '{}' is absent from spec.bindings.deviceTypes",
+                device.device_type
+            );
+        }
+        if let Some(preview) = preview {
+            device
+                .properties
+                .insert("model_preview_digest".into(), serde_json::json!(preview));
+        }
+        if let Some(digest) = digest {
+            device
+                .properties
+                .insert("model_manifest_digest".into(), serde_json::json!(digest));
+        }
         if let Some(instrument) = &device.model {
             let definition = definition
                 .as_ref()
@@ -132,61 +171,7 @@ pub fn prepare(
                 0,
                 0.0,
             );
-            let values = &properties["model_state"]["values"];
-            for joint in &definition.joints {
-                let value = values[&joint.state]
-                    .as_f64()
-                    .context("joint observation is missing")?;
-                if !matches!(joint.kind, opensdl_assets::model::JointKind::Continuous)
-                    && !(joint.min..=joint.max).contains(&value)
-                {
-                    bail!("initial joint pose exceeds limits");
-                }
-                if let Some(state) = &joint.velocity_state {
-                    if values[state].as_f64().is_none() {
-                        bail!("joint velocity is missing");
-                    }
-                }
-            }
-            for binding in &definition.visibility {
-                if !values[&binding.state].is_boolean() {
-                    bail!("visibility observation is missing");
-                }
-            }
-            for readout in &definition.readouts {
-                if values
-                    .get(&readout.state)
-                    .is_none_or(|v| !v.is_null() && !v.is_number())
-                {
-                    bail!("readout observation is missing");
-                }
-            }
-
-            for component in &definition.components {
-                if let Some(scale) = &component.scale {
-                    let value = values[&scale.state]
-                        .as_f64()
-                        .context("scale observation is missing")?;
-                    if !(scale.min..=scale.max).contains(&value) {
-                        bail!("initial scale exceeds limits");
-                    }
-                }
-                let action = match &component.control {
-                    Some(
-                        Control::Command { action, .. }
-                        | Control::Toggle { action, .. }
-                        | Control::Dial { action, .. },
-                    ) => action,
-                    None => continue,
-                };
-                if !device
-                    .actions
-                    .iter()
-                    .any(|declared| &declared.name == action)
-                {
-                    bail!("model component references an undeclared action");
-                }
-            }
+            crate::simulation_contract::validate_initial_contract(device, definition, &properties)?;
         }
     }
     Ok(simulation)

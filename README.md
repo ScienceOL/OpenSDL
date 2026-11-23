@@ -103,8 +103,15 @@ lab pull registry.example/lab/demo:1.0.0 --output ./downloaded-asset
 lab daemon stop
 ```
 
-`lab build` validates a portable asset, creates its deterministic OCI artifact,
-and admits it to the local content-addressed store. The daemon keeps the store
+`lab validate` checks a portable package at any filesystem path. For
+model-backed instruments it also executes every declared action through the
+production kinematic controller, advances the deterministic state, validates
+every resulting GLB-bound observation, and supports `--json` evidence. See
+[asset validation](docs/lab-cli.md#validate-a-portable-asset) for the scope and
+its external-physics limitations.
+
+`lab build` runs the same full validation, creates the deterministic OCI
+artifact, and admits it to the local content-addressed store. The daemon keeps the store
 available across commands and processes; `lab pack` remains available when an
 explicit OCI image-layout directory is needed. `lab split` can extract selected
 OpenUSD prims into child asset directories, which then follow the same build,

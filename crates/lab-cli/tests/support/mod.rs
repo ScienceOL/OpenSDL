@@ -13,7 +13,7 @@ pub fn create_asset(root: &Path) {
 }
 
 fn write_minimal_glb(path: &Path) {
-    let json = b"{}  ";
+    let json = b"{\"asset\":{\"version\":\"2.0\"}} ";
     let total_length = 12 + 8 + json.len();
     let mut bytes = Vec::with_capacity(total_length);
     bytes.extend_from_slice(b"glTF");

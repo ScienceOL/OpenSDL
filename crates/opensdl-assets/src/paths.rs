@@ -1,5 +1,4 @@
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
@@ -199,26 +198,8 @@ fn validate_source(format: SourceFormat, path: &Path) -> Result<(), AssetError> 
 }
 
 fn validate_glb(path: &Path, label: &str) -> Result<(), AssetError> {
-    let mut file = File::open(path).map_err(|source| AssetError::read(path, source))?;
-    let mut header = [0_u8; 12];
-    file.read_exact(&mut header)
-        .map_err(|source| AssetError::read(path, source))?;
-    let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-    if &header[..4] != b"glTF" || version != 2 {
-        return Err(AssetError::invalid(format!(
-            "{label} must be a GLB version 2 file"
-        )));
-    }
-    let declared_length = u32::from_le_bytes([header[8], header[9], header[10], header[11]]) as u64;
-    let actual_length = file
-        .seek(SeekFrom::End(0))
-        .map_err(|source| AssetError::read(path, source))?;
-    if declared_length != actual_length {
-        return Err(AssetError::invalid(format!(
-            "{label} GLB length does not match its header"
-        )));
-    }
-    Ok(())
+    crate::glb::validate(path)
+        .map_err(|error| AssetError::invalid(format!("{label} failed GLB validation: {error}")))
 }
 
 fn validate_thumbnail(path: &Path) -> Result<(), AssetError> {
