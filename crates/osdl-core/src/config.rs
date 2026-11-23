@@ -2,7 +2,10 @@ use crate::media::{mediamtx::MediaGatewayConfig, MediaSourceConfig};
 use crate::protocol::ActionSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::{net::SocketAddrV4, path::PathBuf};
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OsdlConfig {
@@ -21,6 +24,9 @@ pub struct OsdlConfig {
     /// Explicit local serial endpoints for SC9300 identity and status reads.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sc9300_instruments: Vec<Sc9300Config>,
+    /// Explicit local Elite ES66 controllers reached through Dashboard and RTSI.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elite_robots: Vec<EliteRobotConfig>,
     /// Bus manifests: declares which devices hang off a single transport
     /// (shared RS-485 bus, etc.) when one node announces one hardware_id
     /// but physically bridges multiple addressed devices.
@@ -105,6 +111,14 @@ impl Qx96mConfig {
 pub struct Sc9300Config {
     pub id: String,
     pub port: String,
+}
+
+/// A controller on the owner's instrument network or a local simulator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EliteRobotConfig {
+    pub id: String,
+    pub host: Ipv4Addr,
 }
 
 /// Configuration for a local simulation world.

@@ -362,6 +362,9 @@ impl OsdlEngine {
         if !config.sc9300_instruments.is_empty() {
             adapters.push(Box::new(crate::sc9300::Adapter));
         }
+        if !config.elite_robots.is_empty() {
+            adapters.push(Box::new(crate::elite::Adapter));
+        }
         for adapter_cfg in &config.adapters {
             if let Some(ref path) = adapter_cfg.registry_path {
                 for adapter in adapters.iter_mut() {
@@ -563,6 +566,25 @@ impl OsdlEngine {
             }
         };
 
+        let elite = match crate::elite::Runtime::start(&self.handle).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("Failed to configure Elite robots: {error}");
+                if let Some(sc9300) = sc9300 {
+                    sc9300.stop().await;
+                }
+                if let Some(qx96m) = qx96m {
+                    qx96m.stop().await;
+                }
+                self.stop_simulation().await;
+                let _ = self
+                    .handle
+                    .status_tx
+                    .send(OsdlStatus::Error { message: error });
+                return;
+            }
+        };
+
         // Start configured ESP-NOW dongles (USB-CDC). Each dongle owns a
         // serial read loop and emits REG events for registration-driven
         // device discovery.
@@ -733,6 +755,9 @@ impl OsdlEngine {
         }
         if let Some(sc9300) = sc9300 {
             sc9300.stop().await;
+        }
+        if let Some(elite) = elite {
+            elite.stop().await;
         }
         self.stop_simulation().await;
 

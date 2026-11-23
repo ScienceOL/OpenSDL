@@ -34,6 +34,7 @@ right one.
 | [`emm-motor-roundtrip.md`](emm-motor-roundtrip.md) | Visible-and-audible round-trip on each Emm V5.0 motor for ID-by-eye | ChinWe (motor-4 + motor-5) |
 | [`bus-manifest.md`](bus-manifest.md) | Validate the bus manifest by listing 5 registered devices behind one node | ChinWe |
 | [`media-gateway.md`](media-gateway.md) | Expose an ONVIF camera as RTSP/HLS/WebRTC via mediamtx | ONVIF camera + creds |
+| [`elite-es66.md`](elite-es66.md) | Read controller state, TCP pose, and joint positions from an Elite ES66 | Elite ES66 on the worker's network |
 
 ## Recipes that don't have CLI equivalents (yet)
 
