@@ -28,6 +28,7 @@
 //! is a worse failure mode than tolerating its dev cert.
 
 use super::{Transport, TransportRx};
+use crate::adapter::onvif::ptz_move_duration_ms;
 use async_trait::async_trait;
 use base64::Engine as _;
 use quick_xml::events::Event;
@@ -37,8 +38,11 @@ use sha1::{Digest, Sha1};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, OnceCell};
 use tokio::task::JoinHandle;
+
+mod ptz;
+use ptz::{parse_profile, PtzTimeoutRange};
 
 #[derive(Clone)]
 pub struct OnvifTransport {
@@ -54,9 +58,9 @@ struct Inner {
     username: String,
     password: String,
     profile_token_override: Option<String>,
-    /// Resolved on first PTZ/snapshot call. RwLock so multiple commands
-    /// can read once cached without serialization.
-    discovered: RwLock<Option<DiscoveredEndpoints>>,
+    /// Resolve one immutable profile and its service URLs per transport.
+    discovered: OnceCell<DiscoveredEndpoints>,
+    ptz_timeout_range: OnceCell<PtzTimeoutRange>,
     /// Where to drop snapshot JPEGs. The engine creates `<root>/<cam_id>/`.
     snapshot_root: PathBuf,
     /// Public URL prefix that maps to `snapshot_root` for callers to fetch
@@ -78,6 +82,7 @@ struct DiscoveredEndpoints {
     media_url: String,
     ptz_url: String,
     profile_token: String,
+    ptz_configuration_token: Option<String>,
 }
 
 impl OnvifTransport {
@@ -107,7 +112,8 @@ impl OnvifTransport {
                 username,
                 password,
                 profile_token_override: profile_token,
-                discovered: RwLock::new(None),
+                discovered: OnceCell::new(),
+                ptz_timeout_range: OnceCell::new(),
                 snapshot_root,
                 snapshot_url_base,
                 rx_tx,
@@ -119,11 +125,14 @@ impl OnvifTransport {
 
     /// Resolve the camera's PTZ + Media service URLs and a usable profile
     /// token. Cached after first success.
-    async fn endpoints(&self) -> Result<DiscoveredEndpoints, String> {
-        if let Some(d) = self.inner.discovered.read().await.clone() {
-            return Ok(d);
-        }
+    async fn endpoints(&self) -> Result<&DiscoveredEndpoints, String> {
+        self.inner
+            .discovered
+            .get_or_try_init(|| self.discover_endpoints())
+            .await
+    }
 
+    async fn discover_endpoints(&self) -> Result<DiscoveredEndpoints, String> {
         let caps = self
             .soap(&self.inner.onvif_url, BODY_GET_CAPABILITIES)
             .await
@@ -136,25 +145,25 @@ impl OnvifTransport {
             .ok_or_else(|| "GetCapabilities response missing <tt:Media><tt:XAddr>".to_string())?;
         let ptz_url = extract_xaddr(&caps, "PTZ").unwrap_or_else(|| media_url.clone());
 
-        let token = match self.inner.profile_token_override.clone() {
-            Some(t) => t,
-            None => {
-                let profiles = self
-                    .soap(&media_url, BODY_GET_PROFILES)
-                    .await
-                    .map_err(|e| format!("GetProfiles: {e}"))?;
-                first_profile_token(&profiles)
-                    .ok_or_else(|| "no profile tokens in GetProfiles response".to_string())?
-            }
-        };
+        let (profile_token, ptz_configuration_token) =
+            match self.inner.profile_token_override.clone() {
+                Some(token) => (token, None),
+                None => {
+                    let profiles = self
+                        .soap(&media_url, BODY_GET_PROFILES)
+                        .await
+                        .map_err(|e| format!("GetProfiles: {e}"))?;
+                    parse_profile(&profiles, b"Profiles")
+                        .ok_or_else(|| "no profile tokens in GetProfiles response".to_string())?
+                }
+            };
 
-        let d = DiscoveredEndpoints {
+        Ok(DiscoveredEndpoints {
             media_url,
             ptz_url,
-            profile_token: token,
-        };
-        *self.inner.discovered.write().await = Some(d.clone());
-        Ok(d)
+            profile_token,
+            ptz_configuration_token,
+        })
     }
 
     /// Send a SOAP request and return the response body. Handles
@@ -222,12 +231,16 @@ impl OnvifTransport {
         let pan = args.get("pan").and_then(Value::as_f64).unwrap_or(0.0);
         let tilt = args.get("tilt").and_then(Value::as_f64).unwrap_or(0.0);
         let zoom = args.get("zoom").and_then(Value::as_f64).unwrap_or(0.0);
-        let duration_ms = args
-            .get("duration_ms")
-            .and_then(Value::as_u64)
-            .unwrap_or(500);
+        let duration_ms = ptz_move_duration_ms(args)?;
+        let duration = Duration::from_millis(duration_ms);
 
         let ep = self.endpoints().await?;
+        let supported = self
+            .inner
+            .ptz_timeout_range
+            .get_or_try_init(|| self.discover_ptz_timeout_range(ep))
+            .await?;
+        supported.validate(duration)?;
         let body = format!(
             r#"<tptz:ContinuousMove>
   <tptz:ProfileToken>{token}</tptz:ProfileToken>
@@ -235,32 +248,23 @@ impl OnvifTransport {
     <tt:PanTilt x="{pan}" y="{tilt}" xmlns:tt="http://www.onvif.org/ver10/schema"/>
     <tt:Zoom x="{zoom}" xmlns:tt="http://www.onvif.org/ver10/schema"/>
   </tptz:Velocity>
+  <tptz:Timeout>PT{seconds}.{milliseconds:03}S</tptz:Timeout>
 </tptz:ContinuousMove>"#,
             token = xml_escape(&ep.profile_token),
             pan = pan,
             tilt = tilt,
             zoom = zoom,
+            seconds = duration.as_secs(),
+            milliseconds = duration.subsec_millis(),
         );
         self.soap(&ep.ptz_url, &body).await?;
 
-        // Auto-stop after the requested duration. We don't await — the
-        // CLI caller wants a fast PENDING reply, and the camera will
-        // happily keep moving until we stop it. Replace any in-flight
-        // auto-stop so back-to-back moves don't trip each other up.
+        // The camera enforces Timeout. Keep the delayed Stop as a backup.
         let this = self.clone();
-        let ptz_url = ep.ptz_url.clone();
-        let token = ep.profile_token.clone();
+        let ep = ep.clone();
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(duration_ms)).await;
-            let body = format!(
-                r#"<tptz:Stop>
-  <tptz:ProfileToken>{tok}</tptz:ProfileToken>
-  <tptz:PanTilt>true</tptz:PanTilt>
-  <tptz:Zoom>true</tptz:Zoom>
-</tptz:Stop>"#,
-                tok = xml_escape(&token),
-            );
-            if let Err(e) = this.soap(&ptz_url, &body).await {
+            tokio::time::sleep(duration).await;
+            if let Err(e) = this.stop_ptz(&ep).await {
                 log::warn!("ptz auto-stop on {}: {}", this.inner.camera_id, e);
             }
         });
@@ -280,6 +284,11 @@ impl OnvifTransport {
             prior.abort();
         }
         let ep = self.endpoints().await?;
+        self.stop_ptz(ep).await?;
+        Ok(json!({}))
+    }
+
+    async fn stop_ptz(&self, ep: &DiscoveredEndpoints) -> Result<(), String> {
         let body = format!(
             r#"<tptz:Stop>
   <tptz:ProfileToken>{token}</tptz:ProfileToken>
@@ -289,7 +298,7 @@ impl OnvifTransport {
             token = xml_escape(&ep.profile_token),
         );
         self.soap(&ep.ptz_url, &body).await?;
-        Ok(json!({}))
+        Ok(())
     }
 
     async fn do_ptz_preset_goto(&self, args: &Value) -> Result<Value, String> {
@@ -601,31 +610,6 @@ fn extract_tag(body: &str, tag: &str) -> Option<String> {
     }
 }
 
-/// First `token="..."` attribute on a `<*:Profiles ...>` element.
-fn first_profile_token(body: &str) -> Option<String> {
-    let mut reader = Reader::from_str(body);
-    reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if local_name(e.name().as_ref()) == "Profiles" {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"token" {
-                            return attr.unescape_value().ok().map(|c| c.into_owned());
-                        }
-                    }
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(_) => break,
-            _ => {}
-        }
-        buf.clear();
-    }
-    None
-}
-
 /// Local-name part of a (possibly namespaced) tag — `tt:XAddr` → `XAddr`.
 /// Returns owned because quick-xml's `name()` borrows from a temporary.
 fn local_name(name: &[u8]) -> String {
@@ -679,6 +663,10 @@ async fn read_snapshot_response(mut response: reqwest::Response) -> Result<Vec<u
     }
     Ok(bytes)
 }
+
+#[cfg(test)]
+#[path = "onvif/ptz_tests.rs"]
+mod ptz_tests;
 
 #[cfg(test)]
 mod tests {
@@ -764,7 +752,10 @@ mod tests {
     #[test]
     fn extracts_first_profile_token() {
         let xml = r#"<trt:Profiles fixed="true" token="Profile_1"><tt:Name>main</tt:Name></trt:Profiles>"#;
-        assert_eq!(first_profile_token(xml).as_deref(), Some("Profile_1"));
+        assert_eq!(
+            parse_profile(xml, b"Profiles"),
+            Some(("Profile_1".into(), None))
+        );
     }
 
     #[test]
