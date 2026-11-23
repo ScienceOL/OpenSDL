@@ -4,8 +4,58 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use super::is_valid_media_path_name;
+
+/// A local MJPEG color capture source encoded on demand for remote playback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct V4l2CameraConfig {
+    pub id: String,
+    pub description: Option<String>,
+    pub device: PathBuf,
+    pub width: u16,
+    pub height: u16,
+    pub frames_per_second: u8,
+}
+
+impl V4l2CameraConfig {
+    pub(super) fn validate(&self) -> std::result::Result<(), String> {
+        if !is_valid_media_path_name(&self.id) {
+            return Err("V4L2 source ID must contain only letters, numbers, _ and -".into());
+        }
+        if !is_device_path(&self.device) {
+            return Err(format!(
+                "V4L2 source {} requires a device under /dev",
+                self.id
+            ));
+        }
+        if self.width == 0
+            || self.height == 0
+            || !self.width.is_multiple_of(2)
+            || !self.height.is_multiple_of(2)
+            || !(1..=60).contains(&self.frames_per_second)
+        {
+            return Err(format!(
+                "V4L2 source {} requires positive even dimensions and 1 to 60 fps",
+                self.id
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn supports_mjpeg(&self) -> Result<bool> {
+        supports_capture(&self.device, &[*b"MJPG"])
+    }
+}
+
+fn is_device_path(path: &Path) -> bool {
+    path.starts_with("/dev")
+        && path != Path::new("/dev")
+        && !path.components().any(|part| part == Component::ParentDir)
+}
 
 /// The capture interfaces of one operator-configured USB depth camera.
 #[derive(Clone, Deserialize)]
@@ -17,13 +67,8 @@ pub struct DepthCamera {
 
 impl DepthCamera {
     pub fn validate(&self) -> Result<()> {
-        let valid = |path: &Path| {
-            path.starts_with("/dev")
-                && path != Path::new("/dev")
-                && !path.components().any(|part| part == Component::ParentDir)
-        };
-        if valid(&self.depth_device)
-            && self.color_device.as_deref().is_none_or(valid)
+        if is_device_path(&self.depth_device)
+            && self.color_device.as_deref().is_none_or(is_device_path)
             && self.color_device.as_ref() != Some(&self.depth_device)
         {
             Ok(())
@@ -114,4 +159,25 @@ fn supports_capture(path: &Path, accepted_formats: &[[u8; 4]]) -> Result<bool> {
 #[cfg(not(target_os = "linux"))]
 fn supports_capture(_: &Path, _: &[[u8; 4]]) -> Result<bool> {
     Err(Error::new(ErrorKind::Unsupported, "V4L2 requires Linux"))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::media::MediaSourceConfig;
+
+    #[test]
+    fn usb_color_capture_is_a_media_source_without_a_gateway_path() {
+        let source: MediaSourceConfig = serde_yaml::from_str(
+            "kind: v4l2_camera
+id: gemini-335
+device: /dev/v4l/by-path/default-video-index0
+width: 640
+height: 480
+frames_per_second: 30",
+        )
+        .unwrap();
+        assert_eq!(source.id(), "gemini-335");
+        assert!(source.validate().is_ok());
+        assert!(source.paths().is_empty());
+    }
 }

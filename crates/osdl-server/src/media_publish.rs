@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::Notify;
 
+use osdl_core::media::{v4l2::V4l2CameraConfig, Location, Protocol};
 use osdl_core::EngineHandle;
 use osdl_proto::v1 as pb;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -54,24 +55,12 @@ impl Publishers {
         let executable = engine
             .config()
             .media_gateway
-            .ffmpeg_binary
-            .as_ref()
-            .filter(|path| path.is_absolute() && path.is_file())
+            .publisher_binary()
             .ok_or_else(|| Status::unavailable("device media runtime is unavailable"))?;
         let source = engine
             .get_media_source(&request.source_id)
             .await
             .ok_or_else(|| Status::not_found("camera source unavailable"))?;
-        let h264_path = format!("{}_h264", request.source_id);
-        let input = source
-            .endpoints
-            .iter()
-            .filter(|endpoint| {
-                endpoint.protocol == osdl_core::media::Protocol::Rtsp
-                    && endpoint.location == osdl_core::media::Location::Local
-            })
-            .max_by_key(|endpoint| endpoint.path == h264_path)
-            .ok_or_else(|| Status::unavailable("camera RTSP source unavailable"))?;
         // Argument arrays preserve credentials and paths as single arguments. All
         // upstream credentials stay on this explicitly selected device.
         let mut command = tokio::process::Command::new(executable);
@@ -84,15 +73,25 @@ impl Publishers {
             "pipe:1",
             "-stats_period",
             "0.1",
-            "-rtsp_transport",
-            "tcp",
-            "-i",
-            &input.url,
+        ]);
+        if let Some(camera) = &source.v4l2 {
+            v4l2_capture(&mut command, camera);
+        } else {
+            let h264_path = format!("{}_h264", request.source_id);
+            let input = source
+                .endpoints
+                .iter()
+                .filter(|endpoint| {
+                    endpoint.protocol == Protocol::Rtsp && endpoint.location == Location::Local
+                })
+                .max_by_key(|endpoint| endpoint.path == h264_path)
+                .ok_or_else(|| Status::unavailable("camera RTSP source unavailable"))?;
+            command.args(["-rtsp_transport", "tcp", "-i", &input.url, "-c:v", "copy"]);
+        }
+        command.args([
             "-map",
             "0:v:0",
             "-an",
-            "-c:v",
-            "copy",
             "-f",
             "flv",
             "-tls_verify",
@@ -107,6 +106,39 @@ impl Publishers {
         let slot = self.acquire(request.source_id)?;
         publish_process(command, shutdown, slot).await
     }
+}
+
+fn v4l2_capture(command: &mut tokio::process::Command, camera: &V4l2CameraConfig) {
+    let frame_rate = camera.frames_per_second.to_string();
+    command
+        .args([
+            "-f",
+            "v4l2",
+            "-input_format",
+            "mjpeg",
+            "-video_size",
+            &format!("{}x{}", camera.width, camera.height),
+            "-framerate",
+            &frame_rate,
+            "-i",
+        ])
+        .arg(&camera.device)
+        .args([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-tune",
+            "zerolatency",
+            "-profile:v",
+            "baseline",
+            "-pix_fmt",
+            "yuv420p",
+            "-threads:v",
+            "2",
+            "-g",
+            &frame_rate,
+        ]);
 }
 
 pub(crate) fn parse_target(value: &str) -> Result<url::Url, Status> {

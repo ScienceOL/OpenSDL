@@ -3,6 +3,7 @@ use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
 use crate::media::mediamtx::MediamtxProcess;
+use crate::media::v4l2::V4l2CameraConfig;
 use crate::media::MediaEndpoint;
 use crate::media::MediaSourceConfig;
 use crate::mqtt::MqttBridge;
@@ -21,7 +22,7 @@ use crate::transport::simulation::{
 use crate::transport::{Transport, TransportRx};
 
 use rumqttc::AsyncClient;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 
@@ -101,6 +102,18 @@ pub struct MediaSourceState {
     pub id: String,
     pub description: String,
     pub endpoints: Vec<MediaEndpoint>,
+    #[serde(skip)]
+    pub v4l2: Option<V4l2CameraConfig>,
+}
+
+impl MediaSourceState {
+    fn online_event(&self) -> OsdlEvent {
+        OsdlEvent::MediaSourceOnline {
+            id: self.id.clone(),
+            description: self.description.clone(),
+            endpoints: self.endpoints.clone(),
+        }
+    }
 }
 
 const READ_ONLY_ADAPTER: &str = "read_only";
@@ -133,8 +146,7 @@ impl EngineHandle {
         self.nodes.read().await.values().cloned().collect()
     }
 
-    /// Snapshot of every media source that is currently online (mediamtx
-    /// is up and the source's URLs are reachable). Used by the gRPC
+    /// Snapshot of every media source registered for playback. Used by the gRPC
     /// `StreamEvents` handler to replay state to a new subscriber so a
     /// runner / desktop client that connects after the one-time
     /// `MediaSourceOnline` emit still learns about the cameras.
@@ -637,12 +649,7 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
-                                // Drop the snapshot before emitting so a
-                                // subscriber that races the event observes
-                                // an empty media-source set rather than
-                                // stale URLs that no longer resolve.
-                                self.handle.media_sources.write().await.clear();
-                                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
+                                self.media_gateway_down(reason).await;
                                 media_proc = None;
                             }
                         }
@@ -702,12 +709,7 @@ impl OsdlEngine {
                                     "mediamtx exited unexpectedly (status={status})"
                                 );
                                 log::error!("{reason}");
-                                // Drop the snapshot before emitting so a
-                                // subscriber that races the event observes
-                                // an empty media-source set rather than
-                                // stale URLs that no longer resolve.
-                                self.handle.media_sources.write().await.clear();
-                                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
+                                self.media_gateway_down(reason).await;
                                 media_proc = None;
                             }
                         }
@@ -736,16 +738,24 @@ impl OsdlEngine {
 
         if let Some(p) = media_proc.take() {
             p.shutdown().await;
-            // Drop the snapshot too so a fresh `run()` doesn't observe
-            // stale state from the previous session.
-            self.handle.media_sources.write().await.clear();
         }
+        self.handle.media_sources.write().await.clear();
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
     }
 
-    /// Spawn mediamtx if any media sources are configured. Emits
-    /// `MediaSourceOnline` for each source so the host learns the URLs.
+    async fn media_gateway_down(&self, reason: String) {
+        let mut sources = self.handle.media_sources.write().await;
+        sources.retain(|_, source| source.v4l2.is_some());
+        self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
+        // Consumers clear their gateway snapshot on this event. Replay direct
+        // capture sources, which remain available without MediaMTX.
+        for source in sources.values() {
+            self.handle.emit(source.online_event());
+        }
+    }
+
+    /// Start MediaMTX for RTSP-backed sources and register direct capture sources.
     /// Returns the process handle so the caller can shut it down.
     async fn start_media_gateway(&self) -> Option<MediamtxProcess> {
         let cfg = &self.handle.config;
@@ -756,8 +766,14 @@ impl OsdlEngine {
         // Validate all sources before spawning. Catches misconfigurations
         // like remote_rtmp without a transcode path that would otherwise
         // silently produce dead playback URLs.
+        let mut ids = HashSet::new();
         for src in &cfg.media_sources {
-            if let Err(reason) = src.validate() {
+            let valid = src.validate().and_then(|()| {
+                ids.insert(src.id())
+                    .then_some(())
+                    .ok_or_else(|| format!("Duplicate media source ID: {}", src.id()))
+            });
+            if let Err(reason) = valid {
                 log::error!("Media source rejected: {reason}");
                 self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
                 return None;
@@ -765,19 +781,23 @@ impl OsdlEngine {
         }
 
         let gateway = &cfg.media_gateway;
-        let mut all_paths = Vec::new();
-        for src in &cfg.media_sources {
-            all_paths.extend(src.paths());
-        }
-
-        let proc = match MediamtxProcess::spawn(gateway, &all_paths).await {
-            Ok(p) => p,
-            Err(e) => {
-                log::error!("Failed to start media gateway: {}", e);
-                self.handle.emit(OsdlEvent::MediaGatewayDown {
-                    reason: e.to_string(),
-                });
-                return None;
+        let all_paths: Vec<_> = cfg
+            .media_sources
+            .iter()
+            .flat_map(MediaSourceConfig::paths)
+            .collect();
+        let proc = if all_paths.is_empty() {
+            None
+        } else {
+            match MediamtxProcess::spawn(gateway, &all_paths).await {
+                Ok(proc) => Some(proc),
+                Err(error) => {
+                    log::error!("Failed to start media gateway: {error}");
+                    self.handle.emit(OsdlEvent::MediaGatewayDown {
+                        reason: error.to_string(),
+                    });
+                    None
+                }
             }
         };
 
@@ -788,28 +808,40 @@ impl OsdlEngine {
         // live event still in the broadcast buffer (clients dedupe by
         // camera id). The reverse order — emit first, commit later —
         // creates a window where a fresh subscriber observes neither.
-        let mut sources_map = self.handle.media_sources.write().await;
-        sources_map.clear();
+        let mut registered = HashMap::new();
+        let mut online = Vec::new();
         for src in &cfg.media_sources {
-            let endpoints = src.endpoints(&gateway.advertise_host, &gateway.ports);
-            log::info!(
-                "Media source online: {} ({} endpoints)",
-                src.id(),
-                endpoints.len(),
-            );
-            sources_map.insert(
-                src.id().to_string(),
-                MediaSourceState {
-                    id: src.id().to_string(),
-                    description: src.description().to_string(),
-                    endpoints: endpoints.clone(),
-                },
-            );
-            self.handle.emit(OsdlEvent::MediaSourceOnline {
+            let (endpoints, v4l2) = match src {
+                MediaSourceConfig::OnvifCamera(_) if proc.is_some() => {
+                    (src.endpoints(&gateway.advertise_host, &gateway.ports), None)
+                }
+                MediaSourceConfig::OnvifCamera(_) => continue,
+                MediaSourceConfig::V4l2Camera(camera) => {
+                    if gateway.publisher_binary().is_none() {
+                        log::warn!("V4L2 source {} requires an FFmpeg binary", src.id());
+                        continue;
+                    }
+                    if !matches!(camera.supports_mjpeg(), Ok(true)) {
+                        log::warn!("V4L2 source {} cannot open MJPEG capture", src.id());
+                        continue;
+                    }
+                    (Vec::new(), Some(camera.clone()))
+                }
+            };
+            let source = MediaSourceState {
                 id: src.id().to_string(),
                 description: src.description().to_string(),
                 endpoints,
-            });
+                v4l2,
+            };
+            online.push(source.online_event());
+            log::info!("Media source online: {}", src.id());
+            registered.insert(source.id.clone(), source);
+        }
+        let mut sources_map = self.handle.media_sources.write().await;
+        *sources_map = registered;
+        for event in online {
+            self.handle.emit(event);
         }
         drop(sources_map);
 
@@ -818,9 +850,11 @@ impl OsdlEngine {
         // without a separate camera-control RPC — the camera shows up in
         // `list_devices`, and `send_command` routes through OnvifTransport
         // exactly the way it does for pumps and stirrers.
-        self.register_onvif_control_devices().await;
+        if proc.is_some() {
+            self.register_onvif_control_devices().await;
+        }
 
-        Some(proc)
+        proc
     }
 
     /// Walk `media_sources` and register a control-plane `Device` for
@@ -845,10 +879,8 @@ impl OsdlEngine {
         };
 
         for src in &self.handle.config.media_sources {
-            // Explicit match so a future MediaSourceConfig variant
-            // doesn't silently inherit the ONVIF registration path.
-            let cam = match src {
-                MediaSourceConfig::OnvifCamera(c) => c,
+            let MediaSourceConfig::OnvifCamera(cam) = src else {
+                continue;
             };
             let Some(ctrl) = cam.control.as_ref() else {
                 continue;
