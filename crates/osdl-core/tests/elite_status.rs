@@ -5,11 +5,15 @@ use serde_json::json;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::Mutex,
     time::timeout,
 };
 
+static CONTROLLER_PORTS: Mutex<()> = Mutex::const_new(());
+
 #[tokio::test]
 async fn configured_elite_reads_one_vendor_snapshot_without_sending_control() {
+    let _ports = CONTROLLER_PORTS.lock().await;
     let dashboard = TcpListener::bind((Ipv4Addr::LOCALHOST, 29999))
         .await
         .unwrap();
@@ -230,7 +234,8 @@ async fn motion_requires_the_dedicated_task_and_a_later_fence_and_pose() {
     };
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let host = Ipv4Addr::new(127, 0, 0, 2);
+    let _ports = CONTROLLER_PORTS.lock().await;
+    let host = Ipv4Addr::LOCALHOST;
     let dashboard = TcpListener::bind((host, 29999)).await.unwrap();
     let rtsi = TcpListener::bind((host, 30004)).await.unwrap();
     let interpreter = TcpListener::bind((host, 30020)).await.unwrap();
@@ -302,7 +307,7 @@ async fn motion_requires_the_dedicated_task_and_a_later_fence_and_pose() {
     });
 
     let config: OsdlConfig = serde_yaml::from_str(concat!(
-        "elite_robots:\n  - id: test-motion\n    host: 127.0.0.2\n",
+        "elite_robots:\n  - id: test-motion\n    host: 127.0.0.1\n",
         "    motion_task: opensdl-xyz.task\n",
     ))
     .unwrap();
@@ -347,4 +352,5 @@ async fn motion_requires_the_dedicated_task_and_a_later_fence_and_pose() {
     job.abort();
     dashboard_task.abort();
     rtsi_task.abort();
+    let _ = tokio::join!(job, dashboard_task, rtsi_task);
 }
