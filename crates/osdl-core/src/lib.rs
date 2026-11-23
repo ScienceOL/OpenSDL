@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod broker;
 pub mod config;
 pub mod driver;
+mod elite;
 pub mod engine;
 pub mod event;
 pub mod mdns;
