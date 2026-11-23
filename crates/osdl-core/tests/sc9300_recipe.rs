@@ -4,7 +4,7 @@ use osdl_core::{protocol::DeviceCommand, OsdlConfig, OsdlEngine};
 use serde_json::json;
 
 #[tokio::test]
-async fn configured_sc9300_exposes_closed_reads_and_stays_offline_without_identity() {
+async fn configured_sc9300_exposes_closed_actions_and_stays_offline_without_identity() {
     let port = if cfg!(windows) {
         "COM65534"
     } else {
@@ -36,17 +36,69 @@ async fn configured_sc9300_exposes_closed_reads_and_stays_offline_without_identi
             .iter()
             .map(|action| action.name.as_str())
             .collect::<Vec<_>>(),
-        ["device_info", "status"]
+        [
+            "device_info",
+            "status",
+            "position",
+            "telemetry",
+            "check_limit",
+            "wait_idle",
+            "stop",
+            "reset",
+            "clear_error",
+            "set_motors",
+            "move",
+            "jog",
+            "jaw",
+            "pick_up_tips",
+            "set_back_tips",
+            "aspirate",
+            "dispense",
+            "homogenize",
+            "clamp_plate",
+            "set_temperature",
+            "oscillate",
+            "temperature_and_oscillate",
+            "magnetic_stand",
+            "set_light",
+            "set_ultraviolet",
+            "set_filter_fan",
+        ]
     );
 
     for (action, params, message) in [
-        ("move", json!({}), "unsupported SC9300 read"),
+        ("write_firmware", json!({}), "unsupported SC9300 action"),
         (
             "status",
             json!({"command": 0x0101}),
-            "SC9300 reads do not accept arguments",
+            "unexpected argument 'command'",
+        ),
+        (
+            "move",
+            json!({"axis":"left","x":0,"y":0}),
+            "missing argument 'z'",
+        ),
+        (
+            "set_motors",
+            json!({"enabled":1}),
+            "invalid argument 'enabled'",
+        ),
+        (
+            "pick_up_tips",
+            json!({"axis":"gripper","x":0,"y":0,"zSeat":0}),
+            "invalid argument 'axis'",
+        ),
+        (
+            "jog",
+            json!({"direction":"x_left","distanceMm":201}),
+            "invalid argument 'distanceMm'",
         ),
         ("device_info", json!({}), "SC9300 connection unavailable"),
+        (
+            "move",
+            json!({"axis":"left","x":0,"y":0,"z":0}),
+            "SC9300 connection unavailable",
+        ),
     ] {
         let command = DeviceCommand {
             command_id: action.into(),
@@ -54,7 +106,8 @@ async fn configured_sc9300_exposes_closed_reads_and_stays_offline_without_identi
             action: action.into(),
             params,
         };
-        assert_eq!(handle.send_command(command).await.unwrap_err(), message);
+        let error = handle.send_command(command).await.unwrap_err();
+        assert!(error.contains(message), "{action} returned {error}");
     }
 
     handle.request_stop();

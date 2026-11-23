@@ -21,7 +21,7 @@ pub struct OsdlConfig {
     /// owns one serial port and routes frames to/from its ESP-NOW nodes.
     #[serde(default)]
     pub espnow_dongles: Vec<EspNowDongleConfig>,
-    /// Explicit local serial endpoints for SC9300 identity and status reads.
+    /// Explicit local serial endpoints for SC9300 workstations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sc9300_instruments: Vec<Sc9300Config>,
     /// Explicit local Elite ES66 controllers reached through Dashboard and RTSI.
