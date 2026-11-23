@@ -30,6 +30,11 @@ command result includes these fields.
 | `tcp_pose` | TCP pose in `robot_base`. `position_m` is `[x, y, z]` in metres. `rotation_vector_rad` is `[rx, ry, rz]` in radians. |
 | `joint_positions_rad` | Actual joint angles in radians, in J1–J6 order |
 
+The same observation includes scalar workflow properties `tcp_x_m`,
+`tcp_y_m`, `tcp_z_m`, `tcp_rx_rad`, `tcp_ry_rad`, `tcp_rz_rad`, and
+`joint_1_rad` through `joint_6_rad`. The properties `tcp_frame` and
+`tcp_orientation_representation` report `robot_base` and `rotation_vector`.
+
 ## XYZ motion
 
 To expose `move_xyz`, add `motion_task: opensdl-xyz.task` to the robot's worker
@@ -54,6 +59,37 @@ subsequent instruction has started and that a newer RTSI sample is within
 1 mm of the requested XYZ. A timed-out or disconnected move has an unconfirmed
 outcome. Check the controller and actual position before issuing another move.
 
+## Relative joint jog
+
+Enable `joint_jog` only after the operator has verified that the configured
+task and controller firmware support Elite's six-angle `movej` instruction
+in interpreter mode. This is a capability declaration in the worker
+configuration. With the same dedicated task as XYZ motion, it looks like this.
+
+```yaml
+elite_robots:
+  - id: elite-es66
+    host: 192.168.42.10
+    motion_task: opensdl-xyz.task
+    joint_jog: true
+```
+
+`jog_joint` takes `joint` (`J1` through `J6`) and signed `delta_rad` with
+a magnitude from 0.005 to 0.10 radians (about 0.29° to 5.73°). It adds the
+offset to the selected joint's fresh measured angle and holds the other
+five angles as joint targets. The controller executes an unblended joint
+move at up to 0.10 rad/s under its configured safeguards. A joint jog can
+move the TCP in the robot base frame.
+
+Both motion actions use the same exclusive worker motion slot. The worker
+checks the configured task, running interpreter, and controller safety
+state. A queue acknowledgement supplies `controller_move_id`. Success
+requires a subsequent instruction to start and a newer RTSI sample to
+confirm every commanded joint angle within 0.002 rad. The result includes
+`target_joint_positions_rad` and the fresh `observed` status snapshot. If
+the outcome is unconfirmed, check the controller and run `status` before
+issuing another move.
+
 The reference is the bundled Elite CS SDK 1.3.0 under
 `cpp/Elite_Robots_CS_SDK` in ScienceOL/Robots at commit
 `0797f078dc1ad4909e4a14374a51ae2007666d22`. `DashboardClient.cpp`,
@@ -62,8 +98,11 @@ The reference is the bundled Elite CS SDK 1.3.0 under
 confirm the field types and [pose reference][pose] specifies the base frame.
 The [Elite interpreter guide][interpreter] defines the acknowledgements and
 execution-state queries. The SDK trajectory implementation in
-`example/example/external_control.script` demonstrates Cartesian `movel`.
+`example/example/external_control.script` executes both six-angle `movej`
+and Cartesian `movel`. The vendor's [script command example][script]
+shows the joint motion parameters.
 
 [rtsi]: https://www.elibot.com/service/articles/list/106
 [pose]: https://www.elibot.com/service/articles/list/83
 [interpreter]: https://www.elibot.com/service/articles/list/113
+[script]: https://www.elibot.com/service/articles/list/104

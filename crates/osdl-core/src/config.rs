@@ -119,9 +119,12 @@ pub struct Sc9300Config {
 pub struct EliteRobotConfig {
     pub id: String,
     pub host: Ipv4Addr,
-    /// Exact controller task filename authorized to service OpenSDL XYZ moves.
+    /// Exact operator-started interpreter task authorized to service OpenSDL moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion_task: Option<String>,
+    /// Operator declaration that this task/controller supports joint moves.
+    #[serde(default)]
+    pub joint_jog: bool,
 }
 
 /// Configuration for a local simulation world.

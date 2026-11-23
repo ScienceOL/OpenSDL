@@ -24,7 +24,7 @@ impl RobotState {
         ]
     }
 
-    pub(super) fn permits_xyz(&self) -> bool {
+    pub(super) fn permits_motion(&self) -> bool {
         self.robot_mode.code == 7
             && matches!(self.safety_status.code, 1 | 2)
             && self.program_state.code == 1

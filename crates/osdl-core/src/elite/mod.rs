@@ -1,4 +1,4 @@
-//! Native telemetry and typed Cartesian control of Elite ES66 robot controllers.
+//! Native telemetry and typed motion control of Elite ES66 robot controllers.
 
 mod motion;
 mod state;
@@ -42,7 +42,7 @@ struct Request {
 #[serde(rename_all = "snake_case")]
 enum Operation {
     Status,
-    MoveXyz(motion::Target),
+    Move(motion::Command),
 }
 
 pub(crate) struct Adapter;
@@ -73,11 +73,7 @@ impl ProtocolAdapter for Adapter {
                 }
                 Operation::Status
             }
-            motion::ACTION => Operation::MoveXyz(
-                serde_json::from_value(cmd.params.clone())
-                    .map_err(|_| "Elite ES66 move_xyz requires numeric x_m, y_m and z_m")?,
-            ),
-            _ => return Err("unsupported Elite ES66 action".into()),
+            action => Operation::Move(motion::Command::parse(action, cmd.params.clone())?),
         };
         serde_json::to_vec(&Request {
             command_id: cmd.command_id.clone(),
@@ -97,6 +93,7 @@ struct Robot {
     transport_id: String,
     host: Ipv4Addr,
     motion_task: Option<String>,
+    joint_jog: bool,
     motion_active: Mutex<()>,
     stopped: Mutex<bool>,
     connected: AtomicBool,
@@ -105,6 +102,18 @@ struct Robot {
 
 impl Robot {
     fn device(&self) -> Device {
+        let mut actions = vec![ActionSchema {
+            name: STATUS.into(),
+            description: "Read the robot and safety state, base-frame TCP pose, and six joint angles from a single controller sample".into(),
+            params: json!({"type":"object","properties":{},"additionalProperties":false}),
+        }];
+        if let Some(task) = self.motion_task.as_deref() {
+            actions.push(motion::xyz_schema(task));
+            if self.joint_jog {
+                actions.push(motion::jog_schema(task));
+            }
+        }
+
         Device {
             id: self.id.clone(),
             transport_id: self.transport_id.clone(),
@@ -114,14 +123,7 @@ impl Robot {
             online: false,
             properties: HashMap::new(),
             properties_timestamp_ms: 0,
-            actions: vec![ActionSchema {
-                name: STATUS.into(),
-                description: "Read the robot and safety state, base-frame TCP pose, and six joint angles from a single controller sample".into(),
-                params: json!({"type":"object","properties":{},"additionalProperties":false}),
-            }]
-            .into_iter()
-            .chain(self.motion_task.as_deref().map(motion::schema))
-            .collect(),
+            actions,
             role: None,
         }
     }
@@ -202,26 +204,33 @@ impl Transport for Robot {
                 );
                 ("Elite ES66 status read completed", data)
             }
-            Operation::MoveXyz(target) => {
+            Operation::Move(command) => {
                 let task = self
                     .motion_task
                     .as_deref()
-                    .ok_or("Elite ES66 XYZ control is disabled")?;
+                    .ok_or("Elite ES66 motion control is disabled")?;
+                if matches!(command, motion::Command::JogJoint(_)) && !self.joint_jog {
+                    return Err("Elite ES66 joint jogging is disabled".into());
+                }
                 let _active = self
                     .motion_active
                     .try_lock()
-                    .map_err(|_| "Elite ES66 already has an active XYZ request")?;
+                    .map_err(|_| "Elite ES66 already has an active motion request")?;
                 if *self.stopped.lock().await {
                     return Err("Elite ES66 transport stopped".into());
                 }
-                let result = motion::execute(self.host, task, target).await?;
+                let message = match command {
+                    motion::Command::MoveXyz(_) => "Elite ES66 XYZ target reached",
+                    motion::Command::JogJoint(_) => "Elite ES66 joint target reached",
+                };
+                let result = motion::execute(self.host, task, command).await?;
                 let data = observed_command_data(
                     &request.device_id,
                     result.observed.observed_at_ms,
                     result.observed.observation(),
                     &result,
                 );
-                ("Elite ES66 XYZ target reached", data)
+                (message, data)
             }
         };
         Ok(Some(CommandResult {
@@ -288,11 +297,15 @@ impl Runtime {
             {
                 return Err("Elite ES66 motion_task must be a .task filename".into());
             }
+            if config.joint_jog && config.motion_task.is_none() {
+                return Err("Elite ES66 joint_jog requires an operator-started motion_task".into());
+            }
             robots.push(Arc::new(Robot {
                 id: config.id.clone(),
                 transport_id: format!("{ADAPTER}:{}", config.id),
                 host: config.host,
                 motion_task: config.motion_task.clone(),
+                joint_jog: config.joint_jog,
                 motion_active: Mutex::default(),
                 stopped: Mutex::default(),
                 connected: AtomicBool::new(false),

@@ -53,7 +53,7 @@ pub(super) struct Snapshot {
     #[serde(skip)]
     pub(super) observed_at_ms: i64,
     pub(super) tcp_pose: TcpPose,
-    joint_positions_rad: [f64; 6],
+    pub(super) joint_positions_rad: [f64; 6],
 }
 
 impl Snapshot {
@@ -63,6 +63,8 @@ impl Snapshot {
         let [j1, j2, j3, j4, j5, j6] = self.joint_positions_rad;
         [
             ("controller_timestamp_s", json!(self.controller_timestamp_s)),
+            ("tcp_frame", json!(self.tcp_pose.frame)),
+            ("tcp_orientation_representation", json!("rotation_vector")),
             ("tcp_x_m", json!(x)),
             ("tcp_y_m", json!(y)),
             ("tcp_z_m", json!(z)),

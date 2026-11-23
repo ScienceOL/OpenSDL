@@ -3,7 +3,7 @@
 use std::{net::Ipv4Addr, time::Duration};
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
@@ -13,27 +13,73 @@ use tokio::{
 use super::wire::{self, Snapshot};
 use crate::protocol::ActionSchema;
 
-pub(super) const ACTION: &str = "move_xyz";
+const MOVE_XYZ: &str = "move_xyz";
+const JOG_JOINT: &str = "jog_joint";
 const INTERPRETER_PORT: u16 = 30020;
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const MOVE_TIMEOUT: Duration = Duration::from_secs(75);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const POSITION_TOLERANCE_M: f64 = 0.001;
-const SPEED_M_S: f64 = 0.05;
-const ACCEL_M_S2: f64 = 0.1;
+const XYZ_SPEED_M_S: f64 = 0.05;
+const XYZ_ACCEL_M_S2: f64 = 0.1;
 const MAX_LINE: u64 = 512;
+const MIN_JOG_RAD: f64 = 0.005;
+const MAX_JOG_RAD: f64 = 0.1;
+const JOINT_TOLERANCE_RAD: f64 = 0.002;
+const JOINT_SPEED_RAD_S: f64 = 0.1;
+const JOINT_ACCEL_RAD_S2: f64 = 0.2;
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Command {
+    MoveXyz(Xyz),
+    JogJoint(Jog),
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+enum Joint {
+    J1,
+    J2,
+    J3,
+    J4,
+    J5,
+    J6,
+}
+
+impl Joint {
+    const ALL: [Self; 6] = [Self::J1, Self::J2, Self::J3, Self::J4, Self::J5, Self::J6];
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Target {
+pub(super) struct Jog {
+    joint: Joint,
+    delta_rad: f64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Xyz {
     x_m: f64,
     y_m: f64,
     z_m: f64,
 }
 
 #[derive(Serialize)]
+#[serde(untagged)]
+enum Target {
+    Xyz {
+        target_position_m: [f64; 3],
+    },
+    Joint {
+        target_joint_positions_rad: [f64; 6],
+    },
+}
+
+#[derive(Serialize)]
 pub(super) struct Outcome {
-    target_position_m: [f64; 3],
+    #[serde(flatten)]
+    target: Target,
     controller_move_id: u64,
     pub(super) observed: Snapshot,
 }
@@ -48,9 +94,9 @@ pub(super) fn valid_task_name(name: &str) -> bool {
     })
 }
 
-pub(super) fn schema(task: &str) -> ActionSchema {
+pub(super) fn xyz_schema(task: &str) -> ActionSchema {
     ActionSchema {
-        name: ACTION.into(),
+        name: MOVE_XYZ.into(),
         description: format!(
             "Move the TCP in a straight line to absolute robot_base XYZ in metres, keeping its orientation. Requires the dedicated {task} task to be started at the controller."
         ),
@@ -67,12 +113,111 @@ pub(super) fn schema(task: &str) -> ActionSchema {
     }
 }
 
-pub(super) async fn execute(host: Ipv4Addr, task: &str, target: Target) -> Result<Outcome, String> {
-    let xyz = [target.x_m, target.y_m, target.z_m];
-    if !xyz.iter().all(|value| value.is_finite()) {
-        return Err("Elite ES66 XYZ coordinates must be finite".into());
+pub(super) fn jog_schema(task: &str) -> ActionSchema {
+    ActionSchema {
+        name: JOG_JOINT.into(),
+        description: format!(
+            "Move one joint relative to its measured angle and hold the other joint targets. Requires the dedicated {task} task to be started at the controller."
+        ),
+        params: json!({
+            "type": "object",
+            "properties": {
+                "joint": {"type": "string", "enum": Joint::ALL},
+                "delta_rad": {
+                    "type": "number",
+                    "description": format!("Signed change in radians, with magnitude from {MIN_JOG_RAD} to {MAX_JOG_RAD} inclusive"),
+                    "minimum": -MAX_JOG_RAD,
+                    "maximum": MAX_JOG_RAD,
+                    "anyOf": [{"maximum": -MIN_JOG_RAD}, {"minimum": MIN_JOG_RAD}]
+                }
+            },
+            "required": ["joint", "delta_rad"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+impl Command {
+    pub(super) fn parse(action: &str, params: Value) -> Result<Self, String> {
+        match action {
+            MOVE_XYZ => serde_json::from_value(params)
+                .map(Self::MoveXyz)
+                .map_err(|_| "Elite ES66 move_xyz requires numeric x_m, y_m and z_m".into()),
+            JOG_JOINT => serde_json::from_value(params)
+                .map(Self::JogJoint)
+                .map_err(|_| {
+                    "Elite ES66 jog_joint requires a joint from J1 to J6 and numeric delta_rad"
+                        .into()
+                }),
+            _ => Err("unsupported Elite ES66 action".into()),
+        }
     }
 
+    fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::MoveXyz(Xyz { x_m, y_m, z_m })
+                if ![x_m, y_m, z_m].iter().all(|value| value.is_finite()) =>
+            {
+                Err("Elite ES66 XYZ coordinates must be finite".into())
+            }
+            Self::JogJoint(Jog { delta_rad, .. })
+                if !(MIN_JOG_RAD..=MAX_JOG_RAD).contains(&delta_rad.abs()) =>
+            {
+                Err(format!(
+                    "Elite ES66 jog_joint requires a delta_rad magnitude from {MIN_JOG_RAD} to {MAX_JOG_RAD}"
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn plan(self, before: &Snapshot) -> (Target, String) {
+        match self {
+            Self::MoveXyz(Xyz { x_m, y_m, z_m }) => {
+                let [rx, ry, rz] = before.tcp_pose.rotation_vector_rad;
+                (
+                    Target::Xyz { target_position_m: [x_m, y_m, z_m] },
+                    format!("movel([{x_m:.6},{y_m:.6},{z_m:.6},{rx:.6},{ry:.6},{rz:.6}],a={XYZ_ACCEL_M_S2},v={XYZ_SPEED_M_S},t=0,r=0)"),
+                )
+            }
+            Self::JogJoint(Jog { joint, delta_rad }) => {
+                let mut angles = before.joint_positions_rad;
+                angles[joint as usize] += delta_rad;
+                let [j1, j2, j3, j4, j5, j6] = angles;
+                (
+                    Target::Joint { target_joint_positions_rad: angles },
+                    format!("movej([{j1:.6},{j2:.6},{j3:.6},{j4:.6},{j5:.6},{j6:.6}],a={JOINT_ACCEL_RAD_S2},v={JOINT_SPEED_RAD_S},t=0,r=0)"),
+                )
+            }
+        }
+    }
+}
+
+impl Target {
+    fn reached(&self, after: &Snapshot) -> bool {
+        match self {
+            Self::Xyz { target_position_m } => {
+                let [dx, dy, dz] =
+                    std::array::from_fn(|i| after.tcp_pose.position_m[i] - target_position_m[i]);
+                dx.hypot(dy).hypot(dz) <= POSITION_TOLERANCE_M
+            }
+            Self::Joint {
+                target_joint_positions_rad,
+            } => after
+                .joint_positions_rad
+                .iter()
+                .zip(target_joint_positions_rad)
+                .all(|(actual, target)| (actual - target).abs() <= JOINT_TOLERANCE_RAD),
+        }
+    }
+}
+
+pub(super) async fn execute(
+    host: Ipv4Addr,
+    task: &str,
+    move_command: Command,
+) -> Result<Outcome, String> {
+    move_command.validate()?;
     check_task(host, task).await?;
     let mut connection = Interpreter::connect(host).await?;
     if connection.exchange("state").await? != "state: 0: running: state" {
@@ -86,18 +231,14 @@ pub(super) async fn execute(host: Ipv4Addr, task: &str, target: Target) -> Resul
         .await
         .map_err(|_| "Elite interpreter is still busy")??;
     let before = read_pose(host).await?;
-    if !before.state.permits_xyz() {
-        return Err("Elite robot or safety state does not permit XYZ motion".into());
+    if !before.state.permits_motion() {
+        return Err("Elite robot or safety state does not permit motion".into());
     }
     check_task(host, task).await?;
 
-    let [x, y, z] = xyz;
-    let [rx, ry, rz] = before.tcp_pose.rotation_vector_rad;
-    let command = format!(
-        "movel([{x:.6},{y:.6},{z:.6},{rx:.6},{ry:.6},{rz:.6}],a={ACCEL_M_S2},v={SPEED_M_S},t=0,r=0)"
-    );
+    let (target, command) = move_command.plan(&before);
     if command.len() as u64 >= MAX_LINE {
-        return Err("Elite ES66 XYZ coordinates exceed the controller request size".into());
+        return Err("Elite ES66 motion coordinates exceed the controller request size".into());
     }
     let move_id = connection
         .queue(&command)
@@ -111,17 +252,16 @@ pub(super) async fn execute(host: Ipv4Addr, task: &str, target: Target) -> Resul
         .map_err(|_| uncertain("controller completion timed out"))?
         .map_err(|error| uncertain(&error))?;
     let after = read_pose(host).await.map_err(|error| uncertain(&error))?;
-    let [dx, dy, dz] = std::array::from_fn(|index| after.tcp_pose.position_m[index] - xyz[index]);
     if after.controller_timestamp_s <= before.controller_timestamp_s
-        || !after.state.permits_xyz()
-        || dx.hypot(dy).hypot(dz) > POSITION_TOLERANCE_M
+        || !after.state.permits_motion()
+        || !target.reached(&after)
     {
         return Err(uncertain(
             "fresh controller pose did not confirm the target",
         ));
     }
     Ok(Outcome {
-        target_position_m: xyz,
+        target,
         controller_move_id: move_id,
         observed: after,
     })
