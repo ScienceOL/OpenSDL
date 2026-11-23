@@ -15,6 +15,12 @@ pub(super) struct RobotState {
 }
 
 impl RobotState {
+    pub(super) fn permits_xyz(&self) -> bool {
+        self.robot_mode.code == 7
+            && matches!(self.safety_status.code, 1 | 2)
+            && self.program_state.code == 1
+    }
+
     // Code mappings come from the SDK's RobotMode, JointMode, SafetyMode,
     // and TaskStatus enumerations. Preserve unrecognized controller codes.
     pub(super) fn from_codes(codes: [i32; 9]) -> Self {
