@@ -10,7 +10,7 @@
 //! (`brew install mediamtx`, `apt install mediamtx`, etc.). The binary path
 //! is auto-detected via PATH or overridable in config.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -52,6 +52,14 @@ impl Default for MediaGatewayConfig {
             ffmpeg_ca_file: None,
             ports: ListenerPorts::default(),
         }
+    }
+}
+
+impl MediaGatewayConfig {
+    pub fn publisher_binary(&self) -> Option<&Path> {
+        self.ffmpeg_binary
+            .as_deref()
+            .filter(|path| path.is_absolute() && path.is_file())
     }
 }
 

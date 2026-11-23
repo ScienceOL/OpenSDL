@@ -1,9 +1,9 @@
 //! Media sources — cameras and other continuous streams that don't fit the
 //! command/response `Transport` + `ProtocolAdapter` model.
 //!
-//! A `MediaSource` declares one or more upstream RTSP URLs and how they
-//! should be re-exposed (passthrough or transcoded). The engine renders these
-//! into a single mediamtx config and supervises one mediamtx process.
+//! Media sources declare either upstream RTSP URLs or local capture devices.
+//! The engine supervises a shared MediaMTX process for RTSP sources.
+//! The authenticated publisher opens local capture devices on demand.
 //!
 //! The engine does not implement the camera control plane (PTZ / snapshot /
 //! presets) — that lives outside core for now. Core's job is to make the
@@ -32,18 +32,21 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MediaSourceConfig {
     OnvifCamera(onvif_camera::OnvifCameraConfig),
+    V4l2Camera(v4l2::V4l2CameraConfig),
 }
 
 impl MediaSourceConfig {
     pub fn id(&self) -> &str {
         match self {
             Self::OnvifCamera(c) => &c.id,
+            Self::V4l2Camera(c) => &c.id,
         }
     }
 
     pub fn description(&self) -> &str {
         match self {
             Self::OnvifCamera(c) => c.description.as_deref().unwrap_or(""),
+            Self::V4l2Camera(c) => c.description.as_deref().unwrap_or(""),
         }
     }
 
@@ -53,6 +56,7 @@ impl MediaSourceConfig {
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::OnvifCamera(c) => c.validate(),
+            Self::V4l2Camera(c) => c.validate(),
         }
     }
 
@@ -60,6 +64,7 @@ impl MediaSourceConfig {
     pub fn paths(&self) -> Vec<MediaPath> {
         match self {
             Self::OnvifCamera(c) => c.paths(),
+            Self::V4l2Camera(_) => Vec::new(),
         }
     }
 
@@ -109,7 +114,7 @@ impl MediaSourceConfig {
                 .as_ref()
                 .map(|r| build_remote_endpoints(&c.id, r))
                 .unwrap_or_default(),
-            Self::OnvifCamera(_) => Vec::new(),
+            Self::OnvifCamera(_) | Self::V4l2Camera(_) => Vec::new(),
         }
     }
 }
