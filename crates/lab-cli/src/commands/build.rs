@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Args;
 use opensdl_assets::{
     daemon::{execute, Operation},
@@ -21,6 +22,8 @@ pub struct BuildArgs {
 }
 
 pub async fn run(args: BuildArgs, root: Option<PathBuf>) -> anyhow::Result<()> {
+    osdl_server::simulation_validation::validate_directory(&args.directory)
+        .context("cannot build an asset that failed validation")?;
     let cache = match root {
         Some(root) => AssetCache::open(root)?,
         None => AssetCache::discover()?,

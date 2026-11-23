@@ -121,6 +121,42 @@ lab pull "$asset_ref" --offline --output ./assets/elevrail-offline
 An offline failure identifies the missing blob; repeat one online pull with
 the same cache and retry.
 
+## Validate a portable asset
+
+`lab validate <directory>` accepts a package at any filesystem location; it
+does not depend on the OpenSDL source tree. For a model-backed instrument, a
+successful result covers these stages:
+
+1. Manifest metadata, capabilities, runtime declaration, portable paths, and
+   file tree.
+2. The self-contained GLB 2.0 container, scene/node indices, mesh accessors,
+   embedded buffers/images, accessor strides and bounds, plus OpenSDL component
+   declarations and their actual node hierarchy. GLB previews cannot depend on
+   external buffer or image URIs.
+3. The same runtime admission used by a managed world: controller construction,
+   initial observations, device-type bindings, and action/control schemas.
+4. Deterministic dynamic execution of every declared instrument action using
+   the production controller. The validator rejects unknown actions, advances
+   the real state transitions without wall-clock sleeps, and cross-checks every
+   resulting observation against the GLB joints, visibility, readouts, scales,
+   and generated control parameters.
+
+Use `--json` for the engine/model identity and the exact action, observation,
+and simulated-time counts:
+
+```bash
+lab validate /path/to/external/asset
+lab validate /path/to/external/asset --json
+```
+
+The dynamic report is specifically evidence for the built-in **kinematic**
+controller contract. It does not claim USD-to-GLB geometry equivalence,
+multi-device composed-scene behavior, full Khronos material validation, or
+conformance of an external physics engine. Primitive-only example worlds still
+receive static/runtime admission but report `dynamic: null` because they have
+no instrument model. A passing validation must precede `lab build`/`lab push`
+in an asset publication workflow.
+
 ## Build an asset image
 
 The public Hub catalog currently contains visual assets. The repository's
@@ -136,10 +172,11 @@ lab build examples/kinematic-lab \
 lab images --json
 ```
 
-`lab build` is the Docker-like boundary: it validates the directory, creates a
-deterministic OCI image layout, imports all blobs into the daemon's local
-content-addressed store, and assigns the optional tag. `lab pack` remains
-available when an explicit OCI layout directory is required.
+`lab build` is the Docker-like boundary: it runs the full validation above,
+creates a deterministic OCI image layout, imports all blobs into the daemon's
+local content-addressed store, and assigns the optional tag. `lab pack` remains
+available when an explicit OCI layout directory is required; it applies the
+same full validation before creating the artifact.
 
 The package must declare `simulation` and the `kinematic` runtime in
 `asset.yaml`:

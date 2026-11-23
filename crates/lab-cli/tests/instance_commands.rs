@@ -46,6 +46,10 @@ fn import(store: &Path, root: &Path, runnable: bool) -> String {
                 "  type: robot",
                 "  type: robot\n  runtime:\n    engine: kinematic\n    config: world.yaml",
             );
+        let manifest = manifest.replace(
+            "      - robot.universal_robots.UR5e",
+            "      - simulation.heater\n      - simulation.stirrer\n      - simulation.valve\n      - simulation.sensor",
+        );
         std::fs::write(root.join("asset.yaml"), manifest).unwrap();
         std::fs::write(
             root.join("world.yaml"),
@@ -262,14 +266,9 @@ fn invalid_world_configuration_is_retained_as_a_removable_failed_instance() {
     )
     .unwrap();
     let layout = temp.path().join("invalid.layout");
-    let packed = Command::new(env!("CARGO_BIN_EXE_lab"))
-        .arg("pack")
-        .arg(&root)
-        .arg("--output")
-        .arg(&layout)
-        .output()
-        .unwrap();
-    assert!(packed.status.success());
+    // Exercise retained failed instances with a directly packed corrupt OCI
+    // artifact. Public `lab pack` intentionally rejects this invalid input.
+    opensdl_assets::pack_directory(&root, &layout).unwrap();
     let imported = lab(&store, &["asset", "import", layout.to_str().unwrap()]);
     assert!(imported.status.success());
     let digest = String::from_utf8(imported.stdout)

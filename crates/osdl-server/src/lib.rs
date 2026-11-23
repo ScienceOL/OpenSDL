@@ -24,6 +24,8 @@ mod media_publish;
 pub mod paths;
 pub mod service;
 pub mod simulation_asset;
+mod simulation_contract;
+pub mod simulation_validation;
 mod snapshot;
 
 use std::net::SocketAddr;
