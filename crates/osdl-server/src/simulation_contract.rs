@@ -6,7 +6,7 @@
 //! valid at time zero. GLB structure is owned by `opensdl-assets`; this module
 //! validates the contract between that presentation metadata and the runtime.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
 use opensdl_assets::model::{Control, JointKind, ModelDefinition};
@@ -19,7 +19,14 @@ pub(crate) fn validate_initial_contract(
     definition: &ModelDefinition,
     properties: &HashMap<String, Value>,
 ) -> Result<()> {
+    let mut action_names = HashSet::new();
     for action in &device.actions {
+        if !action_names.insert(action.name.as_str()) {
+            bail!(
+                "runtime declares duplicate action '{}'; action names must be unique",
+                action.name
+            );
+        }
         validate_schema_declaration(action)?;
     }
     validate_observation(device, definition, properties)
@@ -227,13 +234,13 @@ fn validate_schema_declaration(action: &ActionSchema) -> Result<()> {
                 action.name
             )
         })?;
-    let mut required = std::collections::HashSet::new();
-    for value in schema
-        .get("required")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
+    let required_values: &[Value] = match schema.get("required") {
+        None => &[],
+        Some(Value::Array(values)) => values.as_slice(),
+        Some(_) => bail!("action '{}' params.required must be an array", action.name),
+    };
+    let mut required = HashSet::new();
+    for value in required_values {
         let name = value
             .as_str()
             .ok_or_else(|| anyhow!("action '{}' required entries must be strings", action.name))?;
@@ -327,13 +334,21 @@ fn validate_params(action: &ActionSchema, params: &Value) -> Result<()> {
             );
         }
     }
-    for value in schema
+    let required = schema
         .get("required")
-        .and_then(Value::as_array)
+        .map(|value| {
+            value
+                .as_array()
+                .expect("required array was checked during admission")
+        })
         .into_iter()
         .flatten()
-        .filter_map(Value::as_str)
-    {
+        .map(|value| {
+            value
+                .as_str()
+                .expect("required entries were checked during admission")
+        });
+    for value in required {
         if !params.contains_key(value) {
             bail!(
                 "action '{}' is missing required parameter '{value}'",

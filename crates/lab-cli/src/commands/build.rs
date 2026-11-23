@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use anyhow::Context;
 use clap::Args;
 use opensdl_assets::{
     daemon::{execute, Operation},
@@ -22,18 +21,24 @@ pub struct BuildArgs {
 }
 
 pub async fn run(args: BuildArgs, root: Option<PathBuf>) -> anyhow::Result<()> {
-    osdl_server::simulation_validation::validate_directory(&args.directory)
-        .context("cannot build an asset that failed validation")?;
     let cache = match root {
         Some(root) => AssetCache::open(root)?,
         None => AssetCache::discover()?,
     };
     let tag = args.tag;
+    let temporary;
+    let layout = match args.output {
+        Some(output) => std::path::absolute(output)?,
+        None => {
+            temporary = tempfile::tempdir_in(cache.root().join("staging"))?;
+            temporary.path().join("layout")
+        }
+    };
+    osdl_server::simulation_validation::pack_directory(&args.directory, &layout)?;
     let result: PackageDescriptor = execute(
         &cache,
-        Operation::Build {
-            directory: std::path::absolute(args.directory)?,
-            output: args.output.map(std::path::absolute).transpose()?,
+        Operation::Import {
+            layout,
             tag: tag.clone(),
         },
     )

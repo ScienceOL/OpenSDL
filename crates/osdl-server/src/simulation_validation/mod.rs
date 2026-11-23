@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use opensdl_assets::{model::ModelDefinition, VirtualAssetManifest};
+use opensdl_assets::{model::ModelDefinition, PackageDescriptor, VirtualAssetManifest};
 use osdl_core::{
     config::SimulationDeviceConfig,
     simulation::{InstrumentState, SampleInventory},
@@ -60,6 +60,50 @@ pub struct DynamicValidationReport {
     pub observations_checked: usize,
     /// Deterministic controller time advanced; no wall-clock sleep is used.
     pub simulated_seconds: f64,
+}
+
+/// Validates and packages one private snapshot of a working asset directory.
+///
+/// Packaging rereads metadata and source files, so validating the caller's
+/// mutable tree first would leave a check/use gap. This owning boundary copies
+/// the tree once, validates that exact snapshot, and hands only the private
+/// snapshot to the lower-level OCI encoder. No daemon-side path from a mutable
+/// directory is exposed: `lab build` imports the resulting verified layout.
+pub fn pack_directory(directory: &Path, output: &Path) -> Result<PackageDescriptor> {
+    let staging = tempfile::tempdir().context("cannot stage an asset validation snapshot")?;
+    let snapshot = staging.path().join("asset");
+    copy_asset_tree(directory, &snapshot).context("cannot snapshot the asset tree")?;
+    validate_directory(&snapshot).context("cannot package an asset that failed validation")?;
+    opensdl_assets::pack_directory(&snapshot, output)
+        .context("cannot encode the validated asset snapshot")
+}
+
+fn copy_asset_tree(source: &Path, destination: &Path) -> Result<()> {
+    let metadata = std::fs::symlink_metadata(source)
+        .with_context(|| format!("cannot inspect {}", source.display()))?;
+    if metadata.file_type().is_symlink() {
+        bail!(
+            "asset snapshots do not follow symbolic links: {}",
+            source.display()
+        );
+    }
+    if metadata.is_dir() {
+        std::fs::create_dir(destination)
+            .with_context(|| format!("cannot create {}", destination.display()))?;
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            copy_asset_tree(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+    } else if metadata.is_file() {
+        std::fs::copy(source, destination)
+            .with_context(|| format!("cannot copy {}", source.display()))?;
+    } else {
+        bail!(
+            "asset tree contains a non-regular file: {}",
+            source.display()
+        );
+    }
+    Ok(())
 }
 
 /// Runs static admission and dynamic behavior validation for a working asset

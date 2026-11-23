@@ -55,8 +55,9 @@ firmware remain separate hardware assets.
 ## Start the local asset daemon
 
 The resource cache contains content-addressed package blobs, local references,
-and managed instance records. The asset daemon accepts build, import, pull, push, tag, inspect, and
-garbage-collection operations. Only store transactions hold the cross-process
+and managed instance records. `lab build` validates and packages a private
+working-tree snapshot, then imports it through the daemon; the daemon also
+accepts import, pull, push, tag, inspect, and garbage-collection operations. Only store transactions hold the cross-process
 cache lease; uploads run outside it. Use
 the same cache for every command in one workflow:
 
@@ -130,9 +131,11 @@ successful result covers these stages:
 1. Manifest metadata, capabilities, runtime declaration, portable paths, and
    file tree.
 2. The self-contained GLB 2.0 container, scene/node indices, mesh accessors,
-   embedded buffers/images, accessor strides and bounds, plus OpenSDL component
-   declarations and their actual node hierarchy. GLB previews cannot depend on
-   external buffer or image URIs.
+   embedded buffers/images, padded matrix layouts, accessor strides/bounds,
+   material/texture/image references, plus OpenSDL component declarations and
+   their actual node hierarchy. GLB previews cannot depend on external buffer
+   or image URIs and are bounded to 256 MiB before allocation; this is still a
+   portable structural subset, not an arbitrary high-fidelity exchange limit.
 3. The same runtime admission used by a managed world: controller construction,
    initial observations, device-type bindings, and action/control schemas.
 4. Deterministic dynamic execution of every declared instrument action using
@@ -154,8 +157,9 @@ controller contract. It does not claim USD-to-GLB geometry equivalence,
 multi-device composed-scene behavior, full Khronos material validation, or
 conformance of an external physics engine. Primitive-only example worlds still
 receive static/runtime admission but report `dynamic: null` because they have
-no instrument model. A passing validation must precede `lab build`/`lab push`
-in an asset publication workflow.
+no instrument model. A passing validation is repeated inside `lab build` and
+`lab pack`; `lab push` instead transfers the already content-addressed,
+digest-verified artifact without executing its instrument program again.
 
 ## Build an asset image
 
@@ -174,9 +178,12 @@ lab images --json
 
 `lab build` is the Docker-like boundary: it runs the full validation above,
 creates a deterministic OCI image layout, imports all blobs into the daemon's
-local content-addressed store, and assigns the optional tag. `lab pack` remains
-available when an explicit OCI layout directory is required; it applies the
-same full validation before creating the artifact.
+local content-addressed store, and assigns the optional tag. Both `lab build`
+and `lab pack` take one private snapshot of the working tree, then validate
+and encode that exact snapshot so an edit between checking and packaging
+cannot admit different bytes. `lab pack` exposes the same deterministic OCI
+image-layout output without importing it. The daemon has no separate direct
+`Build` operation that could bypass this owning validation boundary.
 
 The package must declare `simulation` and the `kinematic` runtime in
 `asset.yaml`:

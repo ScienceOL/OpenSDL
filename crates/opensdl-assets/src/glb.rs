@@ -7,7 +7,7 @@
 //! use only the standard GLB BIN chunk: external files and data URIs would make
 //! the independently distributed `preview.glb` incomplete.
 
-use std::collections::HashSet;
+use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -18,6 +18,10 @@ use crate::AssetError;
 const GLB_MAGIC: u32 = 0x4654_6c67;
 const JSON_CHUNK: u32 = 0x4e4f_534a;
 const BIN_CHUNK: u32 = 0x004e_4942;
+/// A portable delivery preview is bounded before any allocation. Authoring USD
+/// remains the place for high-fidelity geometry; browser-distributed GLBs must
+/// not require unbounded memory merely to inspect their JSON declarations.
+const MAX_GLB_BYTES: usize = 256 * 1024 * 1024;
 
 /// Reads and validates a self-contained glTF 2.0 binary file.
 ///
@@ -26,13 +30,30 @@ const BIN_CHUNK: u32 = 0x004e_4942;
 /// not claim to be a replacement for the complete Khronos glTF validator: GPU
 /// material semantics and renderer-specific extensions remain renderer checks.
 pub(crate) fn validate(path: &Path) -> Result<()> {
-    let bytes = std::fs::read(path).map_err(|source| AssetError::read(path, source))?;
+    let file = std::fs::File::open(path).map_err(|source| AssetError::read(path, source))?;
+    if file
+        .metadata()
+        .map_err(|source| AssetError::read(path, source))?
+        .len()
+        > MAX_GLB_BYTES as u64
+    {
+        bail!("GLB {} exceeds the 256 MiB preview limit", path.display());
+    }
+    // The take bound still applies if a working-tree file grows after metadata
+    // was read; a large reported size takes the zero-allocation path above.
+    let mut bytes = Vec::new();
+    file.take(MAX_GLB_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|source| AssetError::read(path, source))?;
     validate_bytes(&bytes).with_context(|| format!("invalid GLB {}", path.display()))
 }
 
 /// Validates an in-memory GLB. Kept independent of assets so malformed fixtures
 /// can exercise the same production checks without constructing a package.
 fn validate_bytes(bytes: &[u8]) -> Result<()> {
+    if bytes.len() > MAX_GLB_BYTES {
+        bail!("GLB exceeds the 256 MiB preview limit");
+    }
     let (document, binary) = parse_container(bytes)?;
     validate_asset(&document)?;
     validate_nodes(&document)?;
@@ -41,6 +62,7 @@ fn validate_bytes(bytes: &[u8]) -> Result<()> {
     validate_accessors(&document, &view_lengths)?;
     validate_meshes(&document)?;
     validate_images(&document, &view_lengths)?;
+    validate_materials(&document)?;
     Ok(())
 }
 
@@ -72,6 +94,9 @@ fn parse_container(bytes: &[u8]) -> Result<(Value, Option<&[u8]>)> {
             bail!("truncated GLB chunk header at byte {offset}");
         }
         let length = little_u32(bytes, offset)? as usize;
+        if !length.is_multiple_of(4) {
+            bail!("GLB chunk {chunk_index} length is not aligned to four bytes");
+        }
         let kind = little_u32(bytes, offset + 4)?;
         let start = offset
             .checked_add(8)
@@ -126,18 +151,10 @@ fn validate_asset(document: &Value) -> Result<()> {
 /// resolver, which derives each component from one unambiguous node path.
 fn validate_nodes(document: &Value) -> Result<()> {
     let nodes = array(document, "nodes")?;
-    let empty = Vec::new();
-    let scene_list = document
-        .get("scenes")
-        .and_then(Value::as_array)
-        .unwrap_or(&empty);
+    let scene_list = array(document, "scenes")?;
     for (index, scene) in scene_list.iter().enumerate() {
         let scene = object(scene, &format!("scenes[{index}]"))?;
-        for root in scene
-            .get("nodes")
-            .and_then(Value::as_array)
-            .unwrap_or(&empty)
-        {
+        for root in optional_array(scene, "nodes", &format!("scenes[{index}]"))? {
             index_value(root, nodes.len(), &format!("scenes[{index}].nodes"))?;
         }
     }
@@ -148,11 +165,7 @@ fn validate_nodes(document: &Value) -> Result<()> {
     let mut parents = vec![None; nodes.len()];
     for (index, node) in nodes.iter().enumerate() {
         let node = object(node, &format!("nodes[{index}]"))?;
-        for child in node
-            .get("children")
-            .and_then(Value::as_array)
-            .unwrap_or(&empty)
-        {
+        for child in optional_array(node, "children", &format!("nodes[{index}]"))? {
             let child = index_value(child, nodes.len(), &format!("nodes[{index}].children"))?;
             if parents[child].replace(index).is_some() {
                 bail!("glTF node {child} has more than one parent");
@@ -166,16 +179,24 @@ fn validate_nodes(document: &Value) -> Result<()> {
         }
     }
 
-    // Scene reachability is validated separately; checking every parent chain
-    // also rejects cycles in nodes omitted from the selected scene.
-    for node in 0..nodes.len() {
-        let mut cursor = Some(node);
-        let mut visited = HashSet::new();
+    // One tri-colour traversal rejects cycles even outside the selected scene.
+    // Completed nodes are never re-walked, keeping deep chains O(n), not O(n²).
+    let mut marks = vec![0_u8; nodes.len()];
+    for start in 0..nodes.len() {
+        let mut path = Vec::new();
+        let mut cursor = Some(start);
         while let Some(current) = cursor {
-            if !visited.insert(current) {
-                bail!("glTF node hierarchy contains a cycle at node {current}");
+            match marks[current] {
+                2 => break,
+                1 => bail!("glTF node hierarchy contains a cycle at node {current}"),
+                _ => {}
             }
+            marks[current] = 1;
+            path.push(current);
             cursor = parents[current];
+        }
+        for current in path {
+            marks[current] = 2;
         }
     }
     Ok(())
@@ -257,13 +278,20 @@ fn validate_accessors(document: &Value, views: &[usize]) -> Result<()> {
             &format!("accessors[{index}].bufferView"),
         )?;
         let count = required_usize(accessor, "count", &format!("accessors[{index}]"))?;
-        let components = match accessor.get("type").and_then(Value::as_str) {
-            Some("SCALAR") => 1,
-            Some("VEC2") => 2,
-            Some("VEC3") => 3,
-            Some("VEC4") | Some("MAT2") => 4,
-            Some("MAT3") => 9,
-            Some("MAT4") => 16,
+        if count == 0 {
+            bail!("accessors[{index}].count must be at least one");
+        }
+        let kind = accessor
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("accessors[{index}] has an invalid type"))?;
+        let components = match kind {
+            "SCALAR" => 1,
+            "VEC2" => 2,
+            "VEC3" => 3,
+            "VEC4" | "MAT2" => 4,
+            "MAT3" => 9,
+            "MAT4" => 16,
             _ => bail!("accessors[{index}] has an invalid type"),
         };
         let component_bytes = match accessor.get("componentType").and_then(Value::as_u64) {
@@ -272,27 +300,47 @@ fn validate_accessors(document: &Value, views: &[usize]) -> Result<()> {
             Some(5125 | 5126) => 4,
             _ => bail!("accessors[{index}] has an invalid componentType"),
         };
-        let element_bytes = components * component_bytes;
+        // MAT2/MAT3 with 8-/16-bit components pad each column to a four-byte
+        // boundary. Their explicit stride includes the full padded matrix.
+        let matrix_is_padded = component_bytes < 4 && matches!(kind, "MAT2" | "MAT3");
+        let element_bytes = if matrix_is_padded {
+            let columns: usize = if kind == "MAT2" { 2 } else { 3 };
+            let column_bytes = (columns * component_bytes).next_multiple_of(4);
+            columns * column_bytes
+        } else {
+            components * component_bytes
+        };
         let view_object = document["bufferViews"][view]
             .as_object()
             .expect("buffer view was checked");
-        let stride = if view_object.contains_key("byteStride") {
+        let explicit_stride = view_object.contains_key("byteStride");
+        if matrix_is_padded && !explicit_stride {
+            bail!("accessors[{index}] padded matrices require an explicit byteStride");
+        }
+        let stride = if explicit_stride {
             optional_usize(view_object, "byteStride")?
         } else {
             element_bytes
         };
-        if stride < element_bytes || stride > 252 || stride % component_bytes != 0 {
+        if stride < element_bytes || stride > 252 {
             bail!("accessors[{index}] has an invalid byteStride {stride}");
         }
+        if explicit_stride && !stride.is_multiple_of(4) {
+            bail!("accessors[{index}].byteStride must be aligned to four bytes");
+        }
         let offset = optional_usize(accessor, "byteOffset")?;
-        let payload = if count == 0 {
-            0
-        } else {
-            (count - 1)
-                .checked_mul(stride)
-                .and_then(|value| value.checked_add(element_bytes))
-                .ok_or_else(|| anyhow!("accessors[{index}] range overflow"))?
-        };
+        let view_offset = optional_usize(view_object, "byteOffset")?;
+        let absolute_offset = offset
+            .checked_add(view_offset)
+            .ok_or_else(|| anyhow!("accessors[{index}] offset overflow"))?;
+        let alignment = if matrix_is_padded { 4 } else { component_bytes };
+        if !absolute_offset.is_multiple_of(alignment) {
+            bail!("accessors[{index}] byte offset is not component-aligned");
+        }
+        let payload = (count - 1)
+            .checked_mul(stride)
+            .and_then(|value| value.checked_add(element_bytes))
+            .ok_or_else(|| anyhow!("accessors[{index}] range overflow"))?;
         let end = offset
             .checked_add(payload)
             .ok_or_else(|| anyhow!("accessors[{index}] range overflow"))?;
@@ -303,6 +351,66 @@ fn validate_accessors(document: &Value, views: &[usize]) -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+fn validate_materials(document: &Value) -> Result<()> {
+    let images = array(document, "images")?;
+    let samplers = array(document, "samplers")?;
+    let textures = array(document, "textures")?;
+    for (index, texture) in textures.iter().enumerate() {
+        let texture = object(texture, &format!("textures[{index}]"))?;
+        if let Some(sampler) = texture.get("sampler") {
+            index_value(
+                sampler,
+                samplers.len(),
+                &format!("textures[{index}].sampler"),
+            )?;
+        }
+        index_value(
+            texture
+                .get("source")
+                .ok_or_else(|| anyhow!("textures[{index}].source is required"))?,
+            images.len(),
+            &format!("textures[{index}].source"),
+        )?;
+    }
+    for (index, material) in array(document, "materials")?.iter().enumerate() {
+        let material = object(material, &format!("materials[{index}]"))?;
+        for key in ["normalTexture", "occlusionTexture", "emissiveTexture"] {
+            if let Some(reference) = material.get(key) {
+                validate_texture_reference(
+                    reference,
+                    textures.len(),
+                    &format!("materials[{index}].{key}"),
+                )?;
+            }
+        }
+        if let Some(pbr) = material.get("pbrMetallicRoughness") {
+            let pbr = object(pbr, &format!("materials[{index}].pbrMetallicRoughness"))?;
+            for key in ["baseColorTexture", "metallicRoughnessTexture"] {
+                if let Some(reference) = pbr.get(key) {
+                    validate_texture_reference(
+                        reference,
+                        textures.len(),
+                        &format!("materials[{index}].pbrMetallicRoughness.{key}"),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_texture_reference(value: &Value, textures: usize, label: &str) -> Result<()> {
+    let reference = object(value, label)?;
+    index_value(
+        reference
+            .get("index")
+            .ok_or_else(|| anyhow!("{label}.index is required"))?,
+        textures,
+        &format!("{label}.index"),
+    )?;
     Ok(())
 }
 
@@ -357,6 +465,12 @@ fn validate_images(document: &Value, views: &[usize]) -> Result<()> {
             views.len(),
             &format!("images[{index}].bufferView"),
         )?;
+        if !matches!(
+            image.get("mimeType").and_then(Value::as_str),
+            Some("image/png" | "image/jpeg")
+        ) {
+            bail!("images[{index}].mimeType must be image/png or image/jpeg");
+        }
     }
     Ok(())
 }
@@ -377,6 +491,20 @@ fn array<'a>(document: &'a Value, key: &str) -> Result<&'a Vec<Value>> {
         Some(value) => value
             .as_array()
             .ok_or_else(|| anyhow!("glTF {key} must be an array")),
+    }
+}
+
+fn optional_array<'a>(
+    value: &'a serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<&'a Vec<Value>> {
+    static EMPTY: Vec<Value> = Vec::new();
+    match value.get(key) {
+        None => Ok(&EMPTY),
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| anyhow!("{label}.{key} must be an array")),
     }
 }
 
@@ -429,7 +557,7 @@ fn little_u32(bytes: &[u8], offset: usize) -> Result<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_bytes;
+    use super::{validate, validate_bytes, MAX_GLB_BYTES};
 
     fn glb(json: &str, binary: &[u8]) -> Vec<u8> {
         let mut json = json.as_bytes().to_vec();
@@ -490,5 +618,94 @@ mod tests {
             &[0; 12],
         );
         validate_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_array_hierarchy_fields() {
+        for suffix in [
+            r#","scenes":{}"#,
+            r#","scenes":[{"nodes":{}}]"#,
+            r#","nodes":[{"children":{}}]"#,
+        ] {
+            let json = format!(r#"{{"asset":{{"version":"2.0"}}{suffix}}}"#);
+            assert!(validate_bytes(&glb(&json, &[])).is_err(), "{json}");
+        }
+    }
+
+    #[test]
+    fn rejects_unaligned_chunks() {
+        let mut bytes = glb(r#"{"asset":{"version":"2.0"}}"#, &[]);
+        let json_length = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+        bytes[12..16].copy_from_slice(&(json_length + 1).to_le_bytes());
+        let error = validate_bytes(&bytes).unwrap_err().to_string();
+        assert!(error.contains("not aligned"), "{error}");
+    }
+
+    #[test]
+    fn validates_padded_matrix_storage_and_alignment() {
+        for (kind, component_type, size) in [
+            ("MAT2", 5121, 8),
+            ("MAT2", 5123, 8),
+            ("MAT3", 5121, 12),
+            ("MAT3", 5123, 24),
+        ] {
+            for view_size in [size - 1, size] {
+                let json = format!(
+                    r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{size}}}],"bufferViews":[{{"buffer":0,"byteLength":{view_size},"byteStride":{size}}}],"accessors":[{{"bufferView":0,"componentType":{component_type},"count":1,"type":"{kind}"}}]}}"#
+                );
+                let result = validate_bytes(&glb(&json, &vec![0; size]));
+                assert_eq!(result.is_ok(), view_size == size, "{kind}: {result:?}");
+            }
+        }
+
+        let unaligned = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":4}],"bufferViews":[{"buffer":0,"byteLength":4,"byteStride":2}],"accessors":[{"bufferView":0,"componentType":5123,"count":1,"type":"SCALAR"}]}"#;
+        assert!(validate_bytes(&glb(unaligned, &[0; 4]))
+            .unwrap_err()
+            .to_string()
+            .contains("four bytes"));
+        let offset = r#"{"asset":{"version":"2.0"},"buffers":[{"byteLength":4}],"bufferViews":[{"buffer":0,"byteOffset":1,"byteLength":2}],"accessors":[{"bufferView":0,"componentType":5123,"count":1,"type":"SCALAR"}]}"#;
+        assert!(validate_bytes(&glb(offset, &[0; 4]))
+            .unwrap_err()
+            .to_string()
+            .contains("component-aligned"));
+    }
+
+    #[test]
+    fn rejects_empty_accessors_and_invalid_material_references() {
+        for suffix in [
+            r#","buffers":[{"byteLength":1}],"bufferViews":[{"buffer":0,"byteLength":1}],"accessors":[{"bufferView":0,"componentType":5121,"count":0,"type":"SCALAR"}]"#,
+            r#","materials":[null]"#,
+            r#","textures":[{"source":0}]"#,
+            r#","images":[{"bufferView":0}],"buffers":[{"byteLength":1}],"bufferViews":[{"buffer":0,"byteLength":1}]"#,
+            r#","textures":[{}],"images":[null]"#,
+            r#","materials":[{"normalTexture":{"index":0}}]"#,
+        ] {
+            let json = format!(r#"{{"asset":{{"version":"2.0"}}{suffix}}}"#);
+            assert!(validate_bytes(&glb(&json, &[0; 4])).is_err(), "{json}");
+        }
+    }
+
+    #[test]
+    fn validates_a_deep_hierarchy_in_linear_time() {
+        let mut nodes = String::new();
+        for index in 0..4096 {
+            if index > 0 {
+                nodes.push(',');
+            }
+            nodes.push_str(&format!(r#"{{"children":[{}]}}"#, index + 1));
+        }
+        nodes.push_str(",{}");
+        let json = format!(r#"{{"asset":{{"version":"2.0"}},"nodes":[{nodes}]}}"#);
+        validate_bytes(&glb(&json, &[])).unwrap();
+    }
+
+    #[test]
+    fn rejects_an_oversized_file_before_reading_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("oversized.glb");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_GLB_BYTES as u64 + 1).unwrap();
+        let error = validate(&path).unwrap_err().to_string();
+        assert!(error.contains("256 MiB"), "{error}");
     }
 }
