@@ -72,6 +72,58 @@ fn dynamic_calls_must_obey_the_public_action_schema() {
     assert!(error.contains("violates its declared schema"), "{error}");
 }
 
+#[test]
+fn schema_declarations_must_be_typed_and_unambiguous() {
+    for duplicate in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let source = instrument_root().join("thermal-cycler/package");
+        let destination = temp.path().join("thermal-cycler");
+        copy_tree(&source, &destination);
+        let world = destination.join("source/world.yaml");
+        let mut definition: serde_yaml::Value =
+            serde_yaml::from_str(&std::fs::read_to_string(&world).unwrap()).unwrap();
+        if duplicate {
+            let duplicate_action = definition["devices"][0]["actions"][7].clone();
+            definition["devices"][0]["actions"]
+                .as_sequence_mut()
+                .unwrap()
+                .push(duplicate_action);
+        } else {
+            definition["devices"][0]["actions"][7]["params"]["required"] =
+                serde_yaml::Value::String("cycles".to_owned());
+        }
+        std::fs::write(&world, serde_yaml::to_string(&definition).unwrap()).unwrap();
+
+        let error = format!(
+            "{:#}",
+            osdl_server::simulation_validation::validate_directory(&destination).unwrap_err()
+        );
+        if duplicate {
+            assert!(error.contains("duplicate action"), "{error}");
+        } else {
+            assert!(error.contains("required must be an array"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn validated_packaging_preserves_the_exact_manifest_digest() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = instrument_root().join("analytical-balance/package");
+    let destination = temp.path().join("analytical-balance");
+    copy_tree(&source, &destination);
+    let expected = opensdl_assets::pack_directory(&destination, &temp.path().join("direct"))
+        .unwrap()
+        .manifest_digest;
+    let actual = osdl_server::simulation_validation::pack_directory(
+        &destination,
+        &temp.path().join("validated"),
+    )
+    .unwrap()
+    .manifest_digest;
+    assert_eq!(actual, expected);
+}
+
 fn instrument_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/instruments")
 }

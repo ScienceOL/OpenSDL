@@ -110,10 +110,12 @@ every resulting GLB-bound observation, and supports `--json` evidence. See
 [asset validation](docs/lab-cli.md#validate-a-portable-asset) for the scope and
 its external-physics limitations.
 
-`lab build` runs the same full validation, creates the deterministic OCI
-artifact, and admits it to the local content-addressed store. The daemon keeps the store
-available across commands and processes; `lab pack` remains available when an
-explicit OCI image-layout directory is needed. `lab split` can extract selected
+`lab build` validates and packages one private snapshot of the working tree,
+creating a deterministic OCI artifact and admitting it to the local
+content-addressed store. Validating and encoding the same snapshot prevents a
+later working-tree edit from bypassing conformance. The daemon keeps the store
+available across commands and processes; `lab pack` exposes the same snapshot
+validation when an explicit OCI image-layout directory is needed. `lab split` can extract selected
 OpenUSD prims into child asset directories, which then follow the same build,
 push, pull, and run lifecycle. See [`docs/lab-cli.md`](docs/lab-cli.md) for
 the complete Hub workflow.

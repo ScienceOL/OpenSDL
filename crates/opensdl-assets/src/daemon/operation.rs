@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    materialize, pack_directory, AssetCache, AssetError, AssetReference, RegistryClient,
-    RegistryCredentials,
+    materialize, AssetCache, AssetError, AssetReference, RegistryClient, RegistryCredentials,
 };
 
 /// One contract shared by the local and daemon execution paths.
@@ -35,11 +34,6 @@ pub enum Operation {
     },
     Import {
         layout: PathBuf,
-        tag: Option<String>,
-    },
-    Build {
-        directory: PathBuf,
-        output: Option<PathBuf>,
         tag: Option<String>,
     },
     Pull {
@@ -80,29 +74,6 @@ impl Operation {
                 let tag = parse_tag(tag)?;
                 encode(
                     blocking(cache, move |cache| {
-                        cache.lock()?.import_layout(&layout, tag.as_ref())
-                    })
-                    .await?,
-                )
-            }
-            Self::Build {
-                directory,
-                output,
-                tag,
-            } => {
-                let tag = parse_tag(tag)?;
-                encode(
-                    blocking(cache, move |cache| {
-                        let temporary;
-                        let layout = match output {
-                            Some(output) => output,
-                            None => {
-                                temporary = tempfile::tempdir_in(cache.root().join("staging"))
-                                    .map_err(|e| AssetError::read(cache.root(), e))?;
-                                temporary.path().join("layout")
-                            }
-                        };
-                        pack_directory(&directory, &layout)?;
                         cache.lock()?.import_layout(&layout, tag.as_ref())
                     })
                     .await?,
