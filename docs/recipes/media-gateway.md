@@ -83,6 +83,29 @@ The engine signals mediamtx to terminate gracefully on shutdown.
   refuses to negotiate HEVC, flip `h264_transcode: true` to force an
   H.264 republish from the camera's main or sub stream.
 
+## USB color preview on Linux
+
+For a USB camera with a V4L2 MJPEG color interface, configure an on-demand source
+using a stable device path and a resolution and frame rate reported by the camera.
+
+```yaml
+media_sources:
+  - kind: v4l2_camera
+    id: gemini-335
+    description: Orbbec Gemini 335
+    device: /dev/v4l/by-path/your-camera-video-index0
+    width: 640
+    height: 480
+    frames_per_second: 30
+media_gateway:
+  ffmpeg_binary: /usr/bin/ffmpeg
+```
+
+The service user needs access to the capture device. FFmpeg must provide the V4L2
+input and the `libx264` encoder. OpenSDL opens the camera when an authorized client
+requests RTMPS publication and stops capture when the publication ends. This source
+publishes H.264 color video. Raw depth requires a separate data path.
+
 ## Remote ingest (push to SRS)
 
 Each camera can optionally push to a remote SRS instance so viewers

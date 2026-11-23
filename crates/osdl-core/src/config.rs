@@ -41,8 +41,7 @@ pub struct OsdlConfig {
     /// host-side, not at flash time.
     #[serde(default)]
     pub mac_assignments: HashMap<String, String>,
-    /// Media sources (cameras, etc.). When non-empty the engine starts a
-    /// mediamtx subprocess on `run()` to expose them via RTSP/HLS/WebRTC.
+    /// Camera sources exposed through MediaMTX or direct on-demand capture.
     #[serde(default)]
     pub media_sources: Vec<MediaSourceConfig>,
     /// Gateway config (ports, advertise host, mediamtx binary path). Only
