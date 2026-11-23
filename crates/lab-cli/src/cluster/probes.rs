@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{ensure, Result};
-use osdl_core::{media::v4l2::DepthCamera, EngineHandle};
+use osdl_core::{engine::ProbeObserver, media::v4l2::DepthCamera, EngineHandle};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
@@ -62,22 +62,32 @@ pub fn validate(configs: &[DeviceProbe]) -> Result<()> {
 pub async fn start(configs: Vec<DeviceProbe>, engine: &EngineHandle) -> Result<JoinSet<()>> {
     let mut probes = JoinSet::new();
     for config in configs {
-        engine
-            .register_read_only_device(
-                config.id.as_str(),
-                &config.device_type,
-                &config.description,
-                config.probe.role(),
-            )
-            .await
-            .map_err(anyhow::Error::msg)?;
-        probes.spawn(config.monitor(engine.clone()));
+        let id = config.id.as_str();
+        let observer = match &config.probe {
+            Probe::Tcp { .. } => {
+                engine
+                    .register_read_only_device(id, &config.device_type, &config.description, None)
+                    .await
+            }
+            Probe::V4l2DepthCamera(camera) => {
+                engine
+                    .register_depth_camera_probe(
+                        id,
+                        &config.device_type,
+                        &config.description,
+                        camera,
+                    )
+                    .await
+            }
+        }
+        .map_err(anyhow::Error::msg)?;
+        probes.spawn(config.monitor(observer));
     }
     Ok(probes)
 }
 
 impl DeviceProbe {
-    async fn monitor(self, engine: EngineHandle) {
+    async fn monitor(self, observer: ProbeObserver) {
         let mut interval = time::interval(PROBE_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut failed = false;
@@ -97,21 +107,12 @@ impl DeviceProbe {
                 }
             };
             failed = properties.is_none();
-            engine
-                .observe_read_only_device(self.id.as_str(), properties)
-                .await;
+            observer.observe(properties).await;
         }
     }
 }
 
 impl Probe {
-    fn role(&self) -> Option<&'static str> {
-        match self {
-            Self::Tcp { .. } => None,
-            Self::V4l2DepthCamera(_) => Some("camera"),
-        }
-    }
-
     async fn sample(&self) -> std::io::Result<Properties> {
         match self {
             Self::Tcp { address } => {
@@ -185,13 +186,14 @@ probe:
     async fn device_observations_update_inventory_and_cannot_dispatch() {
         let engine = OsdlEngine::new(Default::default(), vec![]).handle();
         let id = "configured-reader";
-        let update = |properties| engine.observe_read_only_device(id, properties);
-        engine
+        let observer = engine
             .register_read_only_device(id, "example.reader", "", None)
             .await
             .unwrap();
         assert!(!engine.get_device(id).await.unwrap().online);
-        update(Some(HashMap::from([("ready".into(), Value::Bool(true))]))).await;
+        observer
+            .observe(Some(HashMap::from([("ready".into(), Value::Bool(true))])))
+            .await;
         let device = engine.get_device(id).await.unwrap();
         assert!(device.online);
         assert!(device.actions.is_empty());
@@ -206,7 +208,7 @@ probe:
             .await
             .unwrap_err();
         assert!(error.contains("read-only"));
-        update(None).await;
+        observer.observe(None).await;
         let device = engine.get_device(id).await.unwrap();
         assert!(!device.online);
         assert!(device.properties.is_empty());

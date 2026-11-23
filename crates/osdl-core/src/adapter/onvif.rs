@@ -27,6 +27,7 @@
 //! never called — cameras don't go through the hardware-id discovery path.
 
 use crate::adapter::{DeviceMatch, ProtocolAdapter};
+use crate::media::snapshot::{self, SnapshotCommand};
 use crate::protocol::*;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -56,7 +57,7 @@ impl OnvifAdapter {
             ptz_move_schema(),
             ptz_stop_schema(),
             ptz_preset_goto_schema(),
-            snapshot_schema(),
+            snapshot::action(),
         ]
     }
 }
@@ -84,13 +85,6 @@ impl ProtocolAdapter for OnvifAdapter {
     }
 
     fn encode_command(&self, device_type: &str, cmd: &DeviceCommand) -> Result<Vec<u8>, String> {
-        let mut envelope = match device_type {
-            DEVICE_TYPE_PTZ | DEVICE_TYPE_CAMERA | DEVICE_TYPE_COMBINED => {
-                build_envelope(&cmd.action, &cmd.params)?
-            }
-            other => return Err(format!("onvif adapter: unknown device_type '{other}'")),
-        };
-
         // Validate the action is supported by the device_type so a typo
         // surfaces as a clear error rather than a 500 from the camera.
         if !action_supported(device_type, &cmd.action) {
@@ -101,9 +95,9 @@ impl ProtocolAdapter for OnvifAdapter {
         }
 
         if cmd.action == "snapshot" {
-            envelope["command_id"] = json!(cmd.command_id);
-            envelope["device_id"] = json!(cmd.device_id);
+            return SnapshotCommand::encode(cmd);
         }
+        let envelope = build_envelope(&cmd.action, &cmd.params)?;
         serde_json::to_vec(&envelope).map_err(|e| format!("onvif adapter: serialize envelope: {e}"))
     }
 
@@ -125,9 +119,6 @@ impl ProtocolAdapter for OnvifAdapter {
             props.insert(format!("{op}_error"), Value::String(err.to_string()));
         }
         if let Some(data) = envelope.get("data") {
-            // Snapshot path/url etc. land here. Flatten into properties so
-            // a caller watching `device_status` events can read e.g.
-            // `last_snapshot_url` without parsing nested JSON.
             if let Value::Object(map) = data {
                 for (k, v) in map {
                     props.insert(format!("{op}_{k}"), v.clone());
@@ -158,7 +149,6 @@ fn build_envelope(action: &str, params: &Value) -> Result<Value, String> {
         "ptz_move" => normalize_ptz_move(params)?,
         "ptz_stop" => json!({}),
         "ptz_preset_goto" => normalize_preset(params)?,
-        "snapshot" => json!({}),
         other => return Err(format!("onvif adapter: unknown action '{other}'")),
     };
     Ok(json!({ "op": action, "args": args }))
@@ -271,18 +261,6 @@ fn ptz_preset_goto_schema() -> ActionSchema {
             "required": ["preset"],
             "properties": {"preset": {"type": "string"}}
         }),
-    }
-}
-
-fn snapshot_schema() -> ActionSchema {
-    ActionSchema {
-        name: "snapshot".into(),
-        description: "Capture a still JPEG from the camera. The captured \
-            image is saved under `<data_dir>/snapshots/<cam_id>/<ts>.jpg` \
-            and the path/URL surface as `snapshot_path` / `snapshot_url` \
-            in the next `device_status` event."
-            .into(),
-        params: json!({"type": "object"}),
     }
 }
 

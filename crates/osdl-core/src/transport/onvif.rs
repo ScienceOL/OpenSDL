@@ -29,7 +29,8 @@
 
 use super::{Transport, TransportRx};
 use crate::adapter::onvif::ptz_move_duration_ms;
-use crate::protocol::{CommandResult, CommandStatus};
+use crate::media::snapshot::{Capture, CaptureInput, SnapshotCommand};
+use crate::protocol::CommandResult;
 use async_trait::async_trait;
 use base64::Engine as _;
 use quick_xml::events::Event;
@@ -39,7 +40,6 @@ use sha1::{Digest, Sha1};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Mutex, OnceCell};
 use tokio::task::JoinHandle;
 
@@ -65,10 +65,7 @@ struct Inner {
     ptz_timeout_range: OnceCell<PtzTimeoutRange>,
     /// Where to drop snapshot JPEGs. The engine creates `<root>/<cam_id>/`.
     snapshot_root: PathBuf,
-    /// Public URL prefix that maps to `snapshot_root` for callers to fetch
-    /// the resulting JPEG. Optional — when unset, only `snapshot_path` is
-    /// surfaced (a `file://` URL is also returned as a convenience).
-    snapshot_url_base: Option<String>,
+    snapshot_fallback: Option<CaptureInput>,
     rx_tx: mpsc::UnboundedSender<TransportRx>,
     http: reqwest::Client,
     /// Latest auto-stop task (if any). A new `ptz_move` aborts the prior
@@ -88,14 +85,14 @@ struct DiscoveredEndpoints {
 }
 
 impl OnvifTransport {
-    pub fn new(
+    pub(crate) fn new(
         camera_id: String,
         onvif_url: String,
         username: String,
         password: String,
         profile_token: Option<String>,
         snapshot_root: PathBuf,
-        snapshot_url_base: Option<String>,
+        snapshot_fallback: Option<CaptureInput>,
         rx_tx: mpsc::UnboundedSender<TransportRx>,
     ) -> Self {
         let transport_id = transport_id_for(&camera_id);
@@ -117,7 +114,7 @@ impl OnvifTransport {
                 discovered: OnceCell::new(),
                 ptz_timeout_range: OnceCell::new(),
                 snapshot_root,
-                snapshot_url_base,
+                snapshot_fallback,
                 rx_tx,
                 http,
                 auto_stop: Mutex::new(None),
@@ -224,7 +221,7 @@ impl OnvifTransport {
             "ptz_move" => self.do_ptz_move(args).await,
             "ptz_stop" => self.do_ptz_stop().await,
             "ptz_preset_goto" => self.do_ptz_preset_goto(args).await,
-            "snapshot" => self.do_snapshot().await,
+            "snapshot" => self.do_snapshot().await.map(|capture| json!(capture)),
             other => Err(format!("unknown op '{other}'")),
         }
     }
@@ -321,7 +318,21 @@ impl OnvifTransport {
         Ok(json!({"preset": preset}))
     }
 
-    async fn do_snapshot(&self) -> Result<Value, String> {
+    async fn do_snapshot(&self) -> Result<Capture, String> {
+        let jpeg = if let Some(fallback) = &self.inner.snapshot_fallback {
+            match tokio::time::timeout(Duration::from_secs(3), self.native_snapshot()).await {
+                Ok(Ok(jpeg)) => jpeg,
+                _ => fallback.jpeg().await?,
+            }
+        } else {
+            self.native_snapshot()
+                .await
+                .map_err(|_| "ONVIF snapshot capture failed")?
+        };
+        Capture::save(&self.inner.snapshot_root, &self.inner.camera_id, jpeg).await
+    }
+
+    async fn native_snapshot(&self) -> Result<Vec<u8>, String> {
         let ep = self.endpoints().await?;
         let body = format!(
             r#"<trt:GetSnapshotUri>
@@ -341,49 +352,7 @@ impl OnvifTransport {
             req
         };
         let resp = req.send().await.map_err(|e| format!("snapshot GET: {e}"))?;
-        let bytes = read_snapshot_response(resp).await?;
-
-        let cam_dir = self.inner.snapshot_root.join(&self.inner.camera_id);
-        tokio::fs::create_dir_all(&cam_dir)
-            .await
-            .map_err(|e| format!("create snapshot dir: {e}"))?;
-        let capture_id = uuid::Uuid::new_v4().as_u128() as u64;
-        let path = cam_dir.join(format!("{capture_id}.jpg"));
-        let mut file = tokio::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&path)
-            .await
-            .map_err(|e| format!("create snapshot: {e}"))?;
-        let written = async {
-            file.write_all(&bytes).await?;
-            file.flush().await
-        }
-        .await;
-        if let Err(error) = written {
-            drop(file);
-            let _ = tokio::fs::remove_file(&path).await;
-            return Err(format!("write snapshot: {error}"));
-        }
-        drop(file);
-
-        let path_str = path.display().to_string();
-        let url = match &self.inner.snapshot_url_base {
-            Some(base) => format!(
-                "{}/{}/{}",
-                base.trim_end_matches('/'),
-                self.inner.camera_id,
-                path.file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("snapshot.jpg")
-            ),
-            None => format!("file://{path_str}"),
-        };
-        Ok(json!({
-            "path": path_str,
-            "url": url,
-            "bytes": bytes.len(),
-        }))
+        read_snapshot_response(resp).await
     }
 }
 
@@ -407,37 +376,15 @@ impl Transport for OnvifTransport {
             self.send(bytes).await?;
             return Ok(None);
         }
-        let command_id = envelope["command_id"]
-            .as_str()
-            .filter(|id| !id.is_empty())
-            .ok_or("missing ONVIF snapshot command ID")?;
-        if envelope["device_id"] != self.inner.camera_id {
-            return Err("ONVIF snapshot device mismatch".into());
-        }
-        let reply = self.dispatch("snapshot", &Value::Null).await;
-        let path = reply["data"]["path"]
-            .as_str()
-            .ok_or("ONVIF snapshot capture failed")?;
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|value| value.as_millis())
-            .unwrap_or(0);
-        let device_id = &self.inner.camera_id;
+        let command: SnapshotCommand =
+            serde_json::from_value(envelope).map_err(|_| "invalid snapshot command")?;
+        command.check_camera(&self.inner.camera_id)?;
+        let capture = self.do_snapshot().await?;
         let _ = self.inner.rx_tx.send(TransportRx {
             transport_id: self.inner.transport_id.clone(),
-            data: serde_json::to_vec(&reply).unwrap_or_default(),
+            data: serde_json::to_vec(&capture.event()).expect("serializable camera capture"),
         });
-        Ok(Some(CommandResult {
-            command_id: command_id.into(),
-            device_id: device_id.clone(),
-            status: CommandStatus::Succeeded,
-            message: "ONVIF snapshot captured".into(),
-            data: Some(json!({
-                "device_id": device_id,
-                "timestamp": timestamp,
-                "properties": {"snapshot_ok": true, "snapshot_path": path}
-            })),
-        }))
+        Ok(Some(command.complete(&capture)))
     }
 
     /// `bytes` is a JSON envelope from `OnvifAdapter::encode_command`.
@@ -727,6 +674,77 @@ mod ptz_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::CommandStatus;
+
+    #[tokio::test]
+    async fn uses_native_jpeg_or_samples_stream_after_a_native_http_failure() {
+        use crate::media::snapshot::tests::fake_ffmpeg;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let directory = tempfile::tempdir().unwrap();
+        let native_jpeg = [0xff, 0xd8, 0xff, 0x11, 0xff, 0xd9];
+        let stream_jpeg = [0xff, 0xd8, 0xff, 0x22, 0xff, 0xd9];
+        let executable = fake_ffmpeg(directory.path(), &stream_jpeg);
+        for native_ok in [true, false] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let device = format!("<tt:Media><tt:XAddr>{base}/media</tt:XAddr></tt:Media>");
+            let media = format!("<tt:Uri>{base}/image</tt:Uri>");
+            let server = tokio::spawn(async move {
+                let status = if native_ok {
+                    "200 OK"
+                } else {
+                    "502 Bad Gateway"
+                };
+                for (status, body) in [
+                    ("200 OK", device.as_bytes()),
+                    ("200 OK", media.as_bytes()),
+                    (status, native_jpeg.as_slice()),
+                ] {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 8192];
+                    assert_ne!(socket.read(&mut request).await.unwrap(), 0);
+                    let header = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    socket.write_all(header.as_bytes()).await.unwrap();
+                    socket.write_all(body).await.unwrap();
+                }
+            });
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let camera = OnvifTransport::new(
+                "camera".into(),
+                format!("{base}/device"),
+                "user".into(),
+                "unused".into(),
+                Some("main".into()),
+                directory.path().to_owned(),
+                Some(CaptureInput::Rtsp {
+                    executable: executable.clone(),
+                    url: "rtsp://127.0.0.1:8554/camera".into(),
+                }),
+                tx,
+            );
+            let result = camera
+                .execute(br#"{"op":"snapshot","device_id":"camera","command_id":"request"}"#)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.command_id, "request");
+            assert_eq!(result.status, CommandStatus::Succeeded);
+            let receipt = result.data.unwrap();
+            let path = receipt["properties"]["snapshot_path"].as_str().unwrap();
+            assert_eq!(
+                tokio::fs::read(path).await.unwrap(),
+                if native_ok { native_jpeg } else { stream_jpeg }
+            );
+            let event: Value = serde_json::from_slice(&rx.try_recv().unwrap().data).unwrap();
+            assert_eq!(event["data"]["path"], path);
+            assert!(event["data"].get("url").is_none());
+            server.await.unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn snapshot_download_bounds_declared_and_chunked_bodies() {

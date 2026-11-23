@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::Notify;
 
-use osdl_core::media::{v4l2::V4l2CameraConfig, Location, Protocol};
+use osdl_core::media::v4l2::V4l2Capture;
 use osdl_core::EngineHandle;
 use osdl_proto::v1 as pb;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -75,18 +75,12 @@ impl Publishers {
             "0.1",
         ]);
         if let Some(camera) = &source.v4l2 {
-            v4l2_capture(&mut command, camera);
+            encode_usb_preview(&mut command, camera);
         } else {
-            let h264_path = format!("{}_h264", request.source_id);
             let input = source
-                .endpoints
-                .iter()
-                .filter(|endpoint| {
-                    endpoint.protocol == Protocol::Rtsp && endpoint.location == Location::Local
-                })
-                .max_by_key(|endpoint| endpoint.path == h264_path)
+                .local_rtsp_input(engine.config().media_gateway.ports.rtsp)
                 .ok_or_else(|| Status::unavailable("camera RTSP source unavailable"))?;
-            command.args(["-rtsp_transport", "tcp", "-i", &input.url, "-c:v", "copy"]);
+            command.args(["-rtsp_transport", "tcp", "-i", &input, "-c:v", "copy"]);
         }
         command.args([
             "-map",
@@ -104,41 +98,38 @@ impl Publishers {
         }
         command.arg(&request.publish_url);
         let slot = self.acquire(request.source_id)?;
-        publish_process(command, shutdown, slot).await
+        publish_process(command, shutdown, slot, source.v4l2).await
     }
 }
 
-fn v4l2_capture(command: &mut tokio::process::Command, camera: &V4l2CameraConfig) {
-    let frame_rate = camera.frames_per_second.to_string();
-    command
-        .args([
-            "-f",
-            "v4l2",
-            "-input_format",
-            "mjpeg",
-            "-video_size",
-            &format!("{}x{}", camera.width, camera.height),
-            "-framerate",
-            &frame_rate,
-            "-i",
-        ])
-        .arg(&camera.device)
-        .args([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-tune",
-            "zerolatency",
-            "-profile:v",
-            "baseline",
-            "-pix_fmt",
-            "yuv420p",
-            "-threads:v",
-            "2",
-            "-g",
-            &frame_rate,
-        ]);
+fn encode_usb_preview(command: &mut tokio::process::Command, camera: &V4l2Capture) {
+    let frame_rate = camera.frames_per_second().to_string();
+    command.args([
+        "-f",
+        "mjpeg",
+        "-framerate",
+        &frame_rate,
+        "-analyzeduration",
+        "0",
+        "-probesize",
+        "32",
+        "-i",
+        "pipe:0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-tune",
+        "zerolatency",
+        "-profile:v",
+        "baseline",
+        "-pix_fmt",
+        "yuv420p",
+        "-threads:v",
+        "2",
+        "-g",
+        &frame_rate,
+    ]);
 }
 
 pub(crate) fn parse_target(value: &str) -> Result<url::Url, Status> {
@@ -161,16 +152,31 @@ async fn publish_process(
     mut command: tokio::process::Command,
     shutdown: Arc<Notify>,
     slot: Slot,
+    capture: Option<Arc<V4l2Capture>>,
 ) -> Result<PublishStream, Status> {
     let mut stopped = Box::pin(shutdown.notified_owned());
     stopped.as_mut().enable();
     let mut child = command
-        .stdin(Stdio::null())
+        .stdin(if capture.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
         .map_err(|_| Status::unavailable("device media runtime could not start"))?;
+    let stdin = child.stdin.take();
+    let mut feed = Box::pin(async move {
+        if let Some(camera) = capture {
+            camera
+                .feed_preview(stdin.expect("piped USB camera input"))
+                .await
+        } else {
+            std::future::pending().await
+        }
+    });
     let stdout = child
         .stdout
         .take()
@@ -186,6 +192,7 @@ async fn publish_process(
         loop {
             let line = tokio::select! {
                 _ = &mut stopped => return Err(Status::unavailable("device media runtime stopped")),
+                _ = &mut feed => return Err(Status::unavailable("USB camera preview stopped")),
                 _ = &mut diagnostics => unreachable!(),
                 line = progress.next_line() => line,
             }
@@ -207,6 +214,7 @@ async fn publish_process(
         loop {
             let ended: Result<bool, Status> = tokio::select! {
                 _ = &mut stopped => Ok(true),
+                _ = &mut feed => Err(Status::unavailable("USB camera preview stopped")),
                 _ = &mut diagnostics => unreachable!(),
                 status = child.wait() => {
                     if status.is_ok_and(|status| status.success()) { Ok(true) }
@@ -318,7 +326,7 @@ mod tests {
             .env("LAB_MEDIA_TEST_MARKER", &marker);
         let publishers = Publishers::default();
         let slot = publishers.acquire("camera-one".into()).unwrap();
-        let mut stream = publish_process(command, Arc::new(Notify::new()), slot)
+        let mut stream = publish_process(command, Arc::new(Notify::new()), slot, None)
             .await
             .unwrap();
         assert!(stream.next().await.unwrap().unwrap().running);
@@ -347,7 +355,7 @@ mod tests {
             .env("LAB_MEDIA_TEST_MARKER", &marker)
             .env("LAB_MEDIA_TEST_CLOSE_STDOUT", "1");
         let slot = Publishers::default().acquire("camera-one".into()).unwrap();
-        let mut stream = publish_process(command, Arc::new(Notify::new()), slot)
+        let mut stream = publish_process(command, Arc::new(Notify::new()), slot, None)
             .await
             .unwrap();
         assert!(stream.next().await.unwrap().unwrap().running);
@@ -389,7 +397,7 @@ mod tests {
             expires_at: now + 2,
         };
         let lease = registry.acquire(&identity).resource().unwrap();
-        let stream = publish_process(command, Arc::new(Notify::new()), slot)
+        let stream = publish_process(command, Arc::new(Notify::new()), slot, None)
             .await
             .unwrap();
         let mut stream = crate::authorization::stream::guard_stream(stream, Some(lease));
@@ -452,7 +460,7 @@ mod tests {
             expires_at: now + 2,
         };
         let lease = registry.acquire(&identity).resource().unwrap();
-        let stream = publish_process(command, Arc::new(Notify::new()), slot)
+        let stream = publish_process(command, Arc::new(Notify::new()), slot, None)
             .await
             .unwrap();
         let mut stream = crate::authorization::stream::guard_stream(stream, Some(lease));

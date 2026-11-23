@@ -1,32 +1,97 @@
 //! Updates to inventory reported by a configured transport owner.
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use serde_json::Value;
 
 use crate::{
+    media::{snapshot, v4l2::DepthCamera, MediaSourceConfig},
     protocol::{Device, DeviceStatus},
     OsdlEvent,
 };
 
 use super::{now_millis, EngineHandle, READ_ONLY_ADAPTER};
 
+/// Writes probe samples to the device owner selected at registration.
+pub struct ProbeObserver {
+    engine: EngineHandle,
+    device_id: String,
+    owner: String,
+}
+
+impl ProbeObserver {
+    pub async fn observe(&self, properties: Option<HashMap<String, Value>>) {
+        self.engine
+            .record_device_observation(&self.device_id, &self.owner, properties)
+            .await;
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Registration {
+    Device,
+    ColorCapture,
+    DepthProbe,
+}
+
 impl EngineHandle {
     pub(super) async fn publish_device(&self, device: Device) -> Result<(), String> {
-        let mut devices = self.devices.write().await;
-        if devices.get(&device.id).is_some_and(|current| {
-            current.transport_id != device.transport_id || current.adapter != device.adapter
-        }) {
-            return Err(format!(
-                "device ID '{}' is already registered with another transport or probe",
-                device.id
-            ));
-        }
-        let event = device
-            .online
-            .then(|| OsdlEvent::DeviceOnline(device.clone()));
-        devices.insert(device.id.clone(), device);
-        drop(devices);
+        self.publish_registration(device, Registration::Device)
+            .await
+    }
+
+    pub(super) async fn publish_color_capture(&self, device: Device) -> Result<(), String> {
+        self.publish_registration(device, Registration::ColorCapture)
+            .await
+    }
+
+    async fn publish_registration(
+        &self,
+        mut device: Device,
+        registration: Registration,
+    ) -> Result<(), String> {
+        let event = {
+            let mut devices = self.devices.write().await;
+            let current = match devices.entry(device.id.clone()) {
+                Entry::Vacant(entry) => entry.insert(device),
+                Entry::Occupied(entry) => {
+                    let current = entry.into_mut();
+                    let compatible = current.transport_id == device.transport_id
+                        && match registration {
+                            Registration::Device => current.adapter == device.adapter,
+                            Registration::ColorCapture | Registration::DepthProbe => {
+                                matches!(
+                                    current.adapter.as_str(),
+                                    READ_ONLY_ADAPTER | snapshot::PLATFORM
+                                )
+                            }
+                        };
+                    if !compatible {
+                        return Err(format!(
+                            "device ID '{}' is already registered with another transport or probe",
+                            device.id
+                        ));
+                    }
+                    match registration {
+                        Registration::Device => *current = device,
+                        // The probe owns identity, presence, and properties.
+                        Registration::ColorCapture => {
+                            current.adapter = device.adapter;
+                            current.actions = device.actions;
+                        }
+                        Registration::DepthProbe => {
+                            device.adapter = std::mem::take(&mut current.adapter);
+                            device.actions = std::mem::take(&mut current.actions);
+                            *current = device;
+                        }
+                    }
+                    current
+                }
+            };
+            current
+                .online
+                .then(|| OsdlEvent::DeviceOnline(current.clone()))
+        };
         if let Some(event) = event {
             self.emit(event);
         }
@@ -39,38 +104,67 @@ impl EngineHandle {
         device_type: &str,
         description: &str,
         role: Option<&str>,
-    ) -> Result<(), String> {
-        self.publish_device(Device {
-            id: id.into(),
-            transport_id: Self::probe_owner(id),
-            device_type: device_type.into(),
-            adapter: READ_ONLY_ADAPTER.into(),
-            description: description.into(),
-            online: false,
-            properties: HashMap::new(),
-            properties_timestamp_ms: 0,
-            actions: Vec::new(),
-            role: role.map(str::to_owned),
-        })
+    ) -> Result<ProbeObserver, String> {
+        self.register_probe(id, device_type, description, role, false)
+            .await
+    }
+
+    pub async fn register_depth_camera_probe(
+        &self,
+        id: &str,
+        device_type: &str,
+        description: &str,
+        probe: &DepthCamera,
+    ) -> Result<ProbeObserver, String> {
+        // Pair identical configured paths even while the device link is absent.
+        let paired = self.config.media_sources.iter().any(|source| match source {
+            MediaSourceConfig::V4l2Camera(camera) if camera.id == id => {
+                probe.matches_color_device(&camera.device)
+            }
+            _ => false,
+        });
+        self.register_probe(id, device_type, description, Some("camera"), paired)
+            .await
+    }
+
+    async fn register_probe(
+        &self,
+        id: &str,
+        device_type: &str,
+        description: &str,
+        role: Option<&str>,
+        paired: bool,
+    ) -> Result<ProbeObserver, String> {
+        let (owner, registration) = if paired {
+            (snapshot::transport_id_for(id), Registration::DepthProbe)
+        } else {
+            (format!("probe:{id}"), Registration::Device)
+        };
+        self.publish_registration(
+            Device {
+                id: id.into(),
+                transport_id: owner.clone(),
+                device_type: device_type.into(),
+                adapter: READ_ONLY_ADAPTER.into(),
+                description: description.into(),
+                online: false,
+                properties: HashMap::new(),
+                properties_timestamp_ms: 0,
+                actions: Vec::new(),
+                role: role.map(str::to_owned),
+            },
+            registration,
+        )
         .await?;
         self.emit(OsdlEvent::DeviceOffline {
             device_id: id.into(),
         });
         self.broadcast_status().await;
-        Ok(())
-    }
-
-    pub async fn observe_read_only_device(
-        &self,
-        id: &str,
-        properties: Option<HashMap<String, Value>>,
-    ) {
-        self.record_device_observation(id, &Self::probe_owner(id), properties)
-            .await;
-    }
-
-    fn probe_owner(id: &str) -> String {
-        format!("probe:{id}")
+        Ok(ProbeObserver {
+            engine: self.clone(),
+            device_id: id.into(),
+            owner,
+        })
     }
 
     /// Update the owning transport's cached observation. Identical samples

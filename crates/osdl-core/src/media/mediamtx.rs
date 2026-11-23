@@ -31,8 +31,7 @@ pub struct MediaGatewayConfig {
     #[serde(default)]
     pub binary: Option<PathBuf>,
 
-    /// Explicit device-local FFmpeg executable for remote camera publishing.
-    /// Missing binaries leave remote publishing unavailable.
+    /// Device-local FFmpeg executable for publishing and stream snapshots.
     #[serde(default)]
     pub ffmpeg_binary: Option<PathBuf>,
     #[serde(default)]

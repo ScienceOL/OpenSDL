@@ -2,13 +2,8 @@
 //! command/response `Transport` + `ProtocolAdapter` model.
 //!
 //! Media sources declare either upstream RTSP URLs or local capture devices.
-//! The engine supervises a shared MediaMTX process for RTSP sources.
-//! The authenticated publisher opens local capture devices on demand.
-//!
-//! The engine does not implement the camera control plane (PTZ / snapshot /
-//! presets) — that lives outside core for now. Core's job is to make the
-//! stream available to consumers (browsers, AI pipelines, recorders) at
-//! stable URLs.
+//! The engine supervises MediaMTX for RTSP sources and opens USB capture
+//! devices on demand. Preview and camera commands share those media inputs.
 
 /// A MediaMTX path name and the resulting ONVIF camera identifier.
 pub fn is_valid_media_path_name(name: &str) -> bool {
@@ -23,6 +18,7 @@ pub const MAX_SNAPSHOT_BYTES: usize = 2 * 1024 * 1024;
 
 pub mod mediamtx;
 pub mod onvif_camera;
+pub(crate) mod snapshot;
 pub mod v4l2;
 
 use serde::{Deserialize, Serialize};

@@ -9,6 +9,9 @@ use serde_json::Value;
 
 use super::is_valid_media_path_name;
 
+mod capture;
+pub use capture::V4l2Capture;
+
 /// A local MJPEG color capture source encoded on demand for remote playback.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +69,10 @@ pub struct DepthCamera {
 }
 
 impl DepthCamera {
+    pub(crate) fn matches_color_device(&self, device: &Path) -> bool {
+        self.color_device.as_deref() == Some(device)
+    }
+
     pub fn validate(&self) -> Result<()> {
         if is_device_path(&self.depth_device)
             && self.color_device.as_deref().is_none_or(is_device_path)

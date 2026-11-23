@@ -1,11 +1,10 @@
+mod media;
 mod simulation;
 use crate::adapter::ProtocolAdapter;
 use crate::config::OsdlConfig;
 use crate::event::OsdlEvent;
-use crate::media::mediamtx::MediamtxProcess;
-use crate::media::v4l2::V4l2CameraConfig;
+use crate::media::v4l2::V4l2Capture;
 use crate::media::MediaEndpoint;
-use crate::media::MediaSourceConfig;
 use crate::mqtt::MqttBridge;
 use crate::protocol::*;
 use crate::store::EventStore;
@@ -14,7 +13,6 @@ use crate::transport::espnow_dongle::{
     transport_id_for as espnow_transport_id, EspNowDongleClient, EspNowNodeTransport, Mac, RegEvent,
 };
 use crate::transport::mqtt_serial::MqttSerialTransport;
-use crate::transport::onvif::{transport_id_for as onvif_transport_id, OnvifTransport};
 use crate::transport::simulation::{
     device_id_for as simulation_device_id, transport_id_for as simulation_transport_id,
     BuiltinSimulationBackendFactory, SimulationBackendFactory, SimulationTransport,
@@ -22,11 +20,12 @@ use crate::transport::simulation::{
 use crate::transport::{Transport, TransportRx};
 
 use rumqttc::AsyncClient;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 
 mod observations;
+pub use observations::ProbeObserver;
 
 /// Buffer size for the broadcast events channel. Slow subscribers that fall
 /// further behind than this start receiving `RecvError::Lagged(n)` so they
@@ -103,17 +102,7 @@ pub struct MediaSourceState {
     pub description: String,
     pub endpoints: Vec<MediaEndpoint>,
     #[serde(skip)]
-    pub v4l2: Option<V4l2CameraConfig>,
-}
-
-impl MediaSourceState {
-    fn online_event(&self) -> OsdlEvent {
-        OsdlEvent::MediaSourceOnline {
-            id: self.id.clone(),
-            description: self.description.clone(),
-            endpoints: self.endpoints.clone(),
-        }
-    }
+    pub v4l2: Option<Arc<V4l2Capture>>,
 }
 
 const READ_ONLY_ADAPTER: &str = "read_only";
@@ -126,7 +115,8 @@ impl EngineHandle {
     }
 
     pub fn snapshot_root(&self) -> Option<std::path::PathBuf> {
-        self.data_dir().map(|path| path.join("snapshots"))
+        self.data_dir()
+            .map(|path| path.join(crate::media::onvif_camera::SNAPSHOT_SUBDIR))
     }
 
     pub async fn list_devices(&self) -> Vec<Device> {
@@ -356,6 +346,9 @@ impl OsdlEngine {
     /// don't fail construction — that matches the previous in-`run()`
     /// behavior.
     pub fn new(config: OsdlConfig, mut adapters: Vec<Box<dyn ProtocolAdapter>>) -> Self {
+        if !config.media_sources.is_empty() {
+            adapters.push(Box::new(crate::media::snapshot::Adapter));
+        }
         if !config.qx96m_instruments.is_empty() {
             adapters.push(Box::new(crate::qx96m::Adapter));
         }
@@ -767,205 +760,6 @@ impl OsdlEngine {
         self.handle.media_sources.write().await.clear();
 
         let _ = self.handle.status_tx.send(OsdlStatus::Disconnected);
-    }
-
-    async fn media_gateway_down(&self, reason: String) {
-        let mut sources = self.handle.media_sources.write().await;
-        sources.retain(|_, source| source.v4l2.is_some());
-        self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
-        // Consumers clear their gateway snapshot on this event. Replay direct
-        // capture sources, which remain available without MediaMTX.
-        for source in sources.values() {
-            self.handle.emit(source.online_event());
-        }
-    }
-
-    /// Start MediaMTX for RTSP-backed sources and register direct capture sources.
-    /// Returns the process handle so the caller can shut it down.
-    async fn start_media_gateway(&self) -> Option<MediamtxProcess> {
-        let cfg = &self.handle.config;
-        if cfg.media_sources.is_empty() {
-            return None;
-        }
-
-        // Validate all sources before spawning. Catches misconfigurations
-        // like remote_rtmp without a transcode path that would otherwise
-        // silently produce dead playback URLs.
-        let mut ids = HashSet::new();
-        for src in &cfg.media_sources {
-            let valid = src.validate().and_then(|()| {
-                ids.insert(src.id())
-                    .then_some(())
-                    .ok_or_else(|| format!("Duplicate media source ID: {}", src.id()))
-            });
-            if let Err(reason) = valid {
-                log::error!("Media source rejected: {reason}");
-                self.handle.emit(OsdlEvent::MediaGatewayDown { reason });
-                return None;
-            }
-        }
-
-        let gateway = &cfg.media_gateway;
-        let all_paths: Vec<_> = cfg
-            .media_sources
-            .iter()
-            .flat_map(MediaSourceConfig::paths)
-            .collect();
-        let proc = if all_paths.is_empty() {
-            None
-        } else {
-            match MediamtxProcess::spawn(gateway, &all_paths).await {
-                Ok(proc) => Some(proc),
-                Err(error) => {
-                    log::error!("Failed to start media gateway: {error}");
-                    self.handle.emit(OsdlEvent::MediaGatewayDown {
-                        reason: error.to_string(),
-                    });
-                    None
-                }
-            }
-        };
-
-        // Commit each entry to the shared map BEFORE emitting the
-        // live event. A subscriber that races the emit window finds
-        // the snapshot already populated; a subscriber that arrives
-        // after engine startup sees both the snapshot replay and any
-        // live event still in the broadcast buffer (clients dedupe by
-        // camera id). The reverse order — emit first, commit later —
-        // creates a window where a fresh subscriber observes neither.
-        let mut registered = HashMap::new();
-        let mut online = Vec::new();
-        for src in &cfg.media_sources {
-            let (endpoints, v4l2) = match src {
-                MediaSourceConfig::OnvifCamera(_) if proc.is_some() => {
-                    (src.endpoints(&gateway.advertise_host, &gateway.ports), None)
-                }
-                MediaSourceConfig::OnvifCamera(_) => continue,
-                MediaSourceConfig::V4l2Camera(camera) => {
-                    if gateway.publisher_binary().is_none() {
-                        log::warn!("V4L2 source {} requires an FFmpeg binary", src.id());
-                        continue;
-                    }
-                    if !matches!(camera.supports_mjpeg(), Ok(true)) {
-                        log::warn!("V4L2 source {} cannot open MJPEG capture", src.id());
-                        continue;
-                    }
-                    (Vec::new(), Some(camera.clone()))
-                }
-            };
-            let source = MediaSourceState {
-                id: src.id().to_string(),
-                description: src.description().to_string(),
-                endpoints,
-                v4l2,
-            };
-            online.push(source.online_event());
-            log::info!("Media source online: {}", src.id());
-            registered.insert(source.id.clone(), source);
-        }
-        let mut sources_map = self.handle.media_sources.write().await;
-        *sources_map = registered;
-        for event in online {
-            self.handle.emit(event);
-        }
-        drop(sources_map);
-
-        // Register ONVIF control devices for any camera with a `control:`
-        // block. This is what makes `lab send cam1 ptz_move ...` work
-        // without a separate camera-control RPC — the camera shows up in
-        // `list_devices`, and `send_command` routes through OnvifTransport
-        // exactly the way it does for pumps and stirrers.
-        if proc.is_some() {
-            self.register_onvif_control_devices().await;
-        }
-
-        proc
-    }
-
-    /// Walk `media_sources` and register a control-plane `Device` for
-    /// every ONVIF camera that has a `control:` block. Idempotent: skips
-    /// cameras that are already registered (so a transient mediamtx
-    /// restart doesn't duplicate devices).
-    async fn register_onvif_control_devices(&self) {
-        // Snapshot directory: `<data_dir>/snapshots`. Falls back to a
-        // process-temp subdir when no data_dir was configured (tests do
-        // this); the warning is logged so a real deployment doesn't
-        // silently lose snapshots into /tmp.
-        let snapshot_root = match self.handle.config.data_dir.clone() {
-            Some(dir) => dir.join(crate::media::onvif_camera::SNAPSHOT_SUBDIR),
-            None => {
-                let fallback = std::env::temp_dir().join("osdl-snapshots");
-                log::warn!(
-                    "No data_dir configured; snapshots will land in {} — set OsdlConfig.data_dir for a stable location",
-                    fallback.display(),
-                );
-                fallback
-            }
-        };
-
-        for src in &self.handle.config.media_sources {
-            let MediaSourceConfig::OnvifCamera(cam) = src else {
-                continue;
-            };
-            let Some(ctrl) = cam.control.as_ref() else {
-                continue;
-            };
-
-            let transport_id = onvif_transport_id(&cam.id);
-            // Idempotent: a second start_media_gateway() (e.g. mediamtx
-            // recovery) shouldn't double-register the device.
-            if self
-                .handle
-                .transports
-                .read()
-                .await
-                .contains_key(&transport_id)
-            {
-                continue;
-            }
-
-            let snapshot_url_base = None; // future: serve under mediamtx http
-            let transport = Arc::new(OnvifTransport::new(
-                cam.id.clone(),
-                ctrl.onvif_url.clone(),
-                ctrl.username.clone(),
-                ctrl.password.clone(),
-                ctrl.profile_token.clone(),
-                snapshot_root.clone(),
-                snapshot_url_base,
-                self.handle.transport_rx_tx.clone(),
-            ));
-
-            self.handle
-                .transports
-                .write()
-                .await
-                .insert(transport_id.clone(), transport);
-
-            let device = Device {
-                id: cam.id.clone(),
-                transport_id: transport_id.clone(),
-                device_type: crate::adapter::onvif::DEVICE_TYPE_COMBINED.to_string(),
-                adapter: crate::adapter::onvif::PLATFORM.to_string(),
-                description: cam
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| format!("ONVIF camera {}", cam.id)),
-                online: true,
-                properties: HashMap::new(),
-                properties_timestamp_ms: now_millis(),
-                actions: crate::adapter::onvif::OnvifAdapter::combined_actions(),
-                role: Some("camera".into()),
-            };
-            log::info!(
-                "ONVIF control registered: {} → {} ({})",
-                cam.id,
-                transport_id,
-                ctrl.onvif_url,
-            );
-            self.publish_discovered_device(device).await;
-        }
-        self.handle.broadcast_status().await;
     }
 
     /// Route incoming MQTT messages to the appropriate handler.
