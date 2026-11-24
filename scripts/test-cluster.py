@@ -237,24 +237,8 @@ def initialize(pki, binary, controls, endpoints):
 
 def gateway_fixture(stack, pki, controllers, gateway_ports):
     root = pki.root
-    client_env = LABADM_ENV.copy()
-    if sys.platform == "linux":
-        client_env.update(
-            XDG_CONFIG_HOME=str(root / "gateway-config"),
-            XDG_CACHE_HOME=str(root / "gateway-cache"),
-            XDG_STATE_HOME=str(root / "gateway-state"),
-            XDG_RUNTIME_DIR=str(root / "gateway-runtime"),
-        )
-        Path(client_env["XDG_RUNTIME_DIR"]).mkdir(mode=0o700)
-        instances = Path(client_env["XDG_CONFIG_HOME"]) / "osdl" / "instances"
-    elif sys.platform == "win32":
-        # ProjectDirs uses Windows Known Folders. An isolated, unique binding
-        # directory leaves existing laboratory instances untouched.
-        instances = Path(os.environ["APPDATA"]) / "scienceol" / "osdl" / "config" / "instances"
-    else:
+    if sys.platform not in ("linux", "win32"):
         return None
-    instances.mkdir(parents=True, exist_ok=True)
-    instance_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="gateway-qa-", dir=instances)))
 
     def b64(data):
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -265,10 +249,9 @@ def gateway_fixture(stack, pki, controllers, gateway_ports):
     assert spki[:12] == bytes.fromhex("302a300506032b6570032100") and len(spki) == 44
     binding = {
         "issuer": "https://liyanlabs.local", "channel": "dev", "account_id": "cluster-fixture",
-        "lab_id": str(uuid.uuid4()), "instance": instance_dir.name, "key_id": "fixture",
+        "lab_id": str(uuid.uuid4()), "key_id": "fixture",
         "public_key": b64(spki[-32:]),
     }
-    write_config(instance_dir, "account", **binding)
 
     def token(scope):
         now = int(time.time())
@@ -286,11 +269,38 @@ def gateway_fixture(stack, pki, controllers, gateway_ports):
         )
         return f"{signing_input}.{b64(signature)}"
 
-    for path, port in zip(controllers, gateway_ports):
+    replica_envs = []
+    for i, (path, port) in enumerate(zip(controllers, gateway_ports, strict=True)):
+        replica_env = LABADM_ENV.copy()
+        if sys.platform == "linux":
+            # Each control-plane host owns its account membership, profile and
+            # discovery state. Replicas share the laboratory ID and signing key.
+            host = root / f"gateway-host-{i}"
+            runtime = host / "run"
+            runtime.mkdir(mode=0o700, parents=True)
+            replica_env.update(
+                XDG_CONFIG_HOME=str(host / "config"),
+                XDG_CACHE_HOME=str(host / "cache"),
+                XDG_STATE_HOME=str(host / "state"),
+                XDG_RUNTIME_DIR=str(runtime),
+            )
+            instance_dir = host / "config" / "osdl" / "instances" / "gateway-qa"
+            instance_dir.mkdir(parents=True)
+        else:
+            # ProjectDirs resolves Windows Known Folders, so isolate the
+            # replicas by local instance name on this machine.
+            instances = Path(os.environ["APPDATA"]) / "scienceol" / "osdl" / "config" / "instances"
+            instances.mkdir(parents=True, exist_ok=True)
+            instance_dir = Path(stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="gateway-qa-", dir=instances)
+            ))
+        write_config(instance_dir, "account", instance=instance_dir.name, **binding)
         config = json.loads(path.read_text())
-        config["account_gateway"] = {"listen": f"{LOOPBACK}:{port}", "instance": binding["instance"]}
+        config["account_gateway"] = {"listen": f"{LOOPBACK}:{port}", "instance": instance_dir.name}
         path.write_text(json.dumps(config), encoding="utf-8")
-    return client_env, token("opensdl:read"), token("opensdl:read opensdl:operate")
+        replica_envs.append(replica_env)
+    client = LABADM_ENV, token("opensdl:read"), token("opensdl:read opensdl:operate")
+    return replica_envs, client
 
 
 def check_gateway_inventory_and_dispatch(binary, root, port, fixture, home, peer):
@@ -525,9 +535,12 @@ def exercise(binary, lab, openssl):
             client_paths.append(path)
         routed_endpoints = [f"https://{LOOPBACK}:{path.server_address[1]}" for path in client_paths]
         controls = initialize(pki, binary, (first, second), routed_endpoints + endpoints[2:])
-        fixture = gateway_fixture(stack, pki, controls, (first_gateway, second_gateway))
-        control_env = fixture[0] if fixture else LABADM_ENV
-        daemons = [start(stack, binary, path, "serve", env=control_env) for path in controls]
+        gateways = gateway_fixture(stack, pki, controls, (first_gateway, second_gateway))
+        control_envs, fixture = gateways or ([LABADM_ENV] * len(controls), None)
+        daemons = [
+            start(stack, binary, path, "serve", env=env)
+            for path, env in zip(controls, control_envs, strict=True)
+        ]
         control_endpoints = [f"https://{LOOPBACK}:{port}" for port in (first, second)]
         config = write_config(root, "client", cluster="lab", endpoints=control_endpoints,
                               tls=pki.tls("operator", "control"))
