@@ -330,8 +330,9 @@ pub async fn run(args: ServeArgs) -> anyhow::Result<()> {
                 args.auth_token.is_none(),
                 "--auth account cannot be combined with --auth-token / OSDL_AUTH_TOKEN"
             );
-            osdl_server::auth::ListenerAuth::Account(osdl_server::account::AccountAuth::new(
-                osdl_server::account::Binding::load(&paths.config_dir, &args.instance)?,
+            osdl_server::auth::ListenerAuth::Account(osdl_server::account::AccountAuth::open(
+                &paths.config_dir,
+                &args.instance,
             )?)
         }
         AuthMode::Local => {

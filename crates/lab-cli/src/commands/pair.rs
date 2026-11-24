@@ -26,6 +26,11 @@ pub enum AuthCommand {
         #[arg(long)]
         valid_for: Option<String>,
     },
+    /// Administer LiyanLabs accounts on an account-authenticated laboratory.
+    Account {
+        #[command(subcommand)]
+        cmd: super::account::AccountCommand,
+    },
     List,
     Revoke {
         id: String,
@@ -84,13 +89,17 @@ pub async fn pair(args: PairArgs) -> Result<()> {
     );
     Ok(())
 }
-pub async fn admin(cmd: AuthCommand, instance: Option<String>) -> Result<()> {
-    let (channel, interceptor) = crate::client::local_admin(instance).await?;
+pub async fn admin(cmd: AuthCommand, opts: crate::client::ClientOpts) -> Result<()> {
+    if let AuthCommand::Account { cmd } = cmd {
+        return super::account::admin(cmd, opts).await;
+    }
+    let (channel, interceptor) = crate::client::local_admin(opts.instance).await?;
     let mut client = pb::grant_administration_client::GrantAdministrationClient::with_interceptor(
         channel,
         interceptor,
     );
     match cmd {
+        AuthCommand::Account { .. } => unreachable!("account administration already dispatched"),
         AuthCommand::Invite { access, valid_for } => {
             let access = match access {
                 Some(v) => v,

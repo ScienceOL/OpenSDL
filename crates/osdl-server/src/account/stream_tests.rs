@@ -45,6 +45,7 @@ async fn bounded_handoff_and_unpolled_consumer_cancellation_release_all_owners()
     let mut completions = Vec::new();
     for _ in 0..128 {
         let identity = Identity {
+            subject: "account-owner".into(),
             principal: Principal {
                 device_id: uuid::Uuid::new_v4(),
                 device_generation: 1,
@@ -96,6 +97,7 @@ async fn measure_bounded_stream_delivery_for_short_and_long_histories() {
                 .unwrap()
                 .as_secs();
             let identity = Identity {
+                subject: "account-owner".into(),
                 principal: Principal {
                     device_id: uuid::Uuid::new_v4(),
                     device_generation: 1,

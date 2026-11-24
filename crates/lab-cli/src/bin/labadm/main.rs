@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 use lab_cli::cluster::{self, config, tls};
 use lab_cli::runtime::{run_engine, EngineArgs, EngineMode};
 use osdl_proto::cluster::v1::control_plane_server::ControlPlaneServer;
-use osdl_server::account::{AccountAuth, Binding};
+use osdl_server::account::{AccountAdminEndpoint, AccountAuth};
 use osdl_server::MediaRelay;
 use tokio::{net::TcpListener, signal};
 use tokio_stream::wrappers::TcpListenerStream;
@@ -56,7 +56,10 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     osdl_auth::crypto_provider();
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("warn,opensdl::account_audit=info"),
+    )
+    .init();
     let Cli {
         cluster_config,
         command,
@@ -153,6 +156,8 @@ async fn manage(command: Command, path: &Path) -> Result<()> {
 struct AccountGateway {
     listener: TcpListener,
     account: AccountAuth,
+    administration: AccountAdminEndpoint,
+    profile_dir: PathBuf,
     gateway: gateway::Gateway,
     media_relay: Option<MediaRelay>,
 }
@@ -164,9 +169,12 @@ async fn prepare_account_gateway(
     let Some(config) = config else {
         return Ok(None);
     };
-    let config_dir = osdl_server::Paths::config_directory().map_err(anyhow::Error::msg)?;
-    let binding = Binding::load(&config_dir, &config.instance).context("load gateway account")?;
-    let account = AccountAuth::new(binding)?;
+    let paths = osdl_server::Paths::discover().map_err(anyhow::Error::msg)?;
+    let account =
+        AccountAuth::open(&paths.config_dir, &config.instance).context("load gateway account")?;
+    let administration = AccountAdminEndpoint::bind(&account, &paths)
+        .await
+        .context("bind local gateway administration")?;
     let media_relay = config
         .media_relay
         .as_deref()
@@ -180,6 +188,8 @@ async fn prepare_account_gateway(
     Ok(Some(AccountGateway {
         listener,
         account,
+        administration,
+        profile_dir: paths.state_dir,
         gateway,
         media_relay,
     }))
@@ -189,6 +199,8 @@ async fn run_account_gateway(gateway: Option<AccountGateway>) -> Result<()> {
     let Some(AccountGateway {
         listener,
         account,
+        administration,
+        profile_dir,
         gateway,
         media_relay,
     }) = gateway
@@ -196,7 +208,8 @@ async fn run_account_gateway(gateway: Option<AccountGateway>) -> Result<()> {
         return std::future::pending().await;
     };
     log::info!("account gateway listening on {}", listener.local_addr()?);
-    osdl_server::serve_account_endpoint(listener, account, gateway, media_relay)
-        .await
-        .context("serve account gateway")
+    tokio::select! {
+        result = osdl_server::serve_account_endpoint(listener, account, gateway, media_relay, &profile_dir) => result.context("serve account gateway"),
+        result = administration.serve() => result.context("serve local gateway administration"),
+    }
 }

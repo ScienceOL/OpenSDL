@@ -388,6 +388,7 @@ mod tests {
             .unwrap()
             .as_secs();
         let mut identity = crate::account::Identity {
+            subject: "account-owner".into(),
             principal: crate::account::Principal {
                 device_id: uuid::Uuid::new_v4(),
                 device_generation: 1,
@@ -451,6 +452,7 @@ mod tests {
             .unwrap()
             .as_secs();
         let identity = crate::account::Identity {
+            subject: "account-owner".into(),
             principal: crate::account::Principal {
                 device_id: uuid::Uuid::new_v4(),
                 device_generation: 1,

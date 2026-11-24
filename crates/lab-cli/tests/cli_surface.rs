@@ -20,3 +20,30 @@ fn help_identifies_lab_as_the_user_facing_cli() {
     assert!(stdout.contains("build"));
     assert!(stdout.contains("split"));
 }
+
+#[test]
+fn account_membership_mutation_requires_the_explicit_local_instance() {
+    let lab = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lab"));
+        for option in ["OSDL_INSTANCE", "OSDL_ENDPOINT", "OSDL_AUTH_TOKEN"] {
+            command.env_remove(option);
+        }
+        command.args(["auth", "account", "grant", "member", "--role", "viewer"]);
+        command
+    };
+    let missing = lab().output().expect("run account grant");
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("requires --instance"));
+
+    let remote = lab()
+        .args([
+            "--instance",
+            "lab",
+            "--endpoint",
+            "http://198.51.100.1:50051",
+        ])
+        .output()
+        .expect("run account grant with endpoint");
+    assert!(!remote.status.success());
+    assert!(String::from_utf8_lossy(&remote.stderr).contains("on the laboratory host"));
+}

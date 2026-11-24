@@ -1,6 +1,7 @@
 # Account authentication
 
-OpenSDL 0.5.2 can bind one laboratory instance to a LiyanLabs account:
+An account-authenticated OpenSDL laboratory has one bound LiyanLabs owner
+and can admit other accounts from the same environment.
 
 ```sh
 lab login --server https://liyanlabs.com --instance laboratory
@@ -31,19 +32,46 @@ See [paired and local authentication](paired-authentication.md).
 The separate `osdl.v1.Authentication.Info` RPC exposes only mode, lab UUID,
 instance, issuer and channel. Mode is `account`, `public_key`, `bearer`, or `local`. All TCP
 operational account requests carry `authorization: Bearer <assertion>`. OpenSDL
-verifies the pinned Ed25519 key, exact issuer/account/lab/channel, device UUID,
-positive generation, installation UUID, issuance/expiry and a maximum 300-second
-lifetime locally. Scope is `opensdl:read` or `opensdl:read opensdl:operate`;
-SendCommand requires operate and account assertions never authorize Shutdown.
-Authenticated Status includes the current laboratory display profile and whether
-the caller may edit it. UpdateLabProfile requires operate scope for the bound
-account on the account listener. Protected local administrator endpoints also
-permit edits. Static bearer TCP and public-key paired connections can read the
-profile. Updates change the display name and description and require the
-current profile revision from Status.
+verifies the pinned Ed25519 key, exact issuer/lab/channel, signed account
+subject, device UUID, positive generation, installation UUID, issuance/expiry
+and a maximum 300-second lifetime before consulting the lab's role assignment.
+The bound owner has implicit membership. Other valid accounts need an explicit grant.
+
+## Sharing a laboratory
+
+Run these commands on the host as the OS user running the laboratory service.
+Use the exact LiyanLabs account ID from the laboratory's environment.
+
+```sh
+lab auth account list --instance laboratory
+lab auth account grant ACCOUNT_ID --role viewer --instance laboratory
+lab auth account grant ACCOUNT_ID --role operator --instance laboratory
+lab auth account revoke ACCOUNT_ID --instance laboratory
+```
+
+| Role | Capabilities |
+| --- | --- |
+| Viewer | Read status, devices and observations, including event and camera streams |
+| Operator | Viewer capabilities and device commands with operate scope |
+| Admin | Operator capabilities and laboratory profile edits with operate scope |
+| Bound owner | Admin capabilities |
+
+A read-only assertion limits every role to observation. The laboratory advertises
+profile editability through authenticated Status. Profile updates require the
+current revision. Service shutdown and membership administration require the
+protected local OS administrator endpoint. The paired-computer grant commands
+remain under `lab auth invite`, `lab auth list` and `lab auth revoke`.
+
+The membership database lives in a private subdirectory alongside the instance's
+`account.json`. The running service is the sole writer. Grant and revoke take
+effect live. Revocation and role changes release the affected account's active
+subscriptions and camera publishers before confirmation. An operation accepted
+before a revoke may already have reached the instrument. The service audit log
+target `opensdl::account_audit` records the verified subject, device, generation
+and installation for device command submissions and profile updates.
 
 `Authentication.Renew` verifies the newly presented assertion and returns
-`expires_at` (Unix seconds). It extends active leases for precisely the same device,
+`expires_at` (Unix seconds). It extends active leases for precisely the same account subject, device,
 generation and installation. The Runner renews before swapping its in-memory
 bearer. Existing event streams and camera publisher processes remain in place.
 Expired leases cannot be revived: the stream ends with UNAUTHENTICATED and the
@@ -60,7 +88,6 @@ Independent public-key pairing is a separate explicit mode, described in
 
 Authentication failures use gRPC UNAUTHENTICATED and metadata
 `opensdl-auth-error`: `account_mismatch`, `authorization_expired`, or
-`invalid_assertion`. Account mismatch and expiry are classified only after
-signature and claim-shape verification. Active stream expiry carries the same
-`authorization_expired` metadata. No expected owner ID or assertion bytes are
-returned. Scope violations and account Shutdown remain PERMISSION_DENIED.
+`invalid_assertion`. `account_mismatch` indicates that a valid account lacks laboratory membership or its
+active lease was revoked. Expired requests and streams carry
+`authorization_expired`. Authentication errors omit the owner ID and assertion bytes. Scope violations and account Shutdown remain PERMISSION_DENIED.

@@ -38,10 +38,8 @@ impl pb::authentication_server::Authentication for AuthenticationService {
                 "account authentication is not configured",
             ));
         };
-        let identity = account.verifier.authenticate(&request)?;
-        account.leases.renew(&identity);
         Ok(Response::new(pb::AuthenticationRenewResponse {
-            expires_at: identity.expires_at as i64,
+            expires_at: account.renew(&request)? as i64,
         }))
     }
 }

@@ -189,7 +189,7 @@ fn main() {
                 match other {
                     Command::Serve(_) => unreachable!(),
                     Command::Pair(args) => commands::pair::pair(args).await,
-                    Command::Auth {cmd} => commands::pair::admin(cmd, opts.instance).await,
+                    Command::Auth {cmd} => commands::pair::admin(cmd, opts).await,
                     Command::Login(args) => commands::login::run(args, opts.instance).await,
                     Command::Asset { cmd } => commands::asset::run(cmd, cache_dir).await,
                     Command::Daemon { cmd } => commands::daemon::run(cmd, cache_dir).await,

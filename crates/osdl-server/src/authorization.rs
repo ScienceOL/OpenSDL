@@ -65,21 +65,7 @@ impl Authorizer {
                 _ => Ok((None, false)),
             },
             Self::PublicKey(auth) => Ok((Some(auth.authorize(request, permission)?), false)),
-            Self::Account(auth) => {
-                let identity = auth.verifier.authenticate(request)?;
-                let can_operate = identity.scope == crate::account::Scope::Operate;
-                match permission {
-                    Permission::Shutdown => {
-                        return Err(Status::permission_denied("local_administrator_required"))
-                    }
-                    Permission::Operate if !can_operate => {
-                        return Err(Status::permission_denied("operate_required"))
-                    }
-                    _ => {}
-                }
-                let lease = auth.leases.acquire(&identity).resource()?;
-                Ok((Some(lease), can_operate))
-            }
+            Self::Account(auth) => auth.authorize(request, permission),
         }
     }
 }

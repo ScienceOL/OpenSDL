@@ -200,27 +200,10 @@ pub async fn serve_with_worker(
     // live server has the lock), then bind. Failures here propagate
     // naturally; the lockfile guard will clean up on drop.
     #[cfg(unix)]
-    let unix_listener = if let Some(ref socket_path) = effective_socket_path {
-        let parent = socket_path
-            .parent()
-            .ok_or_else(|| ServeError::Auth("invalid_socket_path".into()))?;
-        osdl_auth::ProfileStore::open(parent.to_path_buf())
-            .map_err(|e| ServeError::Auth(format!("Unix socket directory {} must be a real directory owned by the service user with mode 0700; choose a canonical path and create it as that user: {e}", parent.display())))?;
-        match std::fs::remove_file(socket_path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(ServeError::Io(e)),
-        }
-        let listener = tokio::net::UnixListener::bind(socket_path).map_err(ServeError::Io)?;
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(socket_path, perms).map_err(ServeError::Io)?;
-        }
-        Some(listener)
-    } else {
-        None
-    };
+    let unix_listener = effective_socket_path
+        .as_deref()
+        .map(listeners::bind_unix_socket)
+        .transpose()?;
 
     let identity = ServerIdentity {
         instance: cfg.instance.clone(),

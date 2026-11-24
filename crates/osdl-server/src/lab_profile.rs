@@ -142,7 +142,11 @@ impl Store {
             if let Some(lease) = &authority {
                 lease.check_current()?;
             }
-            self.persist(next)
+            let updated = self.persist(next)?;
+            if let Some(lease) = &authority {
+                lease.audit_account("update_lab_profile", &updated.revision);
+            }
+            Ok(updated)
         })
         .await
         .map_err(|_| Status::internal("could not save laboratory profile"))?

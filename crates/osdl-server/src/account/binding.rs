@@ -30,18 +30,20 @@ pub(super) fn uuid(value: &str) -> anyhow::Result<uuid::Uuid> {
     );
     Ok(id)
 }
+pub(super) fn valid_subject(subject: &str) -> bool {
+    !subject.is_empty()
+        && subject.len() <= 256
+        && subject.trim() == subject
+        && !subject.chars().any(char::is_control)
+}
+
 impl Binding {
     pub fn validate(&self) -> anyhow::Result<()> {
         ensure!(
             channel_for_origin(&self.issuer)? == self.channel,
             "binding environment mismatch"
         );
-        ensure!(
-            !self.account_id.is_empty()
-                && self.account_id.len() <= 256
-                && self.account_id.trim() == self.account_id,
-            "invalid binding account"
-        );
+        ensure!(valid_subject(&self.account_id), "invalid binding account");
         uuid(&self.lab_id)?;
         ensure!(
             osdl_auth::valid_instance_name(&self.instance),

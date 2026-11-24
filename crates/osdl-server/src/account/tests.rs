@@ -2,7 +2,7 @@ use super::*;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::json;
-fn fixture() -> (Binding, Ed25519KeyPair) {
+pub(super) fn fixture() -> (Binding, Ed25519KeyPair) {
     let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
     (
         Binding {
@@ -17,7 +17,7 @@ fn fixture() -> (Binding, Ed25519KeyPair) {
         key,
     )
 }
-fn claims() -> serde_json::Value {
+pub(super) fn claims() -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -35,7 +35,7 @@ fn claims() -> serde_json::Value {
         "exp":now+300,
     })
 }
-fn token(key: &Ed25519KeyPair, claims: serde_json::Value) -> String {
+pub(super) fn token(key: &Ed25519KeyPair, claims: serde_json::Value) -> String {
     let data = format!(
         "{}.{}",
         B64.encode(br#"{"alg":"EdDSA","typ":"liyanlabs.opensdl.identity+jwt","kid":"dev-key"}"#),
@@ -52,6 +52,17 @@ fn real_ed25519_identity_is_accepted() {
     let (binding, key) = fixture();
     let verifier = Verifier::new(binding).unwrap();
     assert!(verifier.verify(&token(&key, claims())).is_ok());
+}
+#[test]
+fn valid_assertion_for_another_subject_reaches_membership_authorization() {
+    let (binding, key) = fixture();
+    let verifier = Verifier::new(binding).unwrap();
+    let mut member = claims();
+    member["sub"] = json!("account-member");
+    assert_eq!(
+        verifier.verify(&token(&key, member)).unwrap().subject,
+        "account-member"
+    );
 }
 #[test]
 fn canonical_binding_rejects_aliases_and_cross_channel() {
@@ -75,7 +86,7 @@ fn foreign_or_expired_claims_never_authorize() {
     let (binding, key) = fixture();
     let verifier = Verifier::new(binding).unwrap();
     for (field, value) in [
-        ("sub", json!("other")),
+        ("sub", json!("\0")),
         ("aud", json!("44444444-4444-4444-8444-444444444444")),
         ("iss", json!("https://liyanlabs.com")),
         ("channel", json!("stable")),
@@ -154,12 +165,18 @@ async fn gateway_applies_the_account_boundary_before_dispatching() {
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let task = tokio::spawn(crate::serve_account_endpoint(
-        listener,
-        account,
-        crate::OsdlService::new(engine.handle(), identity),
-        Some("rtmps://srs.test.liyanlabs.com:11935".parse().unwrap()),
-    ));
+    let task = tokio::spawn(async move {
+        let data = tempfile::tempdir().unwrap();
+        crate::serve_account_endpoint(
+            listener,
+            account,
+            crate::OsdlService::new(engine.handle(), identity),
+            Some("rtmps://srs.test.liyanlabs.com:11935".parse().unwrap()),
+            data.path(),
+        )
+        .await
+        .unwrap();
+    });
     let channel = tonic::transport::Endpoint::from_shared(format!("http://{address}"))
         .unwrap()
         .connect()
@@ -267,7 +284,11 @@ async fn grpc_fixture() -> (
     )
 }
 use osdl_proto::v1 as pb;
-fn authorized<T>(body: T, key: &Ed25519KeyPair, c: serde_json::Value) -> tonic::Request<T> {
+pub(super) fn authorized<T>(
+    body: T,
+    key: &Ed25519KeyPair,
+    c: serde_json::Value,
+) -> tonic::Request<T> {
     let mut req = tonic::Request::new(body);
     req.metadata_mut().insert(
         "authorization",

@@ -19,6 +19,7 @@ pub struct Principal {
 }
 #[derive(Clone, Debug)]
 pub struct Identity {
+    pub subject: String,
     pub principal: Principal,
     pub scope: Scope,
     pub expires_at: u64,
@@ -85,14 +86,14 @@ impl Verifier {
             installation_id: binding::uuid(&c.installation_id)
                 .map_err(|_| AuthError::InvalidAssertion.status())?,
         };
-        // Account/expiry diagnostics are trusted only after signature and shape validation.
-        if c.sub != self.binding.account_id {
-            return Err(AuthError::AccountMismatch.status());
+        if !binding::valid_subject(&c.sub) {
+            return Err(AuthError::InvalidAssertion.status());
         }
         if c.exp <= now {
             return Err(AuthError::Expired.status());
         }
         Ok(Identity {
+            subject: c.sub,
             principal,
             scope: c.scope,
             expires_at: c.exp,
@@ -134,13 +135,21 @@ pub(crate) enum AuthError {
     InvalidAssertion,
     AccountMismatch,
     Expired,
+    Revoked,
 }
 impl AuthError {
     pub(crate) fn status(self) -> Status {
         let (code, message) = match self {
             Self::InvalidAssertion => ("invalid_assertion", "invalid laboratory authorization"),
-            Self::AccountMismatch => ("account_mismatch", "laboratory account mismatch"),
+            Self::AccountMismatch => (
+                "account_mismatch",
+                "the account is not a member of this laboratory",
+            ),
             Self::Expired => ("authorization_expired", "laboratory authorization expired"),
+            Self::Revoked => (
+                "account_mismatch",
+                "laboratory membership was revoked or changed",
+            ),
         };
         let mut status = Status::unauthenticated(message);
         status.metadata_mut().insert(

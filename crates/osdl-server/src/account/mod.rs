@@ -1,8 +1,11 @@
 //! Pinned laboratory binding and locally verified Runner identity assertions.
+mod admin;
 mod binding;
 mod identity;
+mod members;
 pub(crate) mod service;
 
+pub use admin::AccountAdminEndpoint;
 pub use binding::{channel_for_origin, Binding};
 pub(crate) use identity::AuthError;
 pub use identity::{Identity, Principal, Scope, Verifier};
@@ -13,3 +16,6 @@ mod tests;
 
 #[cfg(test)]
 mod stream_tests;
+
+#[cfg(test)]
+mod rbac_tests;

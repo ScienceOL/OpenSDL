@@ -272,15 +272,9 @@ impl pb::osdl_server::Osdl for OsdlService {
         &self,
         req: Request<pb::SendCommandRequest>,
     ) -> Result<Response<pb::CommandResult>, Status> {
-        self.authorizer.authorize(&req, Permission::Operate)?;
-        let r = req.into_inner();
-        let command_id = if r.command_id.is_empty() {
-            // Cheap monotonic-ish id. The server reflects it back so the
-            // client can correlate to the eventual CommandResult event.
-            format!("srv-{}", now_ms())
-        } else {
-            r.command_id
-        };
+        let authority = self.authorizer.authorize(&req, Permission::Operate)?;
+        let mut r = req.into_inner();
+        assign_command_id(&mut r);
 
         let params = r
             .params
@@ -289,12 +283,24 @@ impl pb::osdl_server::Osdl for OsdlService {
             .unwrap_or(serde_json::Value::Null);
 
         let cmd = DeviceCommand {
-            command_id: command_id.clone(),
+            command_id: r.command_id,
             device_id: r.device_id,
             action: r.action,
             params,
         };
 
+        if let Some(lease) = authority {
+            lease.check_current()?;
+            lease.audit_account(
+                "send_command",
+                (
+                    &self.identity.instance,
+                    &cmd.command_id,
+                    &cmd.device_id,
+                    &cmd.action,
+                ),
+            );
+        }
         let result = self
             .engine
             .send_command(cmd)
@@ -403,11 +409,10 @@ fn event_kind_matches(ev: &pb::Event, allowed: &[String]) -> bool {
     allowed.iter().any(|k| k == name)
 }
 
-fn now_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
+pub(crate) fn assign_command_id(command: &mut pb::SendCommandRequest) {
+    if command.command_id.is_empty() {
+        command.command_id = uuid::Uuid::new_v4().to_string();
+    }
 }
 
 // Suppress unused import warnings for items only referenced inside other

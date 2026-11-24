@@ -77,7 +77,7 @@ account_gateway:
 lab --instance lab-a login --server https://test.liyanlabs.com
 ~~~
 
-在同环境的 LiyanLabs 中选择同一账号连接，填写上述地址。账号入口只允许回环或显式配置的 Tailscale IPv4 地址。设备使用 `工作节点:设备 ID` 寻址，命令、事件和摄像头发布都转发到所属工作节点。摄像头只发布到配置的本环境 RTMPS 中继，省略 `media_relay` 时停用该入口的发布能力。单次命令只派发一次，传输中断后的命令结果须到设备端确认。
+在同环境的 LiyanLabs 中使用实验室所有者或获授权的账号连接，填写上述地址。控制平面服务账户可在本机执行 `lab auth account list --instance <实例>`、`lab auth account grant <账号 ID> --role viewer|operator|admin --instance <实例>` 和 `lab auth account revoke <账号 ID> --instance <实例>`。成员资格和实验室展示设置保存在该网关所在主机。账号入口只允许回环或显式配置的 Tailscale IPv4 地址。设备使用 `工作节点:设备 ID` 寻址，命令、事件和摄像头发布都转发到所属工作节点。摄像头只发布到配置的本环境 RTMPS 中继，省略 `media_relay` 时停用该入口的发布能力。单次命令只派发一次，传输中断后的命令结果须到设备端确认。
 
 账号入口支持最多 128 个工作节点和每副本 8 个并发事件订阅。设备清单使用一次一致性读取获取成员，保留可达节点的结果；`lab status` 只探测目录就绪，实际设备数以 `lab device list` 为准。事件订阅建立时读取成员，已有节点断线会独立恢复，首次加入的成员在客户端重连后可订阅。
 

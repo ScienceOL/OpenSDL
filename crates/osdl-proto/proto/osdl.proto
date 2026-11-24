@@ -345,6 +345,29 @@ message AuthenticationInfoResponse {
 message AuthenticationRenewRequest {}
 message AuthenticationRenewResponse { int64 expires_at = 1; }
 
+// Registered only on the owner-authorized local listener.
+service AccountMembershipAdministration {
+  rpc ListMembers(ListAccountMembersRequest) returns (ListAccountMembersResponse);
+  rpc Grant(GrantAccountMemberRequest) returns (AccountMember);
+  rpc Revoke(RevokeAccountMemberRequest) returns (RevokeAccountMemberResponse);
+}
+enum AccountRole {
+  ACCOUNT_ROLE_UNSPECIFIED = 0;
+  ACCOUNT_ROLE_VIEWER = 1;
+  ACCOUNT_ROLE_OPERATOR = 2;
+  ACCOUNT_ROLE_ADMIN = 3;
+}
+message AccountMember { string subject = 1; AccountRole role = 2; }
+message ListAccountMembersRequest { string after_subject = 1; }
+message ListAccountMembersResponse {
+  string owner_subject = 1;
+  repeated AccountMember members = 2;
+  string next_subject = 3;
+}
+message GrantAccountMemberRequest { string subject = 1; AccountRole role = 2; }
+message RevokeAccountMemberRequest { string subject = 1; }
+message RevokeAccountMemberResponse {}
+
 service Pairing {
   rpc DescribeInvitation(DescribeInvitationRequest) returns (DescribeInvitationResponse);
   rpc Pair(PairRequest) returns (PairResponse);

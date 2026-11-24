@@ -1,3 +1,4 @@
+pub mod account;
 pub mod api;
 pub mod asset;
 pub mod build;

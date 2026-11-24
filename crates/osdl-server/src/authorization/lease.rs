@@ -11,6 +11,8 @@ pub(super) fn expiry_status(grant: bool, deadline: u64) -> tonic::Status {
         } else {
             "grant_expired"
         })
+    } else if deadline == 0 {
+        crate::account::AuthError::Revoked.status()
     } else {
         crate::account::AuthError::Expired.status()
     }
@@ -18,7 +20,7 @@ pub(super) fn expiry_status(grant: bool, deadline: u64) -> tonic::Status {
 #[derive(Clone, Default, Debug)]
 pub(crate) struct Leases(Arc<Registry>);
 pub(crate) struct Lease {
-    principal: Option<Principal>,
+    account: Option<(String, Principal)>,
     deadline: watch::Sender<u64>,
     registry: Weak<Registry>,
     active: std::sync::atomic::AtomicUsize,
@@ -35,7 +37,7 @@ impl Leases {
             return existing.expect("live lease");
         }
         let lease = Arc::new(Lease {
-            principal: Some(identity.principal.clone()),
+            account: Some((identity.subject.clone(), identity.principal.clone())),
             deadline: watch::channel(identity.expires_at).0,
             registry: Arc::downgrade(&self.0),
             active: Default::default(),
@@ -64,6 +66,20 @@ impl Leases {
             });
         }
     }
+    /// Invalidate only this member's leases and return the outstanding owners to drain.
+    pub(crate) fn revoke_all(&self) -> Vec<Arc<Lease>> {
+        let leases: Vec<_> = self
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect();
+        for lease in &leases {
+            lease.revoke();
+        }
+        leases
+    }
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.0.lock().unwrap().len()
@@ -71,8 +87,8 @@ impl Leases {
 }
 impl Drop for Lease {
     fn drop(&mut self) {
-        if let (Some(registry), Some(principal)) =
-            (self.registry.upgrade(), self.principal.as_ref())
+        if let (Some(registry), Some((_, principal))) =
+            (self.registry.upgrade(), self.account.as_ref())
         {
             let mut registry = registry.lock().unwrap_or_else(|e| e.into_inner());
             if registry
@@ -87,7 +103,7 @@ impl Drop for Lease {
 impl Lease {
     pub(crate) fn grant(expiry: u64) -> Arc<Self> {
         Arc::new(Self {
-            principal: None,
+            account: None,
             registry: Weak::new(),
             deadline: watch::channel(expiry).0,
             active: Default::default(),
@@ -125,7 +141,18 @@ impl Lease {
         }
     }
     pub(crate) fn is_grant(&self) -> bool {
-        self.principal.is_none()
+        self.account.is_none()
+    }
+    pub(crate) fn audit_account(&self, operation: &str, target: impl std::fmt::Debug) {
+        if let Some((subject, principal)) = &self.account {
+            log::info!(
+                target: "opensdl::account_audit",
+                "operation={operation} subject={subject:?} device={} generation={} installation={} target={target:?}",
+                principal.device_id,
+                principal.device_generation,
+                principal.installation_id,
+            );
+        }
     }
     pub(crate) fn expiry_status(&self) -> tonic::Status {
         expiry_status(self.is_grant(), *self.deadline.borrow())
@@ -157,6 +184,7 @@ mod tests {
     use super::*;
     fn identity(seconds: u64) -> Identity {
         Identity {
+            subject: "account-owner".into(),
             principal: Principal {
                 device_id: uuid::Uuid::new_v4(),
                 device_generation: 1,

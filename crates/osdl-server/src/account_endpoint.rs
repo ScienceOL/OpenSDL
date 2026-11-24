@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, str::FromStr};
+use std::{future::Future, path::Path, pin::Pin, str::FromStr, sync::Arc};
 
 use osdl_proto::v1::{self as pb, osdl_server::Osdl};
 use tokio::net::TcpListener;
@@ -62,16 +62,21 @@ pub async fn serve_account_endpoint(
     account: AccountAuth,
     operations: impl Osdl,
     media_relay: Option<MediaRelay>,
+    profile_dir: &Path,
 ) -> Result<(), ServeError> {
     let instance = account.verifier.binding().instance.clone();
     let policy = ListenerAuth::Account(account.clone());
     policy
         .validate_listener(&instance, Some(listener.local_addr()?))
         .map_err(ServeError::Auth)?;
+    let profile = crate::lab_profile::Store::open(profile_dir, &instance, Some(&instance))
+        .map_err(ServeError::LabProfile)?;
     let api = AccountApi {
         upstream: operations,
         authorizer: Authorizer::Account(account),
+        instance: instance.clone(),
         media_relay,
+        profile: Arc::new(profile),
     };
     tonic::transport::Server::builder()
         .add_service(
@@ -92,7 +97,9 @@ pub async fn serve_account_endpoint(
 struct AccountApi<T> {
     upstream: T,
     authorizer: Authorizer,
+    instance: String,
     media_relay: Option<MediaRelay>,
+    profile: Arc<crate::lab_profile::Store>,
 }
 
 impl<T> AccountApi<T> {
@@ -153,9 +160,10 @@ impl<T: Osdl> Osdl for AccountApi<T> {
         &self,
         r: Request<pb::StatusRequest>,
     ) -> Result<Response<pb::StatusResponse>, Status> {
-        self.upstream
-            .status(self.request(r, Permission::Read)?)
-            .await
+        let writable = self.authorizer.lab_profile_writable(&r)?;
+        let mut response = self.upstream.status(Request::new(r.into_inner())).await?;
+        response.get_mut().laboratory = Some(self.profile.snapshot(writable));
+        Ok(response)
     }
 
     async fn update_lab_profile(
@@ -163,11 +171,11 @@ impl<T: Osdl> Osdl for AccountApi<T> {
         r: Request<pb::UpdateLabProfileRequest>,
     ) -> Result<Response<pb::LabProfile>, Status> {
         let lease = self.authorizer.authorize_lab_profile_update(&r)?;
-        tokio::select! {
-            biased;
-            status = expires(lease.as_ref()) => Err(status),
-            result = self.upstream.update_lab_profile(Request::new(r.into_inner())) => result,
-        }
+        self.profile
+            .clone()
+            .update(r.into_inner(), lease)
+            .await
+            .map(Response::new)
     }
 
     async fn list_nodes(
@@ -222,9 +230,22 @@ impl<T: Osdl> Osdl for AccountApi<T> {
         &self,
         r: Request<pb::SendCommandRequest>,
     ) -> Result<Response<pb::CommandResult>, Status> {
-        self.upstream
-            .send_command(self.request(r, Permission::Operate)?)
-            .await
+        let authority = self.authorizer.authorize(&r, Permission::Operate)?;
+        let mut command = r.into_inner();
+        crate::service::assign_command_id(&mut command);
+        if let Some(lease) = authority {
+            lease.check_current()?;
+            lease.audit_account(
+                "send_command",
+                (
+                    &self.instance,
+                    &command.command_id,
+                    &command.device_id,
+                    &command.action,
+                ),
+            );
+        }
+        self.upstream.send_command(Request::new(command)).await
     }
 
     async fn stream_events(
